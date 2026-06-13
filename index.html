@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- viewport-fit=cover exposes env(safe-area-inset-*) for notch handling.
+         user-scalable=no + maximum-scale=1 stop pinch-zoom fighting the twin-stick. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#05070d" />
+    <meta name="color-scheme" content="dark" />
+    <title>SWARMGEDDON</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: #05070d;
+        overflow: hidden;
+      }
+      body {
+        position: fixed;
+        inset: 0;
+        /* Kill native gestures that interfere with dragging the virtual sticks. */
+        touch-action: none;
+        overscroll-behavior: none;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent;
+        -webkit-touch-callout: none;
+        font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      }
+      #app {
+        position: fixed;
+        inset: 0;
+      }
+      #app canvas {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
