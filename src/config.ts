@@ -40,6 +40,15 @@ export const PLAYER_MAX_HP = 100
 export const MAX_ENEMIES = 700
 export const MAX_PARTICLES = 1500
 export const MAX_FLOATERS = 48
+export const MAX_PICKUPS = 400
+export const MAX_ACID = 64
+export const MAX_ENEMY_PROJECTILES = 300
+
+/** Pickups / XP. */
+export const BASE_MAGNET_RADIUS = 78 // px; scaled by the Magnetic perk
+export const GEM_LIFETIME = 12 // seconds before an uncollected XP gem fades
+export const WEAPON_DROP_INTERVAL = 13 // seconds between weapon pod drops
+export const WEAPON_DROP_LIFETIME = 24
 
 /** Spatial-hash cell size (world units). ~3-4x an enemy diameter is a good ratio. */
 export const HASH_CELL = 72
@@ -93,8 +102,13 @@ export const COLORS = {
   gib: 0x6cff5a,
   gibDark: 0x2e8f3a,
   damageText: 0xeafff0,
+  critText: 0xffe066,
   muzzle: 0xfff2b0,
   hurtFlash: 0xff2d4a,
+  acid: 0x9bff3a,
+  gem: 0x57f0ff,
+  xpBar: 0x57c8ff,
+  xpBarBack: 0x10243a,
 
   // Ichor stamp tints (randomized between these for variety)
   ichorA: 0x4ecb3a,

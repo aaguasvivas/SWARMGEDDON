@@ -21,6 +21,8 @@ export class Projectile implements Poolable {
   pierce = 0
   /** Seconds of life remaining. */
   life = 0
+  /** Enemy (spitter) projectile drops an acid pool where it lands. */
+  leavesAcid = false
 
   constructor(readonly sprite: Sprite) {}
 }

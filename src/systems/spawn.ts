@@ -1,41 +1,30 @@
-import { COLORS, MAX_ENEMIES } from '../config.ts'
+import { MAX_ENEMIES } from '../config.ts'
+import { ENEMIES } from '../content/enemies.ts'
+import { pickEnemy, spawnBatch, spawnInterval } from '../content/waveDirector.ts'
 import type { World } from '../game/world.ts'
 
 /**
- * Wave director (Phase 1, single enemy). Swarmers stream in from all four edges.
- * Difficulty ramps purely with elapsed time: the spawn interval tightens and the
- * per-tick batch grows, so the arena slides from "a trickle" to "gloriously out
- * of control". Phase 3 replaces this with the full data-driven schedule.
+ * Wave director driver. Pulls the spawn-rate/batch curves and the weighted enemy
+ * pick from the data-driven wave table, and streams the chosen enemies in from
+ * the arena edges. Difficulty escalation is entirely in the wave-table data.
  */
 export function spawnSystem(world: World, dt: number): void {
   world.spawnTimer -= dt
   const t = world.time
+  const interval = spawnInterval(t)
+  const batch = spawnBatch(t)
 
-  // Interval shrinks ~0.85s -> 0.10s over the first ~80s; batch grows every 25s.
-  const interval = Math.max(0.1, 0.85 - t * 0.009)
-  const batch = 1 + Math.floor(t / 25)
-
-  // Guard bounds the catch-up if the loop hitched.
   let guard = 0
   while (world.spawnTimer <= 0 && guard++ < 64) {
     world.spawnTimer += interval
-    for (let i = 0; i < batch; i++) spawnSwarmer(world, t)
+    for (let i = 0; i < batch; i++) spawnFromEdge(world, pickEnemy(world.rng, t))
   }
 }
 
-/** Dev-only stress helper: instantly spawn `n` swarmers. Guarded behind
- *  import.meta.env.DEV at the call site, so it's dead-code-eliminated in prod. */
-export function debugFloodSwarmers(world: World, n: number): void {
-  for (let i = 0; i < n; i++) spawnSwarmer(world, world.time)
-}
-
-function spawnSwarmer(world: World, t: number): void {
-  if (world.enemies.size >= MAX_ENEMIES) return
+function spawnFromEdge(world: World, defId: string): void {
   const b = world.arena.bounds
   const rng = world.rng
-  const margin = 32
-
-  // Pick an edge and a point just outside it, so they walk into the arena.
+  const margin = 34
   let x = 0
   let y = 0
   switch (rng.int(0, 3)) {
@@ -55,24 +44,43 @@ function spawnSwarmer(world: World, t: number): void {
       x = b.x - margin
       y = rng.range(b.y, b.y + b.h)
   }
+  spawnEnemy(world, defId, x, y)
+}
 
+/**
+ * Spawn one enemy of `defId` at (x,y). Stats come from the registry; HP and
+ * speed ramp with elapsed time. Also used for splitter offspring (death-time).
+ */
+export function spawnEnemy(world: World, defId: string, x: number, y: number): void {
+  if (world.enemies.size >= MAX_ENEMIES) return
+  const def = ENEMIES[defId]!
+  const rng = world.rng
   const e = world.enemies.acquire()
+
+  e.def = def
   e.x = e.prevX = x
   e.y = e.prevY = y
   e.vx = 0
   e.vy = 0
   e.facing = e.prevFacing = 0
-  e.hp = e.maxHp = 3 + Math.floor(t / 30)
-  e.speed = rng.range(58, 86) * (1 + t * 0.004)
-  e.radius = 14
-  e.damage = 22
-  e.xp = 1
+  e.hp = e.maxHp = Math.round(def.hp + world.time * def.hpRamp)
+  e.speed = def.speed * (1 + world.time * 0.0025)
+  e.radius = def.radius
+  e.damage = def.damage
+  e.fireTimer = def.fireCooldown ? rng.range(0.4, def.fireCooldown) : 0
   e.flash = 0
   e.animPhase = rng.angle()
 
+  world.texReg.applySprite(e.sprite, def.sprite)
   const s = e.sprite
   s.visible = true
   s.alpha = 1
-  s.tint = COLORS.swarmer
-  s.scale.set(1)
+  s.tint = def.tint
+  s.scale.set(def.scale)
+}
+
+/** Dev-only stress helper: instantly spawn `n` swarmers from the edges.
+ *  Guarded behind import.meta.env.DEV at the call site -> DCE'd in prod. */
+export function debugFloodSwarmers(world: World, n: number): void {
+  for (let i = 0; i < n; i++) spawnFromEdge(world, 'swarmer')
 }

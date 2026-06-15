@@ -3,9 +3,9 @@ import type { Particle } from '../game/particle.ts'
 import type { World } from '../game/world.ts'
 
 /**
- * Particle / floating-text emitters. All of them respect the population caps
- * (skip-when-full, never recycle mid-life) so worst-case combat can't blow the
- * budget. Velocities/scatter use the seeded RNG, keeping runs reproducible.
+ * Particle / floating-text emitters. All respect the population caps
+ * (skip-when-full) so worst-case combat can't blow the budget. Scatter uses the
+ * seeded RNG, keeping runs reproducible.
  */
 
 function begin(p: Particle, x: number, y: number): void {
@@ -19,9 +19,18 @@ function begin(p: Particle, x: number, y: number): void {
   p.sprite.visible = true
 }
 
-/** Chunky gore shards bursting from a kill. */
-export function spawnGibs(world: World, x: number, y: number, count: number): void {
+/** Multiply an 0xRRGGBB color toward black (for gib shade variety). */
+function darken(color: number, f: number): number {
+  const r = Math.floor(((color >> 16) & 0xff) * f)
+  const g = Math.floor(((color >> 8) & 0xff) * f)
+  const b = Math.floor((color & 0xff) * f)
+  return (r << 16) | (g << 8) | b
+}
+
+/** Chunky gore shards bursting from a kill, colored to the enemy. */
+export function spawnGibs(world: World, x: number, y: number, count: number, color: number): void {
   const rng = world.rng
+  const dark = darken(color, 0.55)
   for (let i = 0; i < count; i++) {
     if (world.particles.size >= MAX_PARTICLES) return
     const p = world.particles.acquire()
@@ -35,7 +44,7 @@ export function spawnGibs(world: World, x: number, y: number, count: number): vo
     p.grow = -rng.range(0.5, 1.1)
     p.drag = 5
     p.spin = rng.range(-14, 14)
-    p.tint = rng.bool(0.55) ? COLORS.gib : COLORS.gibDark
+    p.tint = rng.bool(0.5) ? color : dark
     p.sprite.texture = world.gibTex
     p.sprite.blendMode = 'normal'
   }
@@ -102,15 +111,53 @@ export function spawnImpact(world: World, x: number, y: number): void {
   p.sprite.blendMode = 'add'
 }
 
-/** Floating damage number (capped — Text is the priciest pooled object). */
-export function spawnDamageNumber(world: World, x: number, y: number, dmg: number): void {
+/** Acid splash burst when a pool forms. */
+export function spawnAcidSplash(world: World, x: number, y: number): void {
+  const rng = world.rng
+  for (let i = 0; i < 5; i++) {
+    if (world.particles.size >= MAX_PARTICLES) return
+    const p = world.particles.acquire()
+    begin(p, x, y)
+    const a = rng.angle()
+    const sp = rng.range(40, 160)
+    p.vx = Math.cos(a) * sp
+    p.vy = Math.sin(a) * sp
+    p.life = p.maxLife = rng.range(0.2, 0.4)
+    p.size = rng.range(0.5, 1.0)
+    p.grow = -1
+    p.drag = 7
+    p.tint = COLORS.acid
+    p.additive = true
+    p.sprite.texture = world.sparkTex
+    p.sprite.blendMode = 'add'
+  }
+}
+
+/** Floating damage number (capped). Crits are larger and gold. */
+export function spawnDamageNumber(world: World, x: number, y: number, dmg: number, crit: boolean): void {
   if (world.floaters.size >= MAX_FLOATERS) return
   const rng = world.rng
   const f = world.floaters.acquire()
   f.x = x + rng.range(-6, 6)
   f.y = f.prevY = y - 8
   f.vy = -rng.range(46, 74)
-  f.life = f.maxLife = 0.55
-  f.text.text = String(Math.round(dmg))
+  f.life = f.maxLife = crit ? 0.7 : 0.5
+  f.text.text = crit ? `${Math.round(dmg)}!` : String(Math.round(dmg))
+  f.text.style.fontSize = crit ? 20 : 14
+  f.text.style.fill = crit ? COLORS.critText : COLORS.damageText
+  f.text.visible = true
+}
+
+/** Floating announcement (e.g. weapon pickup name). */
+export function announce(world: World, text: string, x: number, y: number, color: number): void {
+  if (world.floaters.size >= MAX_FLOATERS) return
+  const f = world.floaters.acquire()
+  f.x = x
+  f.y = f.prevY = y
+  f.vy = -34
+  f.life = f.maxLife = 1.1
+  f.text.text = text
+  f.text.style.fontSize = 17
+  f.text.style.fill = color
   f.text.visible = true
 }

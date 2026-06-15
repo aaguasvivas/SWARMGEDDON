@@ -58,5 +58,9 @@ export async function createRenderer(mount: HTMLElement): Promise<GameRenderer> 
   layers.world.addChild(layers.floor, layers.ichor, layers.entities, layers.fx)
   app.stage.addChild(layers.world, layers.ui)
 
+  // Enable Pixi's event system so interactive UI (the level-up cards) gets
+  // pointer events. Gameplay input is handled separately via DOM listeners.
+  app.stage.eventMode = 'static'
+
   return { app, layers }
 }

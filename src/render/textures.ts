@@ -50,4 +50,12 @@ export class TextureRegistry {
     s.visible = false
     return s
   }
+
+  /** Repoint an existing sprite at `key`'s texture + origin anchor (pool reuse). */
+  applySprite(sprite: Sprite, key: string): void {
+    const baked = this.map.get(key)
+    if (!baked) throw new Error('missing texture: ' + key)
+    sprite.texture = baked.texture
+    sprite.anchor.set(baked.anchorX, baked.anchorY)
+  }
 }

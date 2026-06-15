@@ -25,6 +25,7 @@ export class Player {
   readonly radius = PLAYER_RADIUS
   readonly speed = PLAYER_SPEED
   hp = PLAYER_MAX_HP
+  maxHp = PLAYER_MAX_HP
 
   constructor() {
     const g = new Graphics()
@@ -52,13 +53,14 @@ export class Player {
    * deadzoned/normalized by the input layer); `aimDir` is a unit facing
    * direction, or (0,0) to leave facing unchanged.
    */
-  update(dt: number, move: Vec2, aimDir: Vec2, bounds: Bounds): void {
+  update(dt: number, move: Vec2, aimDir: Vec2, bounds: Bounds, speedMul = 1): void {
     this.prevX = this.x
     this.prevY = this.y
     this.prevFacing = this.facing
 
-    this.x += move.x * this.speed * dt
-    this.y += move.y * this.speed * dt
+    const sp = this.speed * speedMul
+    this.x += move.x * sp * dt
+    this.y += move.y * sp * dt
 
     // Clamp inside the arena, accounting for body radius.
     this.x = clamp(this.x, bounds.x + this.radius, bounds.x + bounds.w - this.radius)

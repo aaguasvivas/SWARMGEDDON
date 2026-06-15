@@ -1,14 +1,18 @@
 import type { Sprite } from 'pixi.js'
+import type { EnemyDef } from '../content/enemies.ts'
+import { ENEMIES } from '../content/enemies.ts'
 import type { Poolable } from '../core/pool.ts'
 
 /**
- * A hive creature. Pure data + a persistent Sprite (created once, reused across
- * pool cycles, toggled via `alive`/visibility). Systems mutate the fields;
- * the render system reads prev/current for interpolation and drives procedural
- * animation. From Phase 2 the stat block is populated from the enemy registry.
+ * A hive creature. Pure data + a persistent Sprite (texture swapped per type on
+ * spawn). `def` points at the registry entry the AI/render/death code reads, so
+ * one pool serves every enemy type. Systems mutate the live fields.
  */
 export class Enemy implements Poolable {
   alive = false
+
+  /** Registry definition for this enemy's type (set on spawn). */
+  def: EnemyDef = ENEMIES.swarmer!
 
   x = 0
   y = 0
@@ -24,9 +28,10 @@ export class Enemy implements Poolable {
   maxHp = 1
   radius = 14
   speed = 70
-  damage = 22 // contact damage per second
-  xp = 1
+  damage = 22
 
+  /** Spitter ranged cooldown (seconds until next shot). */
+  fireTimer = 0
   /** Hit-flash timer (seconds remaining). */
   flash = 0
   /** Per-enemy phase offset so the swarm doesn't wobble in lockstep. */

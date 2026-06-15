@@ -13,17 +13,20 @@ import { World } from './game/world.ts'
 import { InputManager } from './input/input.ts'
 import { DebugOverlay } from './ui/debugOverlay.ts'
 import { Hud } from './ui/hud.ts'
-import { spawnSystem, debugFloodSwarmers } from './systems/spawn.ts'
+import { LevelUpModal } from './ui/levelupModal.ts'
+import { spawnSystem, spawnEnemy, debugFloodSwarmers } from './systems/spawn.ts'
 import { aiSystem, buildEnemyHash } from './systems/ai.ts'
 import { weaponSystem } from './systems/weapons.ts'
-import { projectileSystem } from './systems/projectiles.ts'
+import { projectileSystem, enemyProjectileSystem } from './systems/projectiles.ts'
+import { pickupSystem } from './systems/pickups.ts'
 import { collisionSystem } from './systems/collision.ts'
+import { acidSystem } from './systems/acid.ts'
 import { particleSystem } from './systems/particles.ts'
 
 /**
- * Phase 1 bootstrap: builds the combat world (pooled entities, spatial hash,
- * ichor render-texture, juice) and runs the system pipeline under the
- * fixed-timestep loop, with interpolated rendering on top.
+ * Phase 2 bootstrap. Wires the data-driven content systems (wave director,
+ * enemy roster, weapon pickups, XP + perk-draft level-up) onto the Phase 1
+ * combat core, under the fixed-timestep loop.
  */
 async function boot(): Promise<void> {
   initSafeArea()
@@ -32,13 +35,9 @@ async function boot(): Promise<void> {
 
   const { app, layers } = await createRenderer(mount)
 
-  // Bake placeholder sprites into GPU textures up front.
   const texReg = new TextureRegistry(app.renderer)
   texReg.bakePlaceholders()
 
-  // Two RNG streams: `sim` drives gameplay (determinism), `cosmetic` drives
-  // boot-time visuals (decor, splat textures) so tweaking visuals never desyncs
-  // a seeded run.
   const seed = resolveSeed()
   const sim = new Rng(seed)
   const cosmetic = new Rng(seed ^ 0x9e3779b9)
@@ -51,18 +50,27 @@ async function boot(): Promise<void> {
   layers.ichor.addChild(ichor.view)
 
   const player = new Player()
-
   const world = new World(sim, arena, player, ichor, layers, texReg)
-  // Player draws above the swarm (added last to the shakeable world container).
-  layers.world.addChild(player.view)
+  layers.world.addChild(player.view) // player draws above the swarm
 
   const input = new InputManager(app.canvas)
   const crosshair = buildCrosshair()
   const hurtOverlay = new Graphics()
   const hud = new Hud()
   const debug = new DebugOverlay()
-  // UI draw order (bottom -> top): hud, touch sticks, hurt flash, crosshair, debug.
-  layers.ui.addChild(hud.view, input.touch.view, hurtOverlay, crosshair, debug.view)
+  const modal = new LevelUpModal()
+  layers.ui.addChild(hud.view, input.touch.view, hurtOverlay, crosshair, debug.view, modal.view)
+
+  modal.onPick = (perkId) => {
+    world.choosePerk(perkId)
+    world.pendingLevelUps--
+    if (world.pendingLevelUps > 0) {
+      modal.open(world.draftPerks())
+    } else {
+      modal.close()
+      world.paused = false
+    }
+  }
 
   let started = false
   function layout(): void {
@@ -73,6 +81,7 @@ async function boot(): Promise<void> {
     ichor.resize(arena.bounds.w, arena.bounds.h, arena.bounds.x, arena.bounds.y)
     hud.layout(w, h, insets)
     debug.layout(insets)
+    modal.setScreen(w, h)
     hurtOverlay.clear()
     hurtOverlay.rect(0, 0, w, h).fill(COLORS.hurtFlash)
     if (!started) {
@@ -85,42 +94,68 @@ async function boot(): Promise<void> {
   window.addEventListener('orientationchange', layout)
 
   window.addEventListener('keydown', (e) => {
+    if (modal.isOpen()) {
+      if (e.key === '1') modal.pickByIndex(0)
+      else if (e.key === '2') modal.pickByIndex(1)
+      else if (e.key === '3') modal.pickByIndex(2)
+      return
+    }
     if (e.key === '`') debug.toggle()
-    else if (e.key === 'r' || e.key === 'R') world.restart()
+    else if (e.key === 'r' || e.key === 'R') {
+      world.restart()
+      modal.close()
+    }
   })
+
+  // One fixed simulation step. Extracted so dev tooling can advance the sim
+  // deterministically without waiting on requestAnimationFrame.
+  function stepSim(dt: number): void {
+    if (world.paused) return
+    if (world.pendingLevelUps > 0) {
+      world.paused = true // freeze immediately; the modal opens in render
+      return
+    }
+
+    const j = world.juice
+    if (j.hitstop > 0) {
+      j.hitstop -= dt
+      if (j.hitstop <= 0 && world.pendingRestart) {
+        world.restart()
+        world.pendingRestart = false
+      }
+      return
+    }
+
+    world.time += dt
+    input.update(player.x, player.y)
+    spawnSystem(world, dt)
+    buildEnemyHash(world)
+    aiSystem(world, dt)
+    weaponSystem(world, dt, input)
+    projectileSystem(world, dt)
+    enemyProjectileSystem(world, dt)
+    pickupSystem(world, dt)
+    collisionSystem(world, dt)
+    acidSystem(world, dt)
+    particleSystem(world, dt)
+    player.update(dt, input.move, input.aimDir, arena.bounds, world.mods.moveSpeedMul)
+    if (player.hp > 0 && world.mods.regenPerSec > 0) {
+      player.hp = Math.min(player.maxHp, player.hp + world.mods.regenPerSec * dt)
+    }
+
+    world.enemies.sweep()
+    world.projectiles.sweep()
+    world.enemyProjectiles.sweep()
+    world.particles.sweep()
+    world.floaters.sweep()
+    world.pickups.sweep()
+    world.acid.sweep()
+  }
 
   const loop = new GameLoop(
     FIXED_DT,
     MAX_FRAME_TIME,
-    // --- simulation (fixed dt) ---
-    (dt) => {
-      const j = world.juice
-      if (j.hitstop > 0) {
-        // Frozen on a big impact; once it drains, perform any deferred restart.
-        j.hitstop -= dt
-        if (j.hitstop <= 0 && world.pendingRestart) {
-          world.restart()
-          world.pendingRestart = false
-        }
-        return
-      }
-
-      world.time += dt
-      input.update(player.x, player.y)
-      spawnSystem(world, dt)
-      buildEnemyHash(world)
-      aiSystem(world, dt)
-      weaponSystem(world, dt, input)
-      projectileSystem(world, dt)
-      collisionSystem(world, dt)
-      particleSystem(world, dt)
-      player.update(dt, input.move, input.aimDir, arena.bounds)
-
-      world.enemies.sweep()
-      world.projectiles.sweep()
-      world.particles.sweep()
-      world.floaters.sweep()
-    },
+    stepSim,
     // --- render (interpolated) ---
     (alpha) => {
       renderEntities(world, alpha)
@@ -130,16 +165,26 @@ async function boot(): Promise<void> {
       crosshair.visible = showCrosshair
       if (showCrosshair) crosshair.position.set(input.pointerX, input.pointerY)
 
-      // Bake the frame's ichor stamps into the persistent texture (one pass).
       ichor.flush()
-
       hud.update(world)
+
+      // Level-up modal lifecycle.
+      if (world.paused && world.pendingLevelUps > 0 && !modal.isOpen()) {
+        const draft = world.draftPerks()
+        if (draft.length === 0) {
+          // Nothing left to offer — consume the level-up and resume.
+          world.pendingLevelUps = 0
+          world.paused = false
+        } else {
+          modal.open(draft)
+        }
+      }
+      if (!world.paused && modal.isOpen()) modal.close()
 
       const fd = loop.frameMs / 1000
       world.hurtFlash = Math.max(0, world.hurtFlash - fd * 2.2)
       hurtOverlay.alpha = world.hurtFlash * 0.45
 
-      // Screen shake offsets the world container only (UI stays steady).
       world.juice.updateShake(fd)
       layers.world.position.set(world.juice.offsetX, world.juice.offsetY)
 
@@ -148,8 +193,8 @@ async function boot(): Promise<void> {
         frameMs: loop.frameMs,
         steps: loop.steps,
         enemies: world.enemies.size,
-        projectiles: world.projectiles.size,
-        particles: world.particles.size + world.floaters.size,
+        projectiles: world.projectiles.size + world.enemyProjectiles.size,
+        particles: world.particles.size + world.floaters.size + world.pickups.size + world.acid.size,
         inputType: input.lastType,
         firing: input.firing,
         width: Math.round(app.screen.width),
@@ -168,14 +213,24 @@ async function boot(): Promise<void> {
     ;(window as unknown as { __SWARM: unknown }).__SWARM = {
       world,
       flood: (n: number) => debugFloodSwarmers(world, n),
+      addXp: (n: number) => world.addXp(n),
+      give: (id: string) => world.equipWeapon(id),
+      setTime: (t: number) => (world.time = t),
+      spawn: (id: string, n = 1) => {
+        const b = world.arena.bounds
+        for (let i = 0; i < n; i++) {
+          spawnEnemy(world, id, b.x + world.rng.float() * b.w, b.y + world.rng.float() * b.h)
+        }
+      },
+      // Advance the sim N fixed steps synchronously (bypasses rAF) for testing.
+      step: (n = 60) => {
+        for (let i = 0; i < n; i++) stepSim(FIXED_DT)
+      },
     }
   }
 }
 
-/**
- * Resolve the run seed (see README). Default: today's date -> a daily seed.
- *   ?seed=12345 numeric · ?seed=foo hashed · ?seed=random fresh each load.
- */
+/** Resolve the run seed (see README). Default: today's date -> a daily seed. */
 function resolveSeed(): number {
   const param = new URLSearchParams(location.search).get('seed')
   if (param === 'random') {
