@@ -4,87 +4,152 @@ import { GameLoop } from './core/time.ts'
 import { Rng, seedFromString } from './core/rng.ts'
 import { initSafeArea, getInsets } from './platform/safeArea.ts'
 import { createRenderer } from './render/app.ts'
+import { TextureRegistry } from './render/textures.ts'
+import { IchorLayer } from './render/ichorLayer.ts'
+import { renderEntities } from './render/entityRenderer.ts'
 import { Arena, type DecorSpeck } from './game/arena.ts'
 import { Player } from './game/player.ts'
+import { World } from './game/world.ts'
 import { InputManager } from './input/input.ts'
 import { DebugOverlay } from './ui/debugOverlay.ts'
+import { Hud } from './ui/hud.ts'
+import { spawnSystem, debugFloodSwarmers } from './systems/spawn.ts'
+import { aiSystem, buildEnemyHash } from './systems/ai.ts'
+import { weaponSystem } from './systems/weapons.ts'
+import { projectileSystem } from './systems/projectiles.ts'
+import { collisionSystem } from './systems/collision.ts'
+import { particleSystem } from './systems/particles.ts'
 
 /**
- * Phase 0 bootstrap. Wires the fixed-timestep loop, seeded RNG, resize/DPR/
- * safe-area handling, a player driven by keyboard+mouse / touch / gamepad, and
- * the debug overlay. Everything below is the skeleton later phases hang content
- * and systems onto — no gameplay yet beyond moving and aiming.
+ * Phase 1 bootstrap: builds the combat world (pooled entities, spatial hash,
+ * ichor render-texture, juice) and runs the system pipeline under the
+ * fixed-timestep loop, with interpolated rendering on top.
  */
 async function boot(): Promise<void> {
   initSafeArea()
-
   const mount = document.getElementById('app')
   if (!mount) throw new Error('#app mount not found')
 
   const { app, layers } = await createRenderer(mount)
-  const seed = resolveSeed()
-  const rng = new Rng(seed)
 
-  // Build the world.
+  // Bake placeholder sprites into GPU textures up front.
+  const texReg = new TextureRegistry(app.renderer)
+  texReg.bakePlaceholders()
+
+  // Two RNG streams: `sim` drives gameplay (determinism), `cosmetic` drives
+  // boot-time visuals (decor, splat textures) so tweaking visuals never desyncs
+  // a seeded run.
+  const seed = resolveSeed()
+  const sim = new Rng(seed)
+  const cosmetic = new Rng(seed ^ 0x9e3779b9)
+
   const arena = new Arena()
-  arena.setDecor(makeDecor(rng, 56))
+  arena.setDecor(makeDecor(cosmetic, 56))
   layers.floor.addChild(arena.view)
 
+  const ichor = new IchorLayer(app.renderer, cosmetic)
+  layers.ichor.addChild(ichor.view)
+
   const player = new Player()
-  layers.entities.addChild(player.view)
+
+  const world = new World(sim, arena, player, ichor, layers, texReg)
+  // Player draws above the swarm (added last to the shakeable world container).
+  layers.world.addChild(player.view)
 
   const input = new InputManager(app.canvas)
-  layers.ui.addChild(input.touch.view)
-
   const crosshair = buildCrosshair()
-  layers.ui.addChild(crosshair)
-
+  const hurtOverlay = new Graphics()
+  const hud = new Hud()
   const debug = new DebugOverlay()
-  layers.ui.addChild(debug.view)
+  // UI draw order (bottom -> top): hud, touch sticks, hurt flash, crosshair, debug.
+  layers.ui.addChild(hud.view, input.touch.view, hurtOverlay, crosshair, debug.view)
 
-  // (Re)compute everything resolution-dependent. Called once now and on resize.
-  let didSpawn = false
+  let started = false
   function layout(): void {
     const w = app.screen.width
     const h = app.screen.height
     const insets = getInsets()
     arena.layout(w, h, insets)
+    ichor.resize(arena.bounds.w, arena.bounds.h, arena.bounds.x, arena.bounds.y)
+    hud.layout(w, h, insets)
     debug.layout(insets)
-    if (!didSpawn) {
-      player.spawn(arena.bounds.x + arena.bounds.w / 2, arena.bounds.y + arena.bounds.h / 2)
-      didSpawn = true
+    hurtOverlay.clear()
+    hurtOverlay.rect(0, 0, w, h).fill(COLORS.hurtFlash)
+    if (!started) {
+      world.start()
+      started = true
     }
   }
   layout()
   window.addEventListener('resize', layout)
   window.addEventListener('orientationchange', layout)
 
-  // Backtick toggles the debug overlay.
   window.addEventListener('keydown', (e) => {
     if (e.key === '`') debug.toggle()
+    else if (e.key === 'r' || e.key === 'R') world.restart()
   })
 
-  // The loop: sim in update (fixed dt), interpolated draw in render.
   const loop = new GameLoop(
     FIXED_DT,
     MAX_FRAME_TIME,
+    // --- simulation (fixed dt) ---
     (dt) => {
+      const j = world.juice
+      if (j.hitstop > 0) {
+        // Frozen on a big impact; once it drains, perform any deferred restart.
+        j.hitstop -= dt
+        if (j.hitstop <= 0 && world.pendingRestart) {
+          world.restart()
+          world.pendingRestart = false
+        }
+        return
+      }
+
+      world.time += dt
       input.update(player.x, player.y)
+      spawnSystem(world, dt)
+      buildEnemyHash(world)
+      aiSystem(world, dt)
+      weaponSystem(world, dt, input)
+      projectileSystem(world, dt)
+      collisionSystem(world, dt)
+      particleSystem(world, dt)
       player.update(dt, input.move, input.aimDir, arena.bounds)
+
+      world.enemies.sweep()
+      world.projectiles.sweep()
+      world.particles.sweep()
+      world.floaters.sweep()
     },
+    // --- render (interpolated) ---
     (alpha) => {
+      renderEntities(world, alpha)
       player.render(alpha)
 
-      // Desktop crosshair tracks the mouse; hidden for touch/gamepad.
       const showCrosshair = input.lastType === 'kbm' && input.hasPointer
       crosshair.visible = showCrosshair
       if (showCrosshair) crosshair.position.set(input.pointerX, input.pointerY)
+
+      // Bake the frame's ichor stamps into the persistent texture (one pass).
+      ichor.flush()
+
+      hud.update(world)
+
+      const fd = loop.frameMs / 1000
+      world.hurtFlash = Math.max(0, world.hurtFlash - fd * 2.2)
+      hurtOverlay.alpha = world.hurtFlash * 0.45
+
+      // Screen shake offsets the world container only (UI stays steady).
+      world.juice.updateShake(fd)
+      layers.world.position.set(world.juice.offsetX, world.juice.offsetY)
 
       debug.update({
         fps: loop.fps,
         frameMs: loop.frameMs,
         steps: loop.steps,
-        entities: 1, // just the player in phase 0
+        enemies: world.enemies.size,
+        projectiles: world.projectiles.size,
+        particles: world.particles.size + world.floaters.size,
         inputType: input.lastType,
         firing: input.firing,
         width: Math.round(app.screen.width),
@@ -97,14 +162,19 @@ async function boot(): Promise<void> {
     },
   )
   loop.start()
+
+  // Dev-only test handle (stripped from production builds via DCE).
+  if (import.meta.env.DEV) {
+    ;(window as unknown as { __SWARM: unknown }).__SWARM = {
+      world,
+      flood: (n: number) => debugFloodSwarmers(world, n),
+    }
+  }
 }
 
 /**
- * Resolve the run seed. Default is today's date -> a deterministic "daily"
- * seed, so determinism is exercised from Phase 0. Override with:
- *   ?seed=12345   fixed numeric seed
- *   ?seed=foo     hashed string seed
- *   ?seed=random  fresh non-deterministic seed each load
+ * Resolve the run seed (see README). Default: today's date -> a daily seed.
+ *   ?seed=12345 numeric · ?seed=foo hashed · ?seed=random fresh each load.
  */
 function resolveSeed(): number {
   const param = new URLSearchParams(location.search).get('seed')
@@ -115,7 +185,7 @@ function resolveSeed(): number {
     const n = Number(param)
     return Number.isFinite(n) ? n >>> 0 : seedFromString(param)
   }
-  const today = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
+  const today = new Date().toISOString().slice(0, 10)
   return seedFromString('swarmgeddon:' + today)
 }
 
@@ -123,26 +193,22 @@ function resolveSeed(): number {
 function makeDecor(rng: Rng, count: number): DecorSpeck[] {
   const out: DecorSpeck[] = []
   for (let i = 0; i < count; i++) {
-    out.push({
-      nx: rng.float(),
-      ny: rng.float(),
-      r: rng.range(1, 3.5),
-      alpha: rng.range(0.03, 0.1),
-    })
+    out.push({ nx: rng.float(), ny: rng.float(), r: rng.range(1, 3.5), alpha: rng.range(0.03, 0.1) })
   }
   return out
 }
 
-/** A simple ring + tick crosshair for desktop aim feedback. */
+/** Ring + tick crosshair for desktop aim feedback. */
 function buildCrosshair(): Container {
   const c = new Container()
   const g = new Graphics()
-  g.circle(0, 0, 10).stroke({ width: 1.5, color: COLORS.crosshair, alpha: 0.8 })
-  g.moveTo(-14, 0).lineTo(-5, 0).stroke({ width: 1.5, color: COLORS.crosshair, alpha: 0.8 })
-  g.moveTo(5, 0).lineTo(14, 0).stroke({ width: 1.5, color: COLORS.crosshair, alpha: 0.8 })
-  g.moveTo(0, -14).lineTo(0, -5).stroke({ width: 1.5, color: COLORS.crosshair, alpha: 0.8 })
-  g.moveTo(0, 5).lineTo(0, 14).stroke({ width: 1.5, color: COLORS.crosshair, alpha: 0.8 })
-  g.circle(0, 0, 1.5).fill(COLORS.crosshair)
+  const col = COLORS.crosshair
+  g.circle(0, 0, 10).stroke({ width: 1.5, color: col, alpha: 0.8 })
+  g.moveTo(-14, 0).lineTo(-5, 0).stroke({ width: 1.5, color: col, alpha: 0.8 })
+  g.moveTo(5, 0).lineTo(14, 0).stroke({ width: 1.5, color: col, alpha: 0.8 })
+  g.moveTo(0, -14).lineTo(0, -5).stroke({ width: 1.5, color: col, alpha: 0.8 })
+  g.moveTo(0, 5).lineTo(0, 14).stroke({ width: 1.5, color: col, alpha: 0.8 })
+  g.circle(0, 0, 1.5).fill(col)
   c.addChild(g)
   c.visible = false
   return c

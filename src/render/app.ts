@@ -8,10 +8,13 @@ import { COLORS } from '../config.ts'
  * `entities`, particles/floating-text in `fx`, HUD + touch sticks in `ui`.
  */
 export interface Layers {
+  /** Everything that should screen-shake. Offset this container for shake. */
+  world: Container
   floor: Container // arena background + grid + border
+  ichor: Container // persistent ichor render-texture (beneath entities)
   entities: Container // player, enemies, projectiles, pickups
   fx: Container // particles, gibs, floating numbers, screen-space effects
-  ui: Container // HUD, debug overlay, virtual sticks, crosshair
+  ui: Container // HUD, debug overlay, virtual sticks, crosshair (does NOT shake)
 }
 
 export interface GameRenderer {
@@ -44,12 +47,16 @@ export async function createRenderer(mount: HTMLElement): Promise<GameRenderer> 
   app.ticker.stop()
 
   const layers: Layers = {
+    world: new Container(),
     floor: new Container(),
+    ichor: new Container(),
     entities: new Container(),
     fx: new Container(),
     ui: new Container(),
   }
-  app.stage.addChild(layers.floor, layers.entities, layers.fx, layers.ui)
+  // `world` holds the shakeable game scene; `ui` stays rock-steady on top.
+  layers.world.addChild(layers.floor, layers.ichor, layers.entities, layers.fx)
+  app.stage.addChild(layers.world, layers.ui)
 
   return { app, layers }
 }

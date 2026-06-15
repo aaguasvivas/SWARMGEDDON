@@ -1,5 +1,5 @@
 import { Container, Graphics } from 'pixi.js'
-import { COLORS, PLAYER_RADIUS, PLAYER_SPEED } from '../config.ts'
+import { COLORS, PLAYER_MAX_HP, PLAYER_RADIUS, PLAYER_SPEED } from '../config.ts'
 import { clamp, lerp, lerpAngle, type Vec2 } from '../core/vec.ts'
 import type { Bounds } from './arena.ts'
 
@@ -24,6 +24,7 @@ export class Player {
 
   readonly radius = PLAYER_RADIUS
   readonly speed = PLAYER_SPEED
+  hp = PLAYER_MAX_HP
 
   constructor() {
     const g = new Graphics()

@@ -6,7 +6,9 @@ export interface DebugInfo {
   fps: number
   frameMs: number
   steps: number
-  entities: number
+  enemies: number
+  projectiles: number
+  particles: number
   inputType: string
   firing: boolean
   width: number
@@ -49,14 +51,15 @@ export class DebugOverlay {
   update(info: DebugInfo): void {
     if (!this.view.visible) return
     const low = info.fps > 0 && info.fps < 55 ? '  ⚠ LOW' : ''
+    const ents = info.enemies + info.projectiles + info.particles
     this.text.text =
-      `SWARMGEDDON · phase 0\n` +
+      `SWARMGEDDON · phase 1\n` +
       `fps   ${info.fps.toFixed(0).padStart(3)}${low}\n` +
       `frame ${info.frameMs.toFixed(1)}ms · steps ${info.steps}\n` +
-      `ents  ${info.entities}\n` +
+      `ents  ${ents}  (e${info.enemies} p${info.projectiles} fx${info.particles})\n` +
       `input ${info.inputType}${info.firing ? ' · FIRE' : ''}\n` +
       `view  ${info.width}×${info.height} @${info.dpr.toFixed(2)}x\n` +
       `seed  ${info.seed >>> 0}\n` +
-      `[\`] toggle`
+      `[\`] debug  [r] restart`
   }
 }
