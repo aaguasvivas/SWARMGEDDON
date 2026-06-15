@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">SWARMGEDDON</string>
+    <string name="title_activity_main">SWARMGEDDON</string>
+    <string name="package_name">com.swarmgeddon.app</string>
+    <string name="custom_url_scheme">com.swarmgeddon.app</string>
+</resources>

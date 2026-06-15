@@ -4,6 +4,7 @@ import { GameLoop } from './core/time.ts'
 import { Rng, seedFromString } from './core/rng.ts'
 import { initSafeArea, getInsets } from './platform/safeArea.ts'
 import { buzz, setHapticsEnabled } from './platform/haptics.ts'
+import { initNative, registerBackButton } from './platform/native.ts'
 import { createRenderer } from './render/app.ts'
 import { TextureRegistry } from './render/textures.ts'
 import { IchorLayer } from './render/ichorLayer.ts'
@@ -181,6 +182,17 @@ async function boot(): Promise<void> {
   toMenu()
   window.addEventListener('resize', layout)
   window.addEventListener('orientationchange', layout)
+
+  // Native shell glue (no-ops on web).
+  void initNative()
+  registerBackButton(() => {
+    if (modal.isOpen()) return true // swallow back while choosing a perk
+    if (screen !== 'menu') {
+      toMenu()
+      return true
+    }
+    return false // already at the menu -> let the OS exit the app
+  })
 
   window.addEventListener('keydown', (e) => {
     if (modal.isOpen()) {

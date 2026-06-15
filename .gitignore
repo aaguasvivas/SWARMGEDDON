@@ -25,10 +25,15 @@ pnpm-debug.log*
 logs/
 *.log
 
-# capacitor native build artifacts (added in Phase 4)
+# capacitor native build artifacts (the platform projects' own .gitignore files
+# also cover Pods/, build/, .gradle/, and the copied web `public/` assets).
 ios/App/Pods/
 ios/App/build/
+ios/DerivedData/
 android/.gradle/
 android/app/build/
 android/build/
 android/local.properties
+
+# regenerable PWA icon output from `npm run assets:generate`
+/icons/

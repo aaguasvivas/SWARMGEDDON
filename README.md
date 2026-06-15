@@ -23,10 +23,28 @@ npm run dev        # http://localhost:5173  (also exposed on your LAN for phones
 Other scripts:
 
 ```bash
-npm run build      # typecheck + production build -> dist/ (static, deploy anywhere)
-npm run preview    # serve the production build locally
-npm run typecheck  # tsc --noEmit
+npm run build           # typecheck + production build -> dist/ (static, installable PWA)
+npm run preview         # serve the production build locally
+npm run typecheck       # tsc --noEmit
+npm run assets:generate # regenerate native icons + splash from assets/*.svg
+
+# native shells (load the same dist/ build — see STORE.md for tooling/signing)
+npm run cap:ios         # build (capacitor mode) + sync + open Xcode
+npm run cap:android     # build (capacitor mode) + sync + open Android Studio
+npm run cap:sync        # build + copy web assets into both native projects
 ```
+
+## Cross-platform
+
+One codebase → **Web** (primary, incl. mobile browsers + installable PWA) and,
+via **Capacitor**, **iOS / iPad / Android** native shells that load the exact same
+web build. Platform differences (haptics, safe-area, status bar, splash, Android
+back button) live behind `src/platform/`; everything no-ops on web. Building +
+submitting the native apps is a manual, account-gated process — see
+**[STORE.md](STORE.md)**.
+
+Web deploys as static files (`dist/`) to any host (Cloudflare Pages / Netlify /
+GitHub Pages); the PWA installs and runs offline after first load.
 
 ### Controls
 
@@ -90,4 +108,7 @@ all inside a shakeable/warpable `world` container, with `ui` rock-steady on top.
 - **Phase 2** ✅ Data-driven weapons/enemies/perks/waveDirector, pickups, level-up draft.
 - **Phase 3** ✅ v1 content (10 weapons · 15 enemies · 25 perks), elites + **queen boss**,
   Endless + Daily Challenge, menu/game-over, persistence, settings, synth audio, share-card.
-- **Phase 4** — Capacitor iOS/Android wrap, PWA, icons/splash, `STORE.md`.
+- **Phase 4** ✅ Capacitor iOS + Android shells, platform wiring (haptics/safe-area/status
+  bar/splash/back), installable+offline PWA, icon/splash pipeline, `STORE.md`.
+
+**v1 complete.** Reskinning the fiction = swap the sprite atlas + content data, zero engine change.
