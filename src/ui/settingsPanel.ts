@@ -6,7 +6,7 @@ import { Button, Slider } from './button.ts'
 const MONO = 'ui-monospace, Menlo, Consolas, monospace'
 
 interface Row {
-  key: 'master' | 'sfx' | 'music' | 'shake' | 'ichor'
+  key: 'master' | 'sfx' | 'music' | 'shake' | 'ichor' | 'glow'
   label: Text
   value: Text
   slider: Slider
@@ -41,6 +41,7 @@ export class SettingsPanel {
         ['music', 'Music', 1],
         ['shake', 'Screen Shake', 1.5],
         ['ichor', 'Ichor', 1.5],
+        ['glow', 'Glow', 1.5],
       ] as const
     ).map(([key, name, scale]) => {
       const label = new Text({ text: name, style: { fontFamily: MONO, fontSize: 14, fill: COLORS.hudText } })

@@ -9,6 +9,8 @@ import { createRenderer } from './render/app.ts'
 import { TextureRegistry } from './render/textures.ts'
 import { IchorLayer } from './render/ichorLayer.ts'
 import { renderEntities } from './render/entityRenderer.ts'
+import { PostFX } from './render/postfx.ts'
+import { Vignette } from './render/vignette.ts'
 import { AudioEngine } from './audio/audio.ts'
 import { Arena, type DecorSpeck } from './game/arena.ts'
 import { Player } from './game/player.ts'
@@ -66,10 +68,15 @@ async function boot(): Promise<void> {
 
   const player = new Player()
   const world = new World(sim, arena, player, ichor, audio, layers, texReg)
-  layers.world.addChild(player.view)
+  layers.scene.addChild(player.view) // above the swarm, inside the filtered scene
+
+  // Bloom + grade over the game scene (UI stays crisp & unbloomed). Applied to
+  // `scene` (identity transform), not `world` (which carries the warp pivot).
+  const postFX = new PostFX(layers.scene)
 
   const input = new InputManager(app.canvas)
   input.setEnabled(false)
+  const vignette = new Vignette()
   const crosshair = buildCrosshair()
   const hurtOverlay = new Graphics()
   const hud = new Hud()
@@ -78,8 +85,9 @@ async function boot(): Promise<void> {
   const gameOver = new GameOver()
   const settingsPanel = new SettingsPanel()
   const debug = new DebugOverlay()
+  // vignette sits at the bottom of the UI (above the world, below the HUD).
   layers.ui.addChild(
-    hud.view, input.touch.view, hurtOverlay, crosshair,
+    vignette.view, hud.view, input.touch.view, hurtOverlay, crosshair,
     modal.view, mainMenu.view, gameOver.view, settingsPanel.view, debug.view,
   )
 
@@ -90,6 +98,7 @@ async function boot(): Promise<void> {
     audio.setVolumes(s.master, s.sfx, s.music)
     ichor.intensityMul = s.ichor
     shakeMul = s.shake
+    postFX.setIntensity(s.glow)
     setHapticsEnabled(s.haptics)
   }
   applySettings(settings)
@@ -168,6 +177,7 @@ async function boot(): Promise<void> {
     ichor.resize(arena.bounds.w, arena.bounds.h, arena.bounds.x, arena.bounds.y)
     hud.layout(w, h, insets)
     debug.layout(insets)
+    vignette.resize(w, h)
     modal.setScreen(w, h)
     mainMenu.layout(w, h)
     gameOver.layout(w, h)
@@ -180,6 +190,9 @@ async function boot(): Promise<void> {
   }
   layout()
   toMenu()
+  // Bind to the renderer's own resize event (authoritative — fires exactly when
+  // `resizeTo: window` updates app.screen) plus window events as a backstop.
+  app.renderer.on('resize', layout)
   window.addEventListener('resize', layout)
   window.addEventListener('orientationchange', layout)
 
@@ -328,6 +341,8 @@ async function boot(): Promise<void> {
   if (import.meta.env.DEV) {
     ;(window as unknown as { __SWARM: unknown }).__SWARM = {
       world,
+      app,
+      setGlow: (v: number) => postFX.setIntensity(v),
       get screen() {
         return screen
       },

@@ -1,4 +1,5 @@
 import { Container, Graphics, Text } from 'pixi.js'
+import { GlowFilter } from 'pixi-filters'
 import { COLORS } from '../config.ts'
 import { dailyCompletedToday, loadBest } from '../state/persistence.ts'
 import type { RunMode } from '../game/world.ts'
@@ -28,6 +29,7 @@ export class MainMenu {
   constructor() {
     this.title = new Text({ text: 'SWARMGEDDON', style: { fontFamily: MONO, fontSize: 46, fontWeight: 'bold', fill: COLORS.player, letterSpacing: 2 } })
     this.title.anchor.set(0.5)
+    this.title.filters = [new GlowFilter({ color: COLORS.player, distance: 16, outerStrength: 2.2, innerStrength: 0, quality: 0.3 })]
     this.tagline = new Text({ text: 'hold the line · drown the hive in ichor', style: { fontFamily: MONO, fontSize: 14, fill: COLORS.hudDim } })
     this.tagline.anchor.set(0.5)
     this.info = new Text({ text: '', style: { fontFamily: MONO, fontSize: 13, fill: COLORS.hudText, align: 'center', lineHeight: 19 } })

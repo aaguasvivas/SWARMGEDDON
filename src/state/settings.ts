@@ -11,6 +11,7 @@ export interface Settings {
   music: number
   shake: number
   ichor: number
+  glow: number
   haptics: boolean
 }
 
@@ -20,6 +21,7 @@ export const DEFAULT_SETTINGS: Settings = {
   music: 0.55,
   shake: 1,
   ichor: 1,
+  glow: 1,
   haptics: true,
 }
 

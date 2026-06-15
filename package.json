@@ -24,6 +24,7 @@
     "@capacitor/preferences": "^6.0.4",
     "@capacitor/splash-screen": "^6.0.4",
     "@capacitor/status-bar": "^6.0.3",
+    "pixi-filters": "^6.1.5",
     "pixi.js": "^8.6.6"
   },
   "devDependencies": {

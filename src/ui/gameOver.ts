@@ -1,4 +1,5 @@
 import { Container, Graphics, Text } from 'pixi.js'
+import { GlowFilter } from 'pixi-filters'
 import { COLORS } from '../config.ts'
 import type { RunResult } from '../state/persistence.ts'
 import { Button } from './button.ts'
@@ -30,6 +31,7 @@ export class GameOver {
   constructor() {
     this.title = new Text({ text: 'OVERRUN', style: { fontFamily: MONO, fontSize: 40, fontWeight: 'bold', fill: COLORS.hurtFlash, letterSpacing: 3 } })
     this.title.anchor.set(0.5)
+    this.title.filters = [new GlowFilter({ color: COLORS.hurtFlash, distance: 14, outerStrength: 2, innerStrength: 0, quality: 0.3 })]
     this.best = new Text({ text: '', style: { fontFamily: MONO, fontSize: 15, fontWeight: 'bold', fill: 0xffe066 } })
     this.best.anchor.set(0.5)
     this.stats = new Text({ text: '', style: { fontFamily: MONO, fontSize: 16, fill: COLORS.hudText, align: 'center', lineHeight: 24 } })

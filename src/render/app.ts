@@ -8,8 +8,12 @@ import { COLORS } from '../config.ts'
  * `entities`, particles/floating-text in `fx`, HUD + touch sticks in `ui`.
  */
 export interface Layers {
-  /** Everything that should screen-shake. Offset this container for shake. */
+  /** Shake/warp transform container (pivot at screen center). Do NOT filter
+   *  this — filters + a pivot mis-place the result. */
   world: Container
+  /** Identity-transform child that holds the game scene and carries the bloom
+   *  filter (so the filter renders in clean local space). */
+  scene: Container
   floor: Container // arena background + grid + border
   ichor: Container // persistent ichor render-texture (beneath entities)
   entities: Container // player, enemies, projectiles, pickups
@@ -48,14 +52,16 @@ export async function createRenderer(mount: HTMLElement): Promise<GameRenderer> 
 
   const layers: Layers = {
     world: new Container(),
+    scene: new Container(),
     floor: new Container(),
     ichor: new Container(),
     entities: new Container(),
     fx: new Container(),
     ui: new Container(),
   }
-  // `world` holds the shakeable game scene; `ui` stays rock-steady on top.
-  layers.world.addChild(layers.floor, layers.ichor, layers.entities, layers.fx)
+  // world (shake/warp transform) -> scene (filtered, identity) -> content.
+  layers.scene.addChild(layers.floor, layers.ichor, layers.entities, layers.fx)
+  layers.world.addChild(layers.scene)
   app.stage.addChild(layers.world, layers.ui)
 
   // Enable Pixi's event system so interactive UI (the level-up cards) gets
