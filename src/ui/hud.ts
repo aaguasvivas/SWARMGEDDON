@@ -18,8 +18,12 @@ export class Hud {
   private levelText: Text
   private stats: Text
   private weaponLabel: Text
+  private bossBack = new Graphics()
+  private bossFill = new Graphics()
+  private bossLabel: Text
 
   private w = 0
+  private h = 0
   private insets: Insets = { top: 0, right: 0, bottom: 0, left: 0 }
 
   constructor() {
@@ -31,11 +35,14 @@ export class Hud {
     this.stats.anchor.set(1, 0)
     this.weaponLabel = new Text({ text: '', style: { fontFamily: mono, fontSize: 14, fontWeight: 'bold', fill: COLORS.hudText, dropShadow: shadow } })
     this.weaponLabel.anchor.set(0.5, 1)
-    this.view.addChild(this.back, this.hpFill, this.xpFill, this.levelText, this.stats, this.weaponLabel)
+    this.bossLabel = new Text({ text: '', style: { fontFamily: mono, fontSize: 12, fontWeight: 'bold', fill: 0xff6aa8, dropShadow: shadow } })
+    this.bossLabel.anchor.set(0.5, 1)
+    this.view.addChild(this.back, this.hpFill, this.xpFill, this.levelText, this.stats, this.weaponLabel, this.bossBack, this.bossFill, this.bossLabel)
   }
 
   layout(w: number, h: number, insets: Insets): void {
     this.w = w
+    this.h = h
     this.insets = insets
     const cx = insets.left + (w - insets.left - insets.right) / 2
     const x = cx - BAR_W / 2
@@ -75,5 +82,23 @@ export class Hud {
 
     const ammo = world.ammo < 0 ? '∞' : String(world.ammo) // ∞ for the default
     this.weaponLabel.text = `${world.weapon.name}   ${ammo}`
+
+    // Boss health bar (bottom-center, above the weapon label).
+    this.bossBack.clear()
+    this.bossFill.clear()
+    if (world.bossAlive && world.boss) {
+      const bw = Math.min(440, this.w - this.insets.left - this.insets.right - 60)
+      const bx = cx - bw / 2
+      const by = this.h - this.insets.bottom - 48
+      const frac = Math.max(0, Math.min(1, world.boss.hp / world.boss.maxHp))
+      this.bossBack.roundRect(bx - 2, by - 2, bw + 4, 14, 5).fill({ color: 0x000000, alpha: 0.4 })
+      this.bossBack.roundRect(bx, by, bw, 10, 4).fill(0x2a0d1d)
+      if (frac > 0) this.bossFill.roundRect(bx, by, bw * frac, 10, 4).fill(0xff3a8a)
+      this.bossLabel.text = '⬢ THE QUEEN'
+      this.bossLabel.position.set(cx, by - 4)
+      this.bossLabel.visible = true
+    } else {
+      this.bossLabel.visible = false
+    }
   }
 }

@@ -36,6 +36,8 @@ export class IchorLayer {
   // kill), so heavy combat adds zero steady-state allocation.
   private readonly stamps: StampReq[] = []
   private stampCount = 0
+  /** Settings-driven intensity multiplier on stamp alpha. */
+  intensityMul = 1
   private originX = 0
   private originY = 0
 
@@ -94,7 +96,7 @@ export class IchorLayer {
     req.scale = rng.range(ICHOR_MIN_SCALE, ICHOR_MAX_SCALE)
     req.rot = rng.angle()
     req.tint = rng.bool(0.85) ? COLORS.ichorA : COLORS.ichorB
-    req.alpha = ICHOR_INTENSITY * rng.range(0.6, 1)
+    req.alpha = ICHOR_INTENSITY * this.intensityMul * rng.range(0.6, 1)
     this.stampCount++
   }
 

@@ -15,13 +15,21 @@ export function renderEntities(world: World, alpha: number): void {
   for (let i = 0; i < enemies.length; i++) {
     const e = enemies[i]!
     const s = e.sprite
-    const base = e.def.scale
     s.x = lerp(e.prevX, e.x, alpha)
     s.y = lerp(e.prevY, e.y, alpha)
     s.rotation = lerpAngle(e.prevFacing, e.facing, alpha)
+    if (e.submerged) {
+      // A faint burrow mound while underground (intangible).
+      s.scale.set(e.def.scale * 0.6)
+      s.alpha = 0.28
+      s.tint = 0x2a1d10
+      continue
+    }
+    s.alpha = 1
+    const base = e.def.scale * (e.buffed > 0 ? 1.08 : 1)
     const wob = Math.sin(t * 14 + e.animPhase)
     s.scale.set(base * (1 + wob * 0.1), base * (1 - wob * 0.1))
-    s.tint = e.flash > 0 ? COLORS.swarmerHurt : e.def.tint
+    s.tint = e.flash > 0 ? COLORS.swarmerHurt : e.slow > 0 ? 0x7fd8ff : e.def.tint
   }
 
   renderProjectiles(world, alpha)

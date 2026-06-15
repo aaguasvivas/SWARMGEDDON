@@ -1,26 +1,33 @@
 import { distSq } from '../core/vec.ts'
+import { PICKUP_WEAPON_IDS } from '../content/weapons.ts'
+import {
+  announce,
+  spawnChainArc,
+  spawnDamageNumber,
+  spawnExplosion,
+  spawnGibs,
+  spawnHitSpark,
+  spawnImpact,
+} from '../effects/fx.ts'
 import { spawnAcidPool } from './acid.ts'
+import { dropGem, spawnWeaponDrop } from './pickups.ts'
 import { spawnEnemy } from './spawn.ts'
-import { dropGem } from './pickups.ts'
-import { spawnDamageNumber, spawnGibs, spawnHitSpark, spawnImpact } from '../effects/fx.ts'
 import type { Enemy } from '../game/enemy.ts'
 import type { Projectile } from '../game/projectile.ts'
 import type { World } from '../game/world.ts'
 
-/** Padding for the broad-phase query so a fast bullet can't tunnel past a large
- *  enemy whose center sits just outside the bullet radius. */
-const ENEMY_MAX_RADIUS = 24
+const ENEMY_MAX_RADIUS = 48 // padding for broad-phase (queen is large)
 
 /**
- * All circle-overlap resolution for the tick:
- *   - player projectile -> enemy: crit roll, beetle frontal armor, damage,
- *     knockback, hit FX, pierce/expire,
- *   - enemy contact -> continuous player damage,
- *   - enemy acid projectile -> player: chunk damage + a pool,
- *   - player death -> juice + hit-stop -> deferred restart.
+ * All circle-overlap resolution for the tick: player projectiles vs enemies
+ * (crit, armor, slow, chain, explosion, pierce), enemy contact + thorns, enemy
+ * acid projectiles vs player (dodge), and player death (with revives) -> game
+ * over. Submerged burrowers are intangible.
  */
 export function collisionSystem(world: World, dt: number): void {
   const buf = world.queryBuf
+  const m = world.mods
+  const pl = world.player
 
   // Player projectiles vs enemies.
   const projs = world.projectiles.active
@@ -30,7 +37,7 @@ export function collisionSystem(world: World, dt: number): void {
     const n = world.hash.query(p.x, p.y, p.radius + ENEMY_MAX_RADIUS, buf)
     for (let j = 0; j < n; j++) {
       const e = buf[j]!
-      if (!e.alive) continue
+      if (!e.alive || e.submerged) continue
       const rr = p.radius + e.radius
       if (distSq(p.x, p.y, e.x, e.y) < rr * rr) {
         applyHit(world, e, p)
@@ -38,6 +45,7 @@ export function collisionSystem(world: World, dt: number): void {
         if (p.pierce > 0) {
           p.pierce--
         } else {
+          if (p.explodeRadius > 0) explode(world, p.x, p.y, p.explodeRadius, p.explodeDamage)
           p.alive = false
           break
         }
@@ -45,42 +53,40 @@ export function collisionSystem(world: World, dt: number): void {
     }
   }
 
-  const pl = world.player
-
-  // Enemy contact -> continuous player damage.
+  // Enemy contact -> continuous player damage (+ thorns back).
   const enemies = world.enemies.active
   for (let i = 0; i < enemies.length; i++) {
     const e = enemies[i]!
+    if (e.submerged) continue
     const rr = e.radius + pl.radius
     if (distSq(e.x, e.y, pl.x, pl.y) < rr * rr) {
-      pl.hp -= e.damage * dt
+      pl.hp -= e.damage * dt * (1 - m.damageReduction)
       world.hurtFlash = Math.min(0.7, world.hurtFlash + e.damage * dt * 0.05)
       world.juice.addTrauma(0.02)
+      if (m.thorns > 0) dealDamage(world, e, m.thorns * dt)
     }
   }
 
-  // Enemy acid projectiles -> player.
+  // Enemy acid/blast projectiles -> player (dodge can negate).
   const eps = world.enemyProjectiles.active
   for (let i = 0; i < eps.length; i++) {
     const p = eps[i]!
     if (!p.alive) continue
     const rr = p.radius + pl.radius
     if (distSq(p.x, p.y, pl.x, pl.y) < rr * rr) {
-      pl.hp -= p.damage
+      if (m.dodge > 0 && world.rng.float() < m.dodge) {
+        p.alive = false
+        continue
+      }
+      pl.hp -= p.damage * (1 - m.damageReduction)
       world.hurtFlash = Math.min(0.85, world.hurtFlash + 0.3)
       world.juice.addTrauma(0.08)
-      spawnAcidPool(world, p.x, p.y)
+      if (p.leavesAcid) spawnAcidPool(world, p.x, p.y)
       p.alive = false
     }
   }
 
-  if (pl.hp <= 0 && !world.pendingRestart) {
-    pl.hp = 0
-    world.hurtFlash = 1
-    world.juice.addTrauma(1)
-    world.juice.addHitstop(0.14)
-    world.pendingRestart = true
-  }
+  handleDeath(world)
 }
 
 function applyHit(world: World, e: Enemy, p: Projectile): void {
@@ -89,50 +95,157 @@ function applyHit(world: World, e: Enemy, p: Projectile): void {
   const crit = m.critChance > 0 && world.rng.float() < m.critChance
   if (crit) dmg *= m.critMul
 
-  // Beetle-style frontal armor: a bullet travelling roughly opposite the enemy's
-  // facing is hitting its armored front.
+  // Beetle-style frontal armor.
   if (e.def.frontArmor) {
     const sp = Math.hypot(p.vx, p.vy) || 1
     const dot = (p.vx / sp) * Math.cos(e.facing) + (p.vy / sp) * Math.sin(e.facing)
     if (dot < -0.25) dmg *= 1 - e.def.frontArmor
   }
 
-  e.hp -= dmg
-  e.flash = 0.07
-
-  // Knockback: position nudge along bullet travel.
+  // Knockback nudge (heavier enemies shrug it off).
   const sp = Math.hypot(p.vx, p.vy) || 1
-  const k = (p.knockback * 0.02) / (e.radius / 14) // heavier enemies shrug it off
+  const k = (p.knockback * 0.02) / (e.radius / 14)
   e.x += (p.vx / sp) * k
   e.y += (p.vy / sp) * k
 
+  if (m.slowOnHit > 0) {
+    e.slow = 1.2
+    e.slowFactor = m.slowOnHit
+  }
+
   spawnHitSpark(world, p.x, p.y, p.vx, p.vy)
   spawnDamageNumber(world, e.x, e.y, dmg, crit)
+  world.audio.play('hit')
 
+  dealDamage(world, e, dmg)
+
+  if (p.chain > 0) chainLightning(world, e, p, dmg * 0.6)
+}
+
+/** Apply raw damage and resolve death. Safe to call on the same enemy twice. */
+function dealDamage(world: World, e: Enemy, dmg: number): void {
+  if (!e.alive) return
+  e.hp -= dmg
+  e.flash = 0.07
   if (e.hp <= 0) killEnemy(world, e)
 }
 
+/** Chain lightning hops to nearby enemies (separate scratch buffer so it can run
+ *  inside the projectile loop without clobbering its query). */
+function chainLightning(world: World, from: Enemy, p: Projectile, dmg: number): void {
+  const buf2 = world.queryBuf2
+  let cx = from.x
+  let cy = from.y
+  let prev: Enemy = from
+  for (let jump = 0; jump < p.chain; jump++) {
+    const n = world.hash.query(cx, cy, p.chainRange, buf2)
+    let best: Enemy | null = null
+    let bestD = Infinity
+    for (let k = 0; k < n; k++) {
+      const o = buf2[k]!
+      if (!o.alive || o.submerged || o === from || o === prev) continue
+      const dd = distSq(cx, cy, o.x, o.y)
+      if (dd < bestD) {
+        bestD = dd
+        best = o
+      }
+    }
+    if (!best) break
+    spawnChainArc(world, cx, cy, best.x, best.y)
+    cx = best.x
+    cy = best.y
+    prev = best
+    dealDamage(world, best, dmg)
+  }
+}
+
+/** AoE explosion (rockets / explosive rounds). */
+function explode(world: World, x: number, y: number, radius: number, dmg: number): void {
+  spawnExplosion(world, x, y, radius)
+  world.ichor.queueStamp(x, y, world.rng)
+  world.juice.addTrauma(0.18)
+  world.audio.play('heavy')
+  const buf2 = world.queryBuf2
+  const n = world.hash.query(x, y, radius, buf2)
+  for (let k = 0; k < n; k++) {
+    const o = buf2[k]!
+    if (!o.alive || o.submerged) continue
+    if (distSq(x, y, o.x, o.y) < radius * radius) dealDamage(world, o, dmg)
+  }
+}
+
 function killEnemy(world: World, e: Enemy): void {
+  if (!e.alive) return
   e.alive = false
   world.kills++
+  const def = e.def
 
-  // SIGNATURE: stamp the floor with ichor, colored toward the enemy's gore.
   world.ichor.queueStamp(e.x, e.y, world.rng)
-  spawnGibs(world, e.x, e.y, e.def.gibCount, e.def.gibColor)
-  world.juice.addTrauma(0.05)
+  spawnGibs(world, e.x, e.y, def.gibCount, def.gibColor)
+  world.juice.addTrauma(def.boss ? 0.6 : def.elite ? 0.2 : 0.05)
+  world.audio.play('kill')
 
   if (world.mods.lifestealPerKill > 0) {
     world.player.hp = Math.min(world.player.maxHp, world.player.hp + world.mods.lifestealPerKill)
   }
 
-  dropGem(world, e.x, e.y, e.def.xp)
+  dropGem(world, e.x, e.y, def.xp)
 
-  // Splitters burst into offspring.
-  if (e.def.behavior === 'splitter' && e.def.splitInto) {
-    const count = e.def.splitCount ?? 2
+  if (def.behavior === 'splitter' && def.splitInto) {
+    const count = def.splitCount ?? 2
     for (let i = 0; i < count; i++) {
       const a = world.rng.angle()
-      spawnEnemy(world, e.def.splitInto, e.x + Math.cos(a) * 14, e.y + Math.sin(a) * 14)
+      spawnEnemy(world, def.splitInto, e.x + Math.cos(a) * 14, e.y + Math.sin(a) * 14)
     }
   }
+
+  if (def.boss) {
+    world.bossAlive = false
+    world.boss = null
+    explode(world, e.x, e.y, 140, 0)
+    world.juice.addTrauma(1)
+    spawnWeaponDrop(world, e.x, e.y, world.rng.pick(PICKUP_WEAPON_IDS))
+    for (let i = 0; i < 6; i++) {
+      const a = world.rng.angle()
+      dropGem(world, e.x + Math.cos(a) * 24, e.y + Math.sin(a) * 24, 20)
+    }
+    announce(world, 'QUEEN SLAIN', e.x, e.y - 36, 0xffe066)
+  } else if (def.elite && world.rng.bool(0.5)) {
+    spawnWeaponDrop(world, e.x, e.y, world.rng.pick(PICKUP_WEAPON_IDS))
+  }
+}
+
+/** Player death -> revive if available, else trigger the deferred game over. */
+function handleDeath(world: World): void {
+  const pl = world.player
+  if (pl.hp > 0 || world.pendingGameOver) return
+
+  if (world.mods.revives > world.revivesUsed) {
+    world.revivesUsed++
+    pl.hp = pl.maxHp * 0.5
+    world.hurtFlash = 1
+    world.juice.addTrauma(0.8)
+    world.audio.play('levelup')
+    announce(world, 'SECOND WIND', pl.x, pl.y - 30, 0x7dffd6)
+    // Shove nearby enemies back so the revive isn't instant death.
+    const enemies = world.enemies.active
+    for (let i = 0; i < enemies.length; i++) {
+      const e = enemies[i]!
+      const dx = e.x - pl.x
+      const dy = e.y - pl.y
+      const d = Math.hypot(dx, dy) || 1
+      if (d < 220) {
+        e.x += (dx / d) * (220 - d)
+        e.y += (dy / d) * (220 - d)
+      }
+    }
+    return
+  }
+
+  pl.hp = 0
+  world.hurtFlash = 1
+  world.juice.addTrauma(1)
+  world.juice.addHitstop(0.16)
+  world.audio.play('death')
+  world.pendingGameOver = true
 }

@@ -1,58 +1,92 @@
 import { MAX_ENEMIES } from '../config.ts'
 import { ENEMIES } from '../content/enemies.ts'
-import { pickEnemy, spawnBatch, spawnInterval } from '../content/waveDirector.ts'
+import {
+  BOSS_INTERVAL,
+  ELITE_FIRST,
+  ELITE_INTERVAL,
+  pickEnemy,
+  spawnBatch,
+  spawnInterval,
+} from '../content/waveDirector.ts'
+import { announce } from '../effects/fx.ts'
+import type { Enemy } from '../game/enemy.ts'
 import type { World } from '../game/world.ts'
 
 /**
- * Wave director driver. Pulls the spawn-rate/batch curves and the weighted enemy
- * pick from the data-driven wave table, and streams the chosen enemies in from
- * the arena edges. Difficulty escalation is entirely in the wave-table data.
+ * Wave director driver. Streams regular enemies from the edges per the data
+ * curves, and layers in hive-guardian elites and the colossal queen boss on
+ * their own cadences (one queen at a time).
  */
 export function spawnSystem(world: World, dt: number): void {
-  world.spawnTimer -= dt
   const t = world.time
+
+  world.spawnTimer -= dt
   const interval = spawnInterval(t)
   const batch = spawnBatch(t)
-
   let guard = 0
   while (world.spawnTimer <= 0 && guard++ < 64) {
     world.spawnTimer += interval
     for (let i = 0; i < batch; i++) spawnFromEdge(world, pickEnemy(world.rng, t))
   }
+
+  // Elites: one hive-guardian per cadence, intentionally stepping up to a small
+  // pack deep into a run (+1 every 140s) as a late-game pressure ramp.
+  if (t >= ELITE_FIRST) {
+    world.eliteTimer -= dt
+    if (world.eliteTimer <= 0) {
+      world.eliteTimer = ELITE_INTERVAL
+      const n = 1 + Math.floor((t - ELITE_FIRST) / 140)
+      for (let i = 0; i < n; i++) spawnFromEdge(world, 'guardian')
+      world.juice.addTrauma(0.3)
+    }
+  }
+
+  // Boss.
+  world.bossTimer -= dt
+  if (world.bossTimer <= 0 && !world.bossAlive) {
+    world.bossTimer = BOSS_INTERVAL
+    spawnBoss(world)
+  }
 }
 
-function spawnFromEdge(world: World, defId: string): void {
+function edgePoint(world: World, margin: number): { x: number; y: number } {
   const b = world.arena.bounds
   const rng = world.rng
-  const margin = 34
-  let x = 0
-  let y = 0
   switch (rng.int(0, 3)) {
     case 0:
-      x = rng.range(b.x, b.x + b.w)
-      y = b.y - margin
-      break
+      return { x: rng.range(b.x, b.x + b.w), y: b.y - margin }
     case 1:
-      x = b.x + b.w + margin
-      y = rng.range(b.y, b.y + b.h)
-      break
+      return { x: b.x + b.w + margin, y: rng.range(b.y, b.y + b.h) }
     case 2:
-      x = rng.range(b.x, b.x + b.w)
-      y = b.y + b.h + margin
-      break
+      return { x: rng.range(b.x, b.x + b.w), y: b.y + b.h + margin }
     default:
-      x = b.x - margin
-      y = rng.range(b.y, b.y + b.h)
+      return { x: b.x - margin, y: rng.range(b.y, b.y + b.h) }
   }
-  spawnEnemy(world, defId, x, y)
+}
+
+function spawnFromEdge(world: World, defId: string): Enemy | null {
+  const p = edgePoint(world, 34)
+  return spawnEnemy(world, defId, p.x, p.y)
+}
+
+function spawnBoss(world: World): void {
+  const p = edgePoint(world, 70)
+  const queen = spawnEnemy(world, 'queen', p.x, p.y)
+  if (!queen) return
+  world.bossAlive = true
+  world.boss = queen
+  world.audio.play('boss')
+  world.juice.addTrauma(0.8)
+  announce(world, 'THE QUEEN AWAKENS', world.player.x, world.player.y - 40, 0xff3a8a)
 }
 
 /**
  * Spawn one enemy of `defId` at (x,y). Stats come from the registry; HP and
- * speed ramp with elapsed time. Also used for splitter offspring (death-time).
+ * speed ramp with time. Returns the enemy (or null if at the cap). Also used for
+ * splitter offspring and queen broods.
  */
-export function spawnEnemy(world: World, defId: string, x: number, y: number): void {
-  if (world.enemies.size >= MAX_ENEMIES) return
+export function spawnEnemy(world: World, defId: string, x: number, y: number): Enemy | null {
+  if (world.enemies.size >= MAX_ENEMIES) return null
   const def = ENEMIES[defId]!
   const rng = world.rng
   const e = world.enemies.acquire()
@@ -64,12 +98,27 @@ export function spawnEnemy(world: World, defId: string, x: number, y: number): v
   e.vy = 0
   e.facing = e.prevFacing = 0
   e.hp = e.maxHp = Math.round(def.hp + world.time * def.hpRamp)
-  e.speed = def.speed * (1 + world.time * 0.0025)
+  e.speed = def.speed * (1 + world.time * 0.0022)
   e.radius = def.radius
   e.damage = def.damage
-  e.fireTimer = def.fireCooldown ? rng.range(0.4, def.fireCooldown) : 0
   e.flash = 0
+  e.buffed = 0
+  e.slow = 0
+  e.slowFactor = 0
+  e.enraged = false
+  e.submerged = false
+  e.stateTimer = 0
   e.animPhase = rng.angle()
+
+  // Behavior-specific init.
+  if (def.behavior === 'burrower' && def.burrow) {
+    e.submerged = true
+    e.stateTimer = def.burrow.underTime
+  } else if (def.behavior === 'teleporter' && def.teleport) {
+    e.stateTimer = def.teleport.cooldown
+  }
+  if (def.brood) e.fireTimer = def.brood.cooldown
+  else e.fireTimer = def.fireCooldown ? rng.range(0.4, def.fireCooldown) : 0
 
   world.texReg.applySprite(e.sprite, def.sprite)
   const s = e.sprite
@@ -77,10 +126,10 @@ export function spawnEnemy(world: World, defId: string, x: number, y: number): v
   s.alpha = 1
   s.tint = def.tint
   s.scale.set(def.scale)
+  return e
 }
 
-/** Dev-only stress helper: instantly spawn `n` swarmers from the edges.
- *  Guarded behind import.meta.env.DEV at the call site -> DCE'd in prod. */
+/** Dev-only stress helper. DCE'd from prod via the import.meta.env.DEV guard. */
 export function debugFloodSwarmers(world: World, n: number): void {
   for (let i = 0; i < n; i++) spawnFromEdge(world, 'swarmer')
 }

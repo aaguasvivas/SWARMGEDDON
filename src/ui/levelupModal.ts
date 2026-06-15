@@ -1,4 +1,4 @@
-import { Container, Graphics, Text } from 'pixi.js'
+import { Container, Graphics, Rectangle, Text } from 'pixi.js'
 import { COLORS } from '../config.ts'
 import type { PerkDef } from '../content/perks.ts'
 
@@ -126,6 +126,7 @@ export class LevelUpModal {
       const cx = horizontal ? startX + i * (cardW + gap) : startX
       const cy = horizontal ? startY : startY + i * (cardH + gap)
       c.root.position.set(cx, cy)
+      c.root.hitArea = new Rectangle(0, 0, cardW, cardH) // explicit, so taps register reliably
 
       c.bg.clear()
       c.bg.roundRect(0, 0, cardW, cardH, 10).fill({ color: 0x0e1726, alpha: 0.96 })

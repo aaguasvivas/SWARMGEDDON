@@ -28,15 +28,24 @@ npm run preview    # serve the production build locally
 npm run typecheck  # tsc --noEmit
 ```
 
-### Controls (Phase 0)
+### Controls
 
-| Device         | Move              | Aim            | Fire (wired Phase 1) |
-| -------------- | ----------------- | -------------- | -------------------- |
-| Keyboard/Mouse | WASD / arrows     | mouse pointer  | left mouse button    |
-| Touch          | left-half stick   | right-half stick | right stick held   |
-| Gamepad        | left stick        | right stick    | RT / right stick     |
+| Device         | Move              | Aim              | Fire             | Menus      |
+| -------------- | ----------------- | ---------------- | ---------------- | ---------- |
+| Keyboard/Mouse | WASD / arrows     | mouse pointer    | hold left button | click      |
+| Touch          | left-half stick   | right-half stick | right stick held | tap        |
+| Gamepad        | left stick        | right stick      | RT / right stick | —          |
 
-Press **`` ` ``** (backtick) to toggle the debug overlay.
+On level-up, pick a perk by clicking a card or pressing **1 / 2 / 3**.
+In-run: **Esc** → menu, **R** → restart. Press **`` ` ``** to toggle the debug overlay.
+
+### Modes
+
+- **Endless** — random seed, survive as long as you can.
+- **Daily Challenge** — everyone gets the same seeded run for the day.
+
+On death the run is scored (time + kills + level), your best is saved locally, and
+you can generate a shareable PNG run-card.
 
 ### Seeds & determinism
 
@@ -55,28 +64,30 @@ Fixed-timestep simulation (60 Hz) decoupled from render, with interpolation:
 
 ```
 src/
-  main.ts            bootstrap: Pixi app + game loop + wiring
+  main.ts            bootstrap + game state machine (menu/playing/gameover)
   config.ts          engine tunables + alien-hive palette
-  core/              vec (math), rng (seeded PRNG), time (fixed-step loop)
-  render/            app (Pixi init + layer stack)
-  game/              arena (bounded play-field), player
-  input/             input (kbd+mouse+gamepad aggregator), touchControls (dual sticks)
-  platform/          safeArea (notch insets; Capacitor-backed in Phase 4)
-  ui/                debugOverlay
+  core/              vec, rng (seeded PRNG), time (fixed-step loop), pool, spatialHash
+  audio/             synthesized WebAudio engine (SFX + adaptive music)
+  content/           weapons, enemies, perks, waveDirector, assets — pure data
+  systems/           spawn, ai, weapons, projectiles, collision, pickups, acid, particles
+  effects/           juice (shake/hit-stop), fx (particles/gibs/numbers)
+  game/              world (run state), arena, player, enemy/projectile/particle/pickup/acid
+  render/            app (layers), textures (atlas bake), ichorLayer (RT), entityRenderer
+  input/             input aggregator (kbd+mouse+gamepad), touchControls (dual sticks)
+  state/             settings, persistence (best scores, daily completion)
+  platform/          storage, haptics, safeArea (Capacitor-backed in Phase 4)
+  share/             shareCard (canvas → PNG)
+  ui/                hud, menus, level-up modal, settings, button/slider, debug
 ```
 
-Layer draw order: `floor` → `entities` → `fx` → `ui`. The persistent ichor
-render-texture (signature feature) lands just above `floor` in Phase 1.
+Layer draw order: `floor` → `ichor` (persistent gore RT) → `entities` → `fx`,
+all inside a shakeable/warpable `world` container, with `ui` rock-steady on top.
 
 ## Roadmap
 
-- **Phase 0** ✅ Scaffolding, fixed-step loop, seeded RNG, resize/DPR/safe-area,
-  controllable player (KBM/touch/gamepad), debug overlay.
-- **Phase 1** — Entity store + pools + spatial hash, sprite atlas pipeline, first
-  enemy + weapon, circle collision, juice (shake/hit-stop/gibs), **persistent
-  ichor-staining terrain**.
-- **Phase 2** — Data-driven weapons/enemies/perks/waveDirector, pickups, XP +
-  level-up perk draft, vertical slice of content.
-- **Phase 3** — Full v1 content, elites + queen boss, Endless + Daily Challenge,
-  HUD, persistence, settings, audio, share-card.
+- **Phase 0** ✅ Scaffolding, fixed-step loop, seeded RNG, resize/DPR/safe-area, input.
+- **Phase 1** ✅ Pools + spatial hash, sprite pipeline, combat core, juice, **ichor terrain**.
+- **Phase 2** ✅ Data-driven weapons/enemies/perks/waveDirector, pickups, level-up draft.
+- **Phase 3** ✅ v1 content (10 weapons · 15 enemies · 25 perks), elites + **queen boss**,
+  Endless + Daily Challenge, menu/game-over, persistence, settings, synth audio, share-card.
 - **Phase 4** — Capacitor iOS/Android wrap, PWA, icons/splash, `STORE.md`.

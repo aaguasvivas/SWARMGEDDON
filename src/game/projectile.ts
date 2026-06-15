@@ -23,6 +23,14 @@ export class Projectile implements Poolable {
   life = 0
   /** Enemy (spitter) projectile drops an acid pool where it lands. */
   leavesAcid = false
+  /** Wall bounces remaining (ricochet perk). */
+  bounces = 0
+  /** AoE on impact (rocket / explosive rounds); 0 = none. */
+  explodeRadius = 0
+  explodeDamage = 0
+  /** Chain lightning: extra targets + jump range. */
+  chain = 0
+  chainRange = 0
 
   constructor(readonly sprite: Sprite) {}
 }

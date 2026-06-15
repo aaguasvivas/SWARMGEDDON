@@ -1,22 +1,12 @@
 import type { Texture } from 'pixi.js'
-import {
-  HASH_CELL,
-  PLAYER_MAX_HP,
-  SHAKE_DECAY,
-  SHAKE_MAX_OFFSET,
-  WEAPON_DROP_INTERVAL,
-} from '../config.ts'
+import { HASH_CELL, PLAYER_MAX_HP, SHAKE_DECAY, SHAKE_MAX_OFFSET, WEAPON_DROP_INTERVAL } from '../config.ts'
 import { Pool } from '../core/pool.ts'
 import { Rng } from '../core/rng.ts'
 import { SpatialHash } from '../core/spatialHash.ts'
 import { DEFAULT_WEAPON_ID, WEAPONS, type WeaponDef } from '../content/weapons.ts'
-import {
-  PERKS,
-  baseModifiers,
-  perkById,
-  type Modifiers,
-  type PerkDef,
-} from '../content/perks.ts'
+import { BOSS_FIRST } from '../content/waveDirector.ts'
+import { PERKS, baseModifiers, perkById, type Modifiers, type PerkDef } from '../content/perks.ts'
+import type { AudioEngine } from '../audio/audio.ts'
 import { Juice } from '../effects/juice.ts'
 import type { Layers } from '../render/app.ts'
 import type { IchorLayer } from '../render/ichorLayer.ts'
@@ -30,10 +20,12 @@ import { Pickup } from './pickup.ts'
 import { Player } from './player.ts'
 import { Projectile } from './projectile.ts'
 
+export type RunMode = 'endless' | 'daily'
+
 /**
- * Central run state: all entity pools, broad-phase hash, juice, ichor, the
- * weapon + ammo, the perk/modifier "build", and XP/level progression. Systems
- * take a `World` and mutate it. Everything resets leak-free for "one more run".
+ * Central run state: entity pools, broad-phase hash, juice, ichor, weapon+ammo,
+ * the perk/Modifiers build, XP/level progression, and boss/run bookkeeping.
+ * `beginRun(seed, mode)` (re)seeds and resets everything leak-free.
  */
 export class World {
   readonly enemies: Pool<Enemy>
@@ -46,39 +38,48 @@ export class World {
 
   readonly hash = new SpatialHash<Enemy>(HASH_CELL)
   readonly juice = new Juice(SHAKE_MAX_OFFSET, SHAKE_DECAY)
+  /** Primary + nested scratch buffers (nested queries run inside the projectile loop). */
   readonly queryBuf: Enemy[] = []
+  readonly queryBuf2: Enemy[] = []
 
   readonly sparkTex: Texture
   readonly gibTex: Texture
 
-  // Weapon + perk build.
   weapon: WeaponDef = WEAPONS[DEFAULT_WEAPON_ID]!
   ammo = -1
   readonly mods: Modifiers = baseModifiers()
   readonly perkStacks = new Map<string, number>()
 
-  // Progression.
+  mode: RunMode = 'endless'
+  seed = 0
   time = 0
   kills = 0
-  deaths = 0
   level = 1
   xp = 0
   xpToNext = 1
   pendingLevelUps = 0
+  revivesUsed = 0
 
-  // Timers / flags.
   spawnTimer = 0
   fireCooldown = 0
   weaponDropTimer = 0
+  eliteTimer = 0
+  bossTimer = 0
   hurtFlash = 0
-  pendingRestart = false
+
+  bossAlive = false
+  boss: Enemy | null = null
+  warperActive = false
+
   paused = false
+  pendingGameOver = false
 
   constructor(
     readonly rng: Rng,
     readonly arena: Arena,
     readonly player: Player,
     readonly ichor: IchorLayer,
+    readonly audio: AudioEngine,
     layers: Layers,
     readonly texReg: TextureRegistry,
   ) {
@@ -86,98 +87,50 @@ export class World {
     this.gibTex = texReg.getTexture('gib')
 
     this.enemies = new Pool<Enemy>(
-      () => {
-        const s = texReg.makeSprite('swarmer')
-        layers.entities.addChild(s)
-        return new Enemy(s)
-      },
-      (e) => {
-        e.sprite.visible = false
-        e.flash = 0
-      },
+      () => { const s = texReg.makeSprite('swarmer'); layers.entities.addChild(s); return new Enemy(s) },
+      (e) => { e.sprite.visible = false; e.flash = 0; e.submerged = false },
       64,
     )
-
     this.projectiles = new Pool<Projectile>(
-      () => {
-        const s = texReg.makeSprite('bullet')
-        layers.entities.addChild(s)
-        return new Projectile(s)
-      },
-      (p) => {
-        p.sprite.visible = false
-        p.pierce = 0
-        p.leavesAcid = false
-      },
+      () => { const s = texReg.makeSprite('bullet'); layers.entities.addChild(s); return new Projectile(s) },
+      (p) => { p.sprite.visible = false; p.pierce = 0; p.leavesAcid = false; p.bounces = 0; p.explodeRadius = 0; p.chain = 0 },
       128,
     )
-
     this.enemyProjectiles = new Pool<Projectile>(
-      () => {
-        const s = texReg.makeSprite('acidGlob')
-        layers.entities.addChild(s)
-        return new Projectile(s)
-      },
-      (p) => {
-        p.sprite.visible = false
-        p.leavesAcid = false
-      },
+      () => { const s = texReg.makeSprite('acidGlob'); layers.entities.addChild(s); return new Projectile(s) },
+      (p) => { p.sprite.visible = false; p.leavesAcid = false },
       64,
     )
-
     this.particles = new Pool<Particle>(
-      () => {
-        const s = texReg.makeSprite('particle')
-        layers.fx.addChild(s)
-        return new Particle(s)
-      },
-      (p) => {
-        p.sprite.visible = false
-      },
+      () => { const s = texReg.makeSprite('particle'); layers.fx.addChild(s); return new Particle(s) },
+      (p) => { p.sprite.visible = false },
       256,
     )
-
     this.floaters = new Pool<FloatingText>(
-      () => {
-        const f = new FloatingText()
-        layers.fx.addChild(f.text)
-        return f
-      },
-      (f) => {
-        f.text.visible = false
-      },
+      () => { const f = new FloatingText(); layers.fx.addChild(f.text); return f },
+      (f) => { f.text.visible = false },
       16,
     )
-
     this.pickups = new Pool<Pickup>(
-      () => {
-        const s = texReg.makeSprite('gem')
-        layers.fx.addChild(s)
-        return new Pickup(s)
-      },
-      (p) => {
-        p.sprite.visible = false
-      },
+      () => { const s = texReg.makeSprite('gem'); layers.fx.addChild(s); return new Pickup(s) },
+      (p) => { p.sprite.visible = false },
       32,
     )
-
     this.acid = new Pool<AcidPool>(
-      () => {
-        const s = texReg.makeSprite('acidPool')
-        layers.ichor.addChild(s) // above the ichor texture, below entities
-        return new AcidPool(s)
-      },
-      (a) => {
-        a.sprite.visible = false
-      },
+      () => { const s = texReg.makeSprite('acidPool'); layers.ichor.addChild(s); return new AcidPool(s) },
+      (a) => { a.sprite.visible = false },
       16,
     )
   }
 
   // --- run lifecycle ---------------------------------------------------------
 
-  /** Full fresh-run reset (used on first boot and on restart). */
-  start(): void {
+  /** Reseed + reset for a fresh run of `mode`. Leak-free. */
+  beginRun(seed: number, mode: RunMode): void {
+    this.clearAll()
+    this.rng.reseed(seed)
+    this.seed = seed
+    this.mode = mode
     this.perkStacks.clear()
     this.recomputeModifiers()
     this.equipWeapon(DEFAULT_WEAPON_ID)
@@ -187,20 +140,25 @@ export class World {
     this.xp = 0
     this.xpToNext = xpForLevel(1)
     this.pendingLevelUps = 0
+    this.revivesUsed = 0
     this.spawnTimer = 0
     this.fireCooldown = 0
-    this.weaponDropTimer = WEAPON_DROP_INTERVAL // first pod drops after the interval
+    this.weaponDropTimer = WEAPON_DROP_INTERVAL
+    this.eliteTimer = 0
+    this.bossTimer = BOSS_FIRST
     this.hurtFlash = 0
+    this.bossAlive = false
+    this.boss = null
+    this.warperActive = false
     this.paused = false
-    this.pendingRestart = false
+    this.pendingGameOver = false
 
     const b = this.arena.bounds
     this.player.spawn(b.x + b.w / 2, b.y + b.h / 2)
     this.player.hp = this.player.maxHp
   }
 
-  /** Wipe the field and start over. Leak-free. */
-  restart(): void {
+  private clearAll(): void {
     this.enemies.clear()
     this.projectiles.clear()
     this.enemyProjectiles.clear()
@@ -209,8 +167,10 @@ export class World {
     this.pickups.clear()
     this.acid.clear()
     this.ichor.clear()
-    this.deaths++
-    this.start()
+  }
+
+  get score(): number {
+    return Math.floor(this.time * 10 + this.kills * 5 + this.level * 50)
   }
 
   // --- weapons ---------------------------------------------------------------
@@ -232,27 +192,23 @@ export class World {
     }
   }
 
-  /** Apply a chosen perk and recompute the aggregate modifiers. */
   choosePerk(id: string): void {
-    const cur = this.perkStacks.get(id) ?? 0
-    this.perkStacks.set(id, cur + 1)
+    this.perkStacks.set(id, (this.perkStacks.get(id) ?? 0) + 1)
     this.recomputeModifiers()
   }
 
-  /** Rebuild modifiers from owned perks and apply HP-affecting ones. */
   recomputeModifiers(): void {
     const m = this.mods
     Object.assign(m, baseModifiers())
     for (const [id, stacks] of this.perkStacks) perkById(id).apply(m, stacks)
 
     const prevMax = this.player.maxHp
-    this.player.maxHp = PLAYER_MAX_HP + m.bonusHp
+    this.player.maxHp = Math.max(10, Math.round(PLAYER_MAX_HP * m.hpMul + m.bonusHp))
     const dMax = this.player.maxHp - prevMax
     if (dMax > 0) this.player.hp = Math.min(this.player.maxHp, this.player.hp + dMax)
     else this.player.hp = Math.min(this.player.hp, this.player.maxHp)
   }
 
-  /** Draft up to 3 distinct perks (skipping maxed ones), rarity-weighted. */
   draftPerks(): PerkDef[] {
     const avail = PERKS.filter((p) => (this.perkStacks.get(p.id) ?? 0) < p.maxStacks)
     const bag: PerkDef[] = []
@@ -274,7 +230,7 @@ export class World {
   }
 }
 
-/** XP needed to clear `level` -> level+1. Gentle early, steeper later. */
+/** XP needed to clear `level` -> level+1. */
 export function xpForLevel(level: number): number {
   return Math.floor(5 + level * 4 + level * level * 0.55)
 }

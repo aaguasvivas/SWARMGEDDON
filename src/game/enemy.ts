@@ -30,10 +30,21 @@ export class Enemy implements Poolable {
   speed = 70
   damage = 22
 
-  /** Spitter ranged cooldown (seconds until next shot). */
+  /** Ranged cooldown / brood cooldown (seconds until next shot/spawn). */
   fireTimer = 0
+  /** Generic behavior timer (burrow phase, teleport cooldown). */
+  stateTimer = 0
   /** Hit-flash timer (seconds remaining). */
   flash = 0
+  /** Aura buff remaining (seconds); set by nearby hive minds. */
+  buffed = 0
+  /** Cryo slow remaining (seconds) + its strength (0..1). */
+  slow = 0
+  slowFactor = 0
+  /** Burrower is underground: invulnerable + no contact damage. */
+  submerged = false
+  /** Boss enrage phase active. */
+  enraged = false
   /** Per-enemy phase offset so the swarm doesn't wobble in lockstep. */
   animPhase = 0
 

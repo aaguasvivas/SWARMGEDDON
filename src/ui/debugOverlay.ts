@@ -53,7 +53,7 @@ export class DebugOverlay {
     const low = info.fps > 0 && info.fps < 55 ? '  ⚠ LOW' : ''
     const ents = info.enemies + info.projectiles + info.particles
     this.text.text =
-      `SWARMGEDDON · phase 1\n` +
+      `SWARMGEDDON · phase 3\n` +
       `fps   ${info.fps.toFixed(0).padStart(3)}${low}\n` +
       `frame ${info.frameMs.toFixed(1)}ms · steps ${info.steps}\n` +
       `ents  ${ents}  (e${info.enemies} p${info.projectiles} fx${info.particles})\n` +

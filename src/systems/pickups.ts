@@ -39,6 +39,7 @@ export function dropGem(world: World, x: number, y: number, xp: number): void {
 
 /** Drop a weapon pod (color-coded to the weapon). */
 export function spawnWeaponDrop(world: World, x: number, y: number, weaponId: string): void {
+  if (world.pickups.size >= MAX_PICKUPS) return
   const p = world.pickups.acquire()
   p.kind = 'weapon'
   p.weaponId = weaponId
@@ -105,8 +106,11 @@ export function pickupSystem(world: World, dt: number): void {
     p.x += p.vx * dt
     p.y += p.vy * dt
 
+    // Collection test against the UPDATED position (magnetism just moved it).
+    const cdx = pl.x - p.x
+    const cdy = pl.y - p.y
     const rr = p.radius + pl.radius
-    if (d2 < rr * rr) {
+    if (cdx * cdx + cdy * cdy < rr * rr) {
       collect(world, p)
       p.alive = false
     }
@@ -115,9 +119,11 @@ export function pickupSystem(world: World, dt: number): void {
 
 function collect(world: World, p: Pickup): void {
   if (p.kind === 'xp') {
-    world.addXp(p.xp)
+    world.addXp(p.xp * world.mods.xpMul)
+    world.audio.play('pickup')
   } else {
     world.equipWeapon(p.weaponId)
+    world.audio.play('weapon')
     announce(world, WEAPONS[p.weaponId]!.name, world.player.x, world.player.y - 26, WEAPONS[p.weaponId]!.tint)
   }
 }

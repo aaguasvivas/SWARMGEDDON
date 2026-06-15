@@ -1,0 +1,87 @@
+import { Container, Graphics, Text } from 'pixi.js'
+import { COLORS } from '../config.ts'
+import type { RunResult } from '../state/persistence.ts'
+import { Button } from './button.ts'
+
+const MONO = 'ui-monospace, Menlo, Consolas, monospace'
+
+function fmtTime(s: number): string {
+  const m = Math.floor(s / 60)
+  return `${m}:${Math.floor(s % 60).toString().padStart(2, '0')}`
+}
+
+/** Death screen: run stats + new-best flag + Retry / Menu / Share. */
+export class GameOver {
+  readonly view = new Container()
+  onRetry: () => void = () => {}
+  onMenu: () => void = () => {}
+  onShare: () => void = () => {}
+
+  private backdrop = new Graphics()
+  private title: Text
+  private best: Text
+  private stats: Text
+  private retry: Button
+  private menu: Button
+  private share: Button
+  private w = 0
+  private h = 0
+
+  constructor() {
+    this.title = new Text({ text: 'OVERRUN', style: { fontFamily: MONO, fontSize: 40, fontWeight: 'bold', fill: COLORS.hurtFlash, letterSpacing: 3 } })
+    this.title.anchor.set(0.5)
+    this.best = new Text({ text: '', style: { fontFamily: MONO, fontSize: 15, fontWeight: 'bold', fill: 0xffe066 } })
+    this.best.anchor.set(0.5)
+    this.stats = new Text({ text: '', style: { fontFamily: MONO, fontSize: 16, fill: COLORS.hudText, align: 'center', lineHeight: 24 } })
+    this.stats.anchor.set(0.5)
+
+    this.retry = new Button('RETRY', 180, 52, COLORS.player)
+    this.menu = new Button('MENU', 180, 52, COLORS.hudDim)
+    this.share = new Button('SHARE RUN', 180, 46, 0x57c8ff, 15)
+    this.retry.onClick = () => this.onRetry()
+    this.menu.onClick = () => this.onMenu()
+    this.share.onClick = () => this.onShare()
+
+    this.view.addChild(this.backdrop, this.title, this.best, this.stats, this.retry.view, this.menu.view, this.share.view)
+    this.view.visible = false
+  }
+
+  layout(w: number, h: number): void {
+    this.w = w
+    this.h = h
+    this.relayout()
+  }
+
+  private relayout(): void {
+    const { w, h } = this
+    this.backdrop.clear()
+    this.backdrop.rect(0, 0, w, h).fill({ color: 0x05070d, alpha: 0.74 })
+    const cx = w / 2
+    let y = h * 0.5 - 150
+    this.title.position.set(cx, y)
+    y += 36
+    this.best.position.set(cx, y)
+    y += 34
+    this.stats.position.set(cx, y + 24)
+    y += 118
+    this.retry.position(cx - 188, y)
+    this.menu.position(cx + 8, y)
+    y += 64
+    this.share.position(cx - 90, y)
+  }
+
+  show(result: RunResult, isHigh: boolean): void {
+    this.best.text = isHigh ? '★ NEW BEST ★' : ''
+    this.stats.text =
+      `${result.mode === 'daily' ? 'DAILY CHALLENGE' : 'ENDLESS'}\n` +
+      `survived  ${fmtTime(result.time)}\n` +
+      `kills  ${result.kills}     level  ${result.level}\n` +
+      `score  ${result.score}`
+    this.relayout()
+    this.view.visible = true
+  }
+
+  hide(): void {
+    this.view.visible = false
+  }
+}

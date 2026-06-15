@@ -26,6 +26,8 @@ const DOWN_KEYS = new Set(['s', 'arrowdown'])
 export class InputManager {
   readonly touch = new TouchControls()
   lastType: InputType = 'kbm'
+  /** When false (menus), gameplay inputs are ignored and sticks won't spawn. */
+  enabled = true
 
   readonly move: Vec2 = { x: 0, y: 0 }
   readonly aimDir: Vec2 = { x: 0, y: 0 }
@@ -63,7 +65,22 @@ export class InputManager {
    * current position, needed to turn an absolute mouse position into a facing
    * direction.
    */
+  /** Toggle gameplay input (off in menus). Drops any held touches. */
+  setEnabled(on: boolean): void {
+    this.enabled = on
+    if (!on) {
+      this.touch.reset()
+      this.mouseFiring = false
+    }
+  }
+
   update(playerX: number, playerY: number): void {
+    if (!this.enabled) {
+      this.move.x = this.move.y = 0
+      this.aimDir.x = this.aimDir.y = 0
+      this.firing = false
+      return
+    }
     this.pollGamepad()
 
     if (this.touch.active) {
@@ -189,6 +206,7 @@ export class InputManager {
 
   private onPointerDown = (e: PointerEvent): void => {
     if (e.pointerType === 'touch') {
+      if (!this.enabled) return // let menu buttons handle the tap
       this.touch.onDown(e.pointerId, e.clientX - this.rectLeft(), e.clientY - this.rectTop(), this.canvas.clientWidth)
       this.lastType = 'touch'
     } else {

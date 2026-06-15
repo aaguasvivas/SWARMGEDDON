@@ -133,6 +133,72 @@ export function spawnAcidSplash(world: World, x: number, y: number): void {
   }
 }
 
+/** Radial burst (teleport poof, burrow emerge). */
+export function spawnPoof(world: World, x: number, y: number, tint: number, count: number): void {
+  const rng = world.rng
+  for (let i = 0; i < count; i++) {
+    if (world.particles.size >= MAX_PARTICLES) return
+    const p = world.particles.acquire()
+    begin(p, x, y)
+    const a = rng.angle()
+    const sp = rng.range(80, 240)
+    p.vx = Math.cos(a) * sp
+    p.vy = Math.sin(a) * sp
+    p.life = p.maxLife = rng.range(0.2, 0.4)
+    p.size = rng.range(0.6, 1.2)
+    p.grow = -1.2
+    p.drag = 6
+    p.tint = tint
+    p.additive = true
+    p.sprite.texture = world.sparkTex
+    p.sprite.blendMode = 'add'
+  }
+}
+
+/** Explosion burst (rockets / explosive rounds). */
+export function spawnExplosion(world: World, x: number, y: number, radius: number): void {
+  const rng = world.rng
+  const n = Math.min(18, Math.floor(radius / 6))
+  for (let i = 0; i < n; i++) {
+    if (world.particles.size >= MAX_PARTICLES) break
+    const p = world.particles.acquire()
+    begin(p, x, y)
+    const a = rng.angle()
+    const sp = rng.range(120, radius * 6)
+    p.vx = Math.cos(a) * sp
+    p.vy = Math.sin(a) * sp
+    p.life = p.maxLife = rng.range(0.25, 0.5)
+    p.size = rng.range(0.9, 1.8)
+    p.grow = -1.4
+    p.drag = 5
+    p.tint = rng.bool(0.5) ? 0xffd27a : COLORS.muzzle
+    p.additive = true
+    p.sprite.texture = world.sparkTex
+    p.sprite.blendMode = 'add'
+  }
+}
+
+/** Lightning arc sparks along a segment (chain lightning). */
+export function spawnChainArc(world: World, x1: number, y1: number, x2: number, y2: number): void {
+  const rng = world.rng
+  const steps = 5
+  for (let i = 0; i <= steps; i++) {
+    if (world.particles.size >= MAX_PARTICLES) return
+    const t = i / steps
+    const p = world.particles.acquire()
+    begin(p, x1 + (x2 - x1) * t + rng.range(-5, 5), y1 + (y2 - y1) * t + rng.range(-5, 5))
+    p.vx = 0
+    p.vy = 0
+    p.life = p.maxLife = rng.range(0.08, 0.16)
+    p.size = rng.range(0.4, 0.8)
+    p.grow = -1
+    p.tint = 0x9be7ff
+    p.additive = true
+    p.sprite.texture = world.sparkTex
+    p.sprite.blendMode = 'add'
+  }
+}
+
 /** Floating damage number (capped). Crits are larger and gold. */
 export function spawnDamageNumber(world: World, x: number, y: number, dmg: number, crit: boolean): void {
   if (world.floaters.size >= MAX_FLOATERS) return

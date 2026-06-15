@@ -156,12 +156,90 @@ function drawAcidPool(g: Graphics): void {
   g.circle(0, 0, 14).fill({ color: W, alpha: 0.45 })
 }
 
+/** Burrower: clawed digging head, snout forward (+x). */
+function drawBurrower(g: Graphics): void {
+  g.poly([13, -6, 27, -13, 18, -2]).fill(W)
+  g.poly([13, 6, 27, 13, 18, 2]).fill(W)
+  g.ellipse(-11, 0, 9, 9).fill(SHADE)
+  g.ellipse(-3, 0, 11, 10).fill(MID)
+  g.ellipse(9, 0, 11, 9).fill(LIGHT)
+  g.poly([18, -4, 25, 0, 18, 4]).fill(W)
+  g.moveTo(-3, -9).lineTo(-3, 9).stroke({ width: 2, color: DARK, alpha: 0.4 })
+  g.circle(10, -3, 1.8).fill(EYE)
+  g.circle(10, 3, 1.8).fill(EYE)
+}
+
+/** Hive mind: pulsing brain-sac with radiating tendrils. */
+function drawHivemind(g: Graphics): void {
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2
+    g.moveTo(Math.cos(a) * 12, Math.sin(a) * 12).lineTo(Math.cos(a) * 24, Math.sin(a) * 24).stroke({ width: 3, color: DARK, cap: 'round' })
+    g.circle(Math.cos(a) * 24, Math.sin(a) * 24, 2.5).fill(SHADE)
+  }
+  g.circle(0, 0, 16).fill(MID)
+  g.circle(0, 0, 16).stroke({ width: 2, color: DARK })
+  g.circle(-5, -4, 5).fill(LIGHT)
+  g.circle(5, -3, 5).fill(LIGHT)
+  g.circle(0, 5, 5).fill(LIGHT)
+  g.circle(0, 0, 4.5).fill(W)
+}
+
+/** Psychic: floating eye orb with a halo. */
+function drawPsychic(g: Graphics): void {
+  g.circle(0, 0, 16).stroke({ width: 2.5, color: W, alpha: 0.5 })
+  for (let i = 0; i < 4; i++) {
+    const a = Math.PI * 0.5 + (i - 1.5) * 0.4
+    g.moveTo(Math.cos(a) * 9, Math.sin(a) * 9).lineTo(Math.cos(a) * 18, Math.sin(a) * 18).stroke({ width: 2, color: DARK, cap: 'round' })
+  }
+  g.circle(0, 0, 11).fill(LIGHT)
+  g.circle(3, 0, 6).fill(SHADE)
+  g.circle(4, 0, 3).fill(EYE)
+  g.circle(5, -1, 1.2).fill(W)
+}
+
+/** Reality-warper: fractured crystalline cluster. */
+function drawWarper(g: Graphics): void {
+  g.poly([16, 0, 6, -11, -9, -6, -12, 5, -2, 13, 9, 6]).fill(MID)
+  g.poly([16, 0, 6, -11, 2, -2]).fill(LIGHT)
+  g.poly([-9, -6, -12, 5, -2, 0]).fill(SHADE)
+  g.moveTo(16, 0).lineTo(-2, 0).stroke({ width: 1.5, color: W, alpha: 0.5 })
+  g.moveTo(6, -11).lineTo(-2, 13).stroke({ width: 1.5, color: DARK, alpha: 0.4 })
+  g.circle(0, 0, 3).fill(W)
+}
+
+/** Colossal queen: boss-scale ornate insectoid, crown forward (+x). */
+function drawQueen(g: Graphics): void {
+  for (const s of [-1, 1]) {
+    g.moveTo(-6, s * 16).lineTo(-22, s * 30).stroke({ width: 5, color: DARK, cap: 'round' })
+    g.moveTo(2, s * 18).lineTo(-2, s * 34).stroke({ width: 5, color: DARK, cap: 'round' })
+    g.moveTo(10, s * 16).lineTo(18, s * 30).stroke({ width: 5, color: DARK, cap: 'round' })
+  }
+  g.ellipse(-16, 0, 22, 20).fill(MID)
+  g.ellipse(-16, 0, 22, 20).stroke({ width: 3, color: DARK })
+  g.ellipse(-20, -5, 10, 7).fill({ color: W, alpha: 0.3 })
+  g.moveTo(-16, -18).lineTo(-16, 18).stroke({ width: 2, color: DARK, alpha: 0.5 })
+  g.ellipse(4, 0, 15, 14).fill(LIGHT)
+  g.ellipse(22, 0, 11, 11).fill(LIGHT)
+  g.poly([28, -6, 39, -13, 30, -2]).fill(W)
+  g.poly([28, 6, 39, 13, 30, 2]).fill(W)
+  g.poly([32, 0, 43, 0, 33, -3]).fill(W)
+  g.poly([28, -3, 36, -5, 30, 0]).fill(W)
+  g.poly([28, 3, 36, 5, 30, 0]).fill(W)
+  g.circle(24, -4, 2.6).fill(EYE)
+  g.circle(24, 4, 2.6).fill(EYE)
+}
+
 export const PLACEHOLDER_SPRITES: Record<string, SpriteBuilder> = {
   swarmer: drawSwarmer,
   flyer: drawFlyer,
   beetle: drawBeetle,
   spitter: drawSpitter,
   splitter: drawSplitter,
+  burrower: drawBurrower,
+  hivemind: drawHivemind,
+  psychic: drawPsychic,
+  warper: drawWarper,
+  queen: drawQueen,
   bullet: drawBullet,
   acidGlob: drawAcidGlob,
   particle: drawParticle,

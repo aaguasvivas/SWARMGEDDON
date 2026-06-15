@@ -3,17 +3,25 @@ import { COLORS, DEFAULT_SEED, FIXED_DT, MAX_FRAME_TIME } from './config.ts'
 import { GameLoop } from './core/time.ts'
 import { Rng, seedFromString } from './core/rng.ts'
 import { initSafeArea, getInsets } from './platform/safeArea.ts'
+import { buzz, setHapticsEnabled } from './platform/haptics.ts'
 import { createRenderer } from './render/app.ts'
 import { TextureRegistry } from './render/textures.ts'
 import { IchorLayer } from './render/ichorLayer.ts'
 import { renderEntities } from './render/entityRenderer.ts'
+import { AudioEngine } from './audio/audio.ts'
 import { Arena, type DecorSpeck } from './game/arena.ts'
 import { Player } from './game/player.ts'
-import { World } from './game/world.ts'
+import { World, type RunMode } from './game/world.ts'
 import { InputManager } from './input/input.ts'
 import { DebugOverlay } from './ui/debugOverlay.ts'
 import { Hud } from './ui/hud.ts'
 import { LevelUpModal } from './ui/levelupModal.ts'
+import { MainMenu } from './ui/mainMenu.ts'
+import { GameOver } from './ui/gameOver.ts'
+import { SettingsPanel } from './ui/settingsPanel.ts'
+import { loadSettings, saveSettings, type Settings } from './state/settings.ts'
+import { recordRun, type RunResult } from './state/persistence.ts'
+import { shareRunCard } from './share/shareCard.ts'
 import { spawnSystem, spawnEnemy, debugFloodSwarmers } from './systems/spawn.ts'
 import { aiSystem, buildEnemyHash } from './systems/ai.ts'
 import { weaponSystem } from './systems/weapons.ts'
@@ -23,10 +31,12 @@ import { collisionSystem } from './systems/collision.ts'
 import { acidSystem } from './systems/acid.ts'
 import { particleSystem } from './systems/particles.ts'
 
+type Screen = 'menu' | 'playing' | 'gameover'
+
 /**
- * Phase 2 bootstrap. Wires the data-driven content systems (wave director,
- * enemy roster, weapon pickups, XP + perk-draft level-up) onto the Phase 1
- * combat core, under the fixed-timestep loop.
+ * Phase 3 bootstrap + game state machine. boot -> menu -> playing -> gameover.
+ * Wires modes (Endless / Daily), persistence, audio, settings, the level-up
+ * draft, and the reality-warp distortion onto the combat core.
  */
 async function boot(): Promise<void> {
   initSafeArea()
@@ -38,9 +48,13 @@ async function boot(): Promise<void> {
   const texReg = new TextureRegistry(app.renderer)
   texReg.bakePlaceholders()
 
-  const seed = resolveSeed()
-  const sim = new Rng(seed)
-  const cosmetic = new Rng(seed ^ 0x9e3779b9)
+  const audio = new AudioEngine()
+  audio.attachUnlock()
+
+  // Cosmetic RNG (stable, boot-time) for decor + ichor splats; sim RNG is
+  // reseeded per run inside World.beginRun for daily determinism.
+  const cosmetic = new Rng(seedFromString('swarmgeddon:decor'))
+  const sim = new Rng(DEFAULT_SEED)
 
   const arena = new Arena()
   arena.setDecor(makeDecor(cosmetic, 56))
@@ -50,29 +64,101 @@ async function boot(): Promise<void> {
   layers.ichor.addChild(ichor.view)
 
   const player = new Player()
-  const world = new World(sim, arena, player, ichor, layers, texReg)
-  layers.world.addChild(player.view) // player draws above the swarm
+  const world = new World(sim, arena, player, ichor, audio, layers, texReg)
+  layers.world.addChild(player.view)
 
   const input = new InputManager(app.canvas)
+  input.setEnabled(false)
   const crosshair = buildCrosshair()
   const hurtOverlay = new Graphics()
   const hud = new Hud()
-  const debug = new DebugOverlay()
   const modal = new LevelUpModal()
-  layers.ui.addChild(hud.view, input.touch.view, hurtOverlay, crosshair, debug.view, modal.view)
+  const mainMenu = new MainMenu()
+  const gameOver = new GameOver()
+  const settingsPanel = new SettingsPanel()
+  const debug = new DebugOverlay()
+  layers.ui.addChild(
+    hud.view, input.touch.view, hurtOverlay, crosshair,
+    modal.view, mainMenu.view, gameOver.view, settingsPanel.view, debug.view,
+  )
 
+  // --- settings ---
+  let settings = loadSettings()
+  let shakeMul = 1
+  function applySettings(s: Settings): void {
+    audio.setVolumes(s.master, s.sfx, s.music)
+    ichor.intensityMul = s.ichor
+    shakeMul = s.shake
+    setHapticsEnabled(s.haptics)
+  }
+  applySettings(settings)
+
+  // --- state machine ---
+  let screen: Screen = 'menu'
+  let lastResult: RunResult | null = null
+
+  function startRun(mode: RunMode): void {
+    world.beginRun(runSeed(mode), mode)
+    screen = 'playing'
+    input.setEnabled(true)
+    modal.close()
+    mainMenu.hide()
+    gameOver.hide()
+    settingsPanel.hide()
+  }
+
+  function endRun(): void {
+    const result: RunResult = {
+      mode: world.mode,
+      time: world.time,
+      kills: world.kills,
+      level: world.level,
+      score: world.score,
+      seed: world.seed,
+      date: todayStr(),
+    }
+    lastResult = result
+    const isHigh = recordRun(result)
+    gameOver.show(result, isHigh)
+    screen = 'gameover'
+    input.setEnabled(false)
+    buzz(150)
+  }
+
+  function toMenu(): void {
+    screen = 'menu'
+    input.setEnabled(false)
+    gameOver.hide()
+    settingsPanel.hide()
+    mainMenu.refresh(todayStr())
+    mainMenu.show()
+  }
+
+  mainMenu.onPlay = startRun
+  mainMenu.onSettings = () => settingsPanel.open(settings)
+  gameOver.onRetry = () => startRun(world.mode)
+  gameOver.onMenu = toMenu
+  gameOver.onShare = () => {
+    if (lastResult) void shareRunCard(lastResult)
+  }
+  settingsPanel.onChange = (s) => {
+    settings = s
+    applySettings(s)
+    saveSettings(s)
+  }
+  settingsPanel.onClose = () => settingsPanel.hide()
   modal.onPick = (perkId) => {
     world.choosePerk(perkId)
     world.pendingLevelUps--
-    if (world.pendingLevelUps > 0) {
-      modal.open(world.draftPerks())
-    } else {
+    buzz(20)
+    if (world.pendingLevelUps > 0) modal.open(world.draftPerks())
+    else {
       modal.close()
       world.paused = false
     }
   }
 
-  let started = false
+  // --- layout ---
   function layout(): void {
     const w = app.screen.width
     const h = app.screen.height
@@ -82,14 +168,17 @@ async function boot(): Promise<void> {
     hud.layout(w, h, insets)
     debug.layout(insets)
     modal.setScreen(w, h)
+    mainMenu.layout(w, h)
+    gameOver.layout(w, h)
+    settingsPanel.layout(w, h)
+    layers.world.pivot.set(w / 2, h / 2) // warp/scale pivots at screen center
     hurtOverlay.clear()
     hurtOverlay.rect(0, 0, w, h).fill(COLORS.hurtFlash)
-    if (!started) {
-      world.start()
-      started = true
-    }
+    // Idle the player at center so the menu has a live arena behind it.
+    if (screen === 'menu') player.spawn(arena.bounds.x + arena.bounds.w / 2, arena.bounds.y + arena.bounds.h / 2)
   }
   layout()
+  toMenu()
   window.addEventListener('resize', layout)
   window.addEventListener('orientationchange', layout)
 
@@ -100,29 +189,30 @@ async function boot(): Promise<void> {
       else if (e.key === '3') modal.pickByIndex(2)
       return
     }
-    if (e.key === '`') debug.toggle()
-    else if (e.key === 'r' || e.key === 'R') {
-      world.restart()
-      modal.close()
+    if (e.key === '`') {
+      debug.toggle()
+    } else if (screen === 'playing') {
+      if (e.key === 'Escape') toMenu()
+      else if (e.key === 'r' || e.key === 'R') startRun(world.mode)
+    } else if (screen === 'gameover') {
+      if (e.key === 'Enter') startRun(world.mode)
+      else if (e.key === 'Escape') toMenu()
+    } else if (screen === 'menu' && e.key === 'Enter') {
+      startRun('endless')
     }
   })
 
-  // One fixed simulation step. Extracted so dev tooling can advance the sim
-  // deterministically without waiting on requestAnimationFrame.
+  // One fixed simulation step (extracted so dev tooling can drive it).
   function stepSim(dt: number): void {
-    if (world.paused) return
+    if (screen !== 'playing' || world.paused) return
     if (world.pendingLevelUps > 0) {
-      world.paused = true // freeze immediately; the modal opens in render
+      world.paused = true
       return
     }
-
     const j = world.juice
     if (j.hitstop > 0) {
       j.hitstop -= dt
-      if (j.hitstop <= 0 && world.pendingRestart) {
-        world.restart()
-        world.pendingRestart = false
-      }
+      if (j.hitstop <= 0 && world.pendingGameOver) endRun()
       return
     }
 
@@ -152,41 +242,56 @@ async function boot(): Promise<void> {
     world.acid.sweep()
   }
 
+  let warpAmt = 0
   const loop = new GameLoop(
     FIXED_DT,
     MAX_FRAME_TIME,
     stepSim,
-    // --- render (interpolated) ---
     (alpha) => {
+      const playing = screen === 'playing'
       renderEntities(world, alpha)
       player.render(alpha)
+      ichor.flush()
 
-      const showCrosshair = input.lastType === 'kbm' && input.hasPointer
+      input.touch.view.visible = playing && input.lastType === 'touch'
+      const showCrosshair = playing && input.lastType === 'kbm' && input.hasPointer
       crosshair.visible = showCrosshair
       if (showCrosshair) crosshair.position.set(input.pointerX, input.pointerY)
 
-      ichor.flush()
-      hud.update(world)
+      hud.view.visible = playing
+      if (playing) hud.update(world)
 
       // Level-up modal lifecycle.
-      if (world.paused && world.pendingLevelUps > 0 && !modal.isOpen()) {
+      if (playing && world.paused && world.pendingLevelUps > 0 && !modal.isOpen()) {
         const draft = world.draftPerks()
         if (draft.length === 0) {
-          // Nothing left to offer — consume the level-up and resume.
           world.pendingLevelUps = 0
           world.paused = false
         } else {
           modal.open(draft)
+          buzz(30)
         }
       }
-      if (!world.paused && modal.isOpen()) modal.close()
+      if ((!world.paused || !playing) && modal.isOpen()) modal.close()
 
       const fd = loop.frameMs / 1000
       world.hurtFlash = Math.max(0, world.hurtFlash - fd * 2.2)
-      hurtOverlay.alpha = world.hurtFlash * 0.45
+      hurtOverlay.alpha = playing ? world.hurtFlash * 0.45 : 0
 
+      // Screen shake (scaled by setting) + reality-warp distortion.
       world.juice.updateShake(fd)
-      layers.world.position.set(world.juice.offsetX, world.juice.offsetY)
+      const warpTarget = playing && world.warperActive ? 1 : 0
+      warpAmt += (warpTarget - warpAmt) * Math.min(1, fd * 4)
+      const now = performance.now() / 1000
+      const cx = app.screen.width / 2
+      const cy = app.screen.height / 2
+      layers.world.scale.set(1 + Math.sin(now * 6) * 0.02 * warpAmt)
+      layers.world.rotation = Math.sin(now * 1.3) * 0.012 * warpAmt
+      layers.world.position.set(cx + world.juice.offsetX * shakeMul, cy + world.juice.offsetY * shakeMul)
+
+      // Adaptive music.
+      audio.intensity = playing ? Math.min(1, world.enemies.size / 120 + (world.bossAlive ? 0.4 : 0)) : 0.12
+      audio.updateMusic()
 
       debug.update({
         fps: loop.fps,
@@ -200,7 +305,7 @@ async function boot(): Promise<void> {
         width: Math.round(app.screen.width),
         height: Math.round(app.screen.height),
         dpr: app.renderer.resolution,
-        seed,
+        seed: world.seed,
       })
 
       app.render()
@@ -208,43 +313,41 @@ async function boot(): Promise<void> {
   )
   loop.start()
 
-  // Dev-only test handle (stripped from production builds via DCE).
   if (import.meta.env.DEV) {
     ;(window as unknown as { __SWARM: unknown }).__SWARM = {
       world,
-      flood: (n: number) => debugFloodSwarmers(world, n),
-      addXp: (n: number) => world.addXp(n),
-      give: (id: string) => world.equipWeapon(id),
-      setTime: (t: number) => (world.time = t),
-      spawn: (id: string, n = 1) => {
-        const b = world.arena.bounds
-        for (let i = 0; i < n; i++) {
-          spawnEnemy(world, id, b.x + world.rng.float() * b.w, b.y + world.rng.float() * b.h)
-        }
+      get screen() {
+        return screen
       },
-      // Advance the sim N fixed steps synchronously (bypasses rAF) for testing.
+      startRun: (mode: RunMode) => startRun(mode),
+      endRun: () => endRun(),
       step: (n = 60) => {
         for (let i = 0; i < n; i++) stepSim(FIXED_DT)
       },
+      flood: (n: number) => debugFloodSwarmers(world, n),
+      spawn: (id: string, n = 1) => {
+        const b = world.arena.bounds
+        for (let i = 0; i < n; i++) spawnEnemy(world, id, b.x + world.rng.float() * b.w, b.y + world.rng.float() * b.h)
+      },
+      addXp: (n: number) => world.addXp(n),
+      give: (id: string) => world.equipWeapon(id),
     }
   }
 }
 
-/** Resolve the run seed (see README). Default: today's date -> a daily seed. */
-function resolveSeed(): number {
-  const param = new URLSearchParams(location.search).get('seed')
-  if (param === 'random') {
-    return (performance.now() * 1000) >>> 0 || DEFAULT_SEED
+const SEED_OVERRIDE = new URLSearchParams(location.search).get('seed')
+function todayStr(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+function runSeed(mode: RunMode): number {
+  if (SEED_OVERRIDE) {
+    const n = Number(SEED_OVERRIDE)
+    return Number.isFinite(n) ? n >>> 0 : seedFromString(SEED_OVERRIDE)
   }
-  if (param) {
-    const n = Number(param)
-    return Number.isFinite(n) ? n >>> 0 : seedFromString(param)
-  }
-  const today = new Date().toISOString().slice(0, 10)
-  return seedFromString('swarmgeddon:' + today)
+  if (mode === 'daily') return seedFromString('swarmgeddon:' + todayStr())
+  return (performance.now() * 1000) >>> 0 || DEFAULT_SEED
 }
 
-/** Deterministic floor specks in normalized arena space. */
 function makeDecor(rng: Rng, count: number): DecorSpeck[] {
   const out: DecorSpeck[] = []
   for (let i = 0; i < count; i++) {
@@ -253,7 +356,6 @@ function makeDecor(rng: Rng, count: number): DecorSpeck[] {
   return out
 }
 
-/** Ring + tick crosshair for desktop aim feedback. */
 function buildCrosshair(): Container {
   const c = new Container()
   const g = new Graphics()
