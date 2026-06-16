@@ -8,6 +8,7 @@ import {
 } from '../config.ts'
 import { PICKUP_WEAPON_IDS, WEAPONS } from '../content/weapons.ts'
 import { announce } from '../effects/fx.ts'
+import { saveJSON } from '../platform/storage.ts'
 import type { Pickup } from '../game/pickup.ts'
 import type { World } from '../game/world.ts'
 
@@ -34,7 +35,14 @@ export function dropGem(world: World, x: number, y: number, xp: number): void {
   s.visible = true
   s.tint = COLORS.gem
   s.alpha = 1
-  s.scale.set(0.9)
+  s.scale.set(1.15)
+
+  // One-time teaching moment: label the very first gem the player ever drops.
+  if (world.showGemHint) {
+    world.showGemHint = false
+    announce(world, '✦ collect for XP', p.x, p.y - 18, COLORS.gem)
+    saveJSON('seenGemHint', true)
+  }
 }
 
 /** Drop a weapon pod (color-coded to the weapon). */

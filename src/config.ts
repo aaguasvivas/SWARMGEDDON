@@ -45,7 +45,8 @@ export const MAX_ACID = 64
 export const MAX_ENEMY_PROJECTILES = 300
 
 /** Pickups / XP. */
-export const BASE_MAGNET_RADIUS = 78 // px; scaled by the Magnetic perk
+export const BASE_MAGNET_RADIUS = 125 // px; scaled by the Magnetic perk. Generous
+// so XP gems visibly zip to the player on a kill — makes them obviously collectible.
 export const GEM_LIFETIME = 12 // seconds before an uncollected XP gem fades
 export const WEAPON_DROP_INTERVAL = 13 // seconds between weapon pod drops
 export const WEAPON_DROP_LIFETIME = 24

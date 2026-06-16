@@ -7,6 +7,7 @@ import { DEFAULT_WEAPON_ID, WEAPONS, type WeaponDef } from '../content/weapons.t
 import { BOSS_FIRST } from '../content/waveDirector.ts'
 import { PERKS, baseModifiers, perkById, type Modifiers, type PerkDef } from '../content/perks.ts'
 import type { AudioEngine } from '../audio/audio.ts'
+import { loadJSON } from '../platform/storage.ts'
 import { Juice } from '../effects/juice.ts'
 import type { Layers } from '../render/app.ts'
 import type { IchorLayer } from '../render/ichorLayer.ts'
@@ -73,6 +74,8 @@ export class World {
 
   paused = false
   pendingGameOver = false
+  /** Show the one-time "collect for XP" hint on the first gem (until seen once). */
+  showGemHint = false
 
   constructor(
     readonly rng: Rng,
@@ -152,6 +155,7 @@ export class World {
     this.warperActive = false
     this.paused = false
     this.pendingGameOver = false
+    this.showGemHint = !loadJSON('seenGemHint', false)
 
     const b = this.arena.bounds
     this.player.spawn(b.x + b.w / 2, b.y + b.h / 2)

@@ -12,6 +12,7 @@ export interface Settings {
   shake: number
   ichor: number
   glow: number
+  autoFire: boolean
   haptics: boolean
 }
 
@@ -22,6 +23,7 @@ export const DEFAULT_SETTINGS: Settings = {
   shake: 1,
   ichor: 1,
   glow: 1,
+  autoFire: true, // hold-free firing — friendlier on trackpad/touch
   haptics: true,
 }
 

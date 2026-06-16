@@ -23,6 +23,7 @@ export class SettingsPanel {
   private backdrop = new Graphics()
   private title: Text
   private rows: Row[] = []
+  private autofire: Button
   private haptics: Button
   private back: Button
   private settings!: Settings
@@ -57,6 +58,12 @@ export class SettingsPanel {
       return { key, label, value, slider, scale }
     })
 
+    this.autofire = new Button('AUTO-FIRE: ON', 220, 40, COLORS.hudDim, 14)
+    this.autofire.onClick = () => {
+      this.settings.autoFire = !this.settings.autoFire
+      this.autofire.setText(`AUTO-FIRE: ${this.settings.autoFire ? 'ON' : 'OFF'}`)
+      this.emit()
+    }
     this.haptics = new Button('HAPTICS: ON', 220, 40, COLORS.hudDim, 14)
     this.haptics.onClick = () => {
       this.settings.haptics = !this.settings.haptics
@@ -66,13 +73,14 @@ export class SettingsPanel {
     this.back = new Button('BACK', 220, 48, COLORS.player)
     this.back.onClick = () => this.onClose()
 
-    this.view.addChild(this.title, this.haptics.view, this.back.view)
+    this.view.addChild(this.title, this.autofire.view, this.haptics.view, this.back.view)
     this.view.visible = false
   }
 
   open(settings: Settings): void {
     this.settings = { ...settings }
     for (const r of this.rows) r.slider.set(this.settings[r.key] / r.scale)
+    this.autofire.setText(`AUTO-FIRE: ${this.settings.autoFire ? 'ON' : 'OFF'}`)
     this.haptics.setText(`HAPTICS: ${this.settings.haptics ? 'ON' : 'OFF'}`)
     this.refreshValues()
     this.relayout()
@@ -103,18 +111,20 @@ export class SettingsPanel {
     this.backdrop.rect(0, 0, w, h).fill({ color: 0x05070d, alpha: 0.82 })
     const cx = w / 2
     const left = cx - 110
-    let y = h * 0.5 - 180
+    let y = h * 0.5 - 215
     this.title.position.set(cx, y)
-    y += 46
+    y += 44
     for (const r of this.rows) {
       r.label.position.set(left, y)
       r.value.position.set(left + 220, y)
-      r.slider.view.position.set(left, y + 26)
-      y += 50
+      r.slider.view.position.set(left, y + 24)
+      y += 46
     }
-    y += 4
+    y += 2
+    this.autofire.position(left, y)
+    y += 48
     this.haptics.position(left, y)
-    y += 56
+    y += 50
     this.back.position(left, y)
   }
 }

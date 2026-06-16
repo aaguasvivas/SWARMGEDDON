@@ -72,13 +72,14 @@ export function renderEntities(world: World, alpha: number): void {
     const s = p.sprite
     s.x = lerp(p.prevX, p.x, alpha)
     s.y = lerp(p.prevY, p.y, alpha)
-    const pulse = 1 + Math.sin(t * 5 + p.phase) * 0.12
     if (p.kind === 'xp') {
-      s.rotation = t * 2 + p.phase
-      s.scale.set(0.9 * pulse)
+      // Spin + a lively pulse + a vertical bob so gems read as "grab me".
+      s.rotation = t * 2.4 + p.phase
+      s.scale.set(1.15 * (1 + Math.sin(t * 6 + p.phase) * 0.2))
+      s.y += Math.sin(t * 4 + p.phase) * 3
     } else {
       s.rotation = Math.sin(t * 2 + p.phase) * 0.15
-      s.scale.set(pulse)
+      s.scale.set(1 + Math.sin(t * 5 + p.phase) * 0.12)
     }
     s.alpha = p.life < 1.5 ? p.life / 1.5 : 1
   }

@@ -99,6 +99,7 @@ async function boot(): Promise<void> {
     ichor.intensityMul = s.ichor
     shakeMul = s.shake
     postFX.setIntensity(s.glow)
+    input.autoFire = s.autoFire
     setHapticsEnabled(s.haptics)
   }
   applySettings(settings)

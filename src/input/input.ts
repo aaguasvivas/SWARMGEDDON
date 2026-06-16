@@ -28,6 +28,8 @@ export class InputManager {
   lastType: InputType = 'kbm'
   /** When false (menus), gameplay inputs are ignored and sticks won't spawn. */
   enabled = true
+  /** Fire whenever aiming, without holding the button (friendlier on trackpad). */
+  autoFire = true
 
   readonly move: Vec2 = { x: 0, y: 0 }
   readonly aimDir: Vec2 = { x: 0, y: 0 }
@@ -99,7 +101,7 @@ export class InputManager {
       this.move.y = this.gp.my
       this.aimDir.x = this.gp.ax
       this.aimDir.y = this.gp.ay
-      this.firing = this.gp.fire
+      this.firing = this.autoFire ? this.gp.aimActive || this.gp.fire : this.gp.fire
       return
     }
 
@@ -111,7 +113,8 @@ export class InputManager {
       this.aimDir.x = 0
       this.aimDir.y = 0
     }
-    this.firing = this.mouseFiring
+    // Auto-fire: shoot toward the cursor without holding the button.
+    this.firing = this.autoFire ? this.hasPointer : this.mouseFiring
   }
 
   private readKeyboardMove(): void {
