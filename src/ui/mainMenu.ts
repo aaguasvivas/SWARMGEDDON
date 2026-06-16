@@ -22,6 +22,7 @@ export class MainMenu {
   private title: Text
   private tagline: Text
   private info: Text
+  private controlsHint: Text
   private endless: Button
   private daily: Button
   private settings: Button
@@ -34,6 +35,11 @@ export class MainMenu {
     this.tagline.anchor.set(0.5)
     this.info = new Text({ text: '', style: { fontFamily: MONO, fontSize: 13, fill: COLORS.hudText, align: 'center', lineHeight: 19 } })
     this.info.anchor.set(0.5)
+    this.controlsHint = new Text({
+      text: 'hold to fire  ·  prefer not to hold? turn on Auto-fire in Settings',
+      style: { fontFamily: MONO, fontSize: 12, fill: COLORS.hudDim, align: 'center' },
+    })
+    this.controlsHint.anchor.set(0.5)
 
     this.endless = new Button('ENDLESS', 280, 58, COLORS.player)
     this.daily = new Button('DAILY CHALLENGE', 280, 58, 0xffc24a)
@@ -42,7 +48,7 @@ export class MainMenu {
     this.daily.onClick = () => this.onPlay('daily')
     this.settings.onClick = () => this.onSettings()
 
-    this.view.addChild(this.backdrop, this.title, this.tagline, this.endless.view, this.daily.view, this.settings.view, this.info)
+    this.view.addChild(this.backdrop, this.title, this.tagline, this.endless.view, this.daily.view, this.settings.view, this.info, this.controlsHint)
   }
 
   layout(w: number, h: number): void {
@@ -61,6 +67,7 @@ export class MainMenu {
     this.settings.position(cx - 140, y)
     y += 64
     this.info.position.set(cx, y + 8)
+    this.controlsHint.position.set(cx, y + 48)
   }
 
   refresh(today: string): void {

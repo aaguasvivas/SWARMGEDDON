@@ -23,7 +23,7 @@ export const DEFAULT_SETTINGS: Settings = {
   shake: 1,
   ichor: 1,
   glow: 1,
-  autoFire: true, // hold-free firing — friendlier on trackpad/touch
+  autoFire: false, // off by default (hold-to-fire); opt in via Settings for trackpad/touch
   haptics: true,
 }
 
