@@ -58,6 +58,16 @@ export const GEM_LIFETIME = 12 // seconds before an uncollected XP gem fades
 export const WEAPON_DROP_INTERVAL = 13 // seconds between weapon pod drops
 export const WEAPON_DROP_LIFETIME = 24
 
+/**
+ * Health pickups — perk-free sustain tied to killing. Most kills have a small
+ * chance to drop a medkit that magnetizes in and heals a little; elites/bosses
+ * are reliable chunks. So clearing a big swarm lets you claw HP back bit by bit.
+ */
+export const HEALTH_DROP_CHANCE = 0.07
+export const HEALTH_HEAL = 5
+export const HEALTH_HEAL_ELITE = 14
+export const HEALTH_LIFETIME = 10
+
 /** Spatial-hash cell size (world units). ~3-4x an enemy diameter is a good ratio. */
 export const HASH_CELL = 72
 
@@ -115,6 +125,7 @@ export const COLORS = {
   hurtFlash: 0xff2d4a,
   acid: 0x9bff3a,
   gem: 0x57f0ff,
+  health: 0x4dffa0, // medkit green (matches the HP bar)
   xpBar: 0x57c8ff,
   xpBarBack: 0x10243a,
 

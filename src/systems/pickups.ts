@@ -2,6 +2,7 @@ import {
   BASE_MAGNET_RADIUS,
   COLORS,
   GEM_LIFETIME,
+  HEALTH_LIFETIME,
   MAX_PICKUPS,
   WEAPON_DROP_INTERVAL,
   WEAPON_DROP_LIFETIME,
@@ -43,6 +44,33 @@ export function dropGem(world: World, x: number, y: number, xp: number): void {
     announce(world, '✦ collect for XP', p.x, p.y - 18, COLORS.gem)
     saveJSON('seenGemHint', true)
   }
+}
+
+/** Drop a health medkit (perk-free sustain). Magnetizes in like a gem. */
+export function dropHealth(world: World, x: number, y: number, heal: number): void {
+  if (world.pickups.size >= MAX_PICKUPS) return
+  const rng = world.rng
+  const p = world.pickups.acquire()
+  p.kind = 'health'
+  p.heal = heal
+  p.xp = 0
+  p.weaponId = ''
+  p.x = p.prevX = x + rng.range(-6, 6)
+  p.y = p.prevY = y + rng.range(-6, 6)
+  const a = rng.angle()
+  const sp = rng.range(30, 90)
+  p.vx = Math.cos(a) * sp
+  p.vy = Math.sin(a) * sp
+  p.radius = 9
+  p.life = HEALTH_LIFETIME
+  p.phase = rng.angle()
+
+  world.texReg.applySprite(p.sprite, 'health')
+  const s = p.sprite
+  s.visible = true
+  s.tint = COLORS.health
+  s.alpha = 1
+  s.scale.set(1)
 }
 
 /** Drop a weapon pod (color-coded to the weapon). */
@@ -129,6 +157,12 @@ function collect(world: World, p: Pickup): void {
   if (p.kind === 'xp') {
     world.addXp(p.xp * world.mods.xpMul)
     world.audio.play('pickup')
+  } else if (p.kind === 'health') {
+    const before = world.player.hp
+    world.player.hp = Math.min(world.player.maxHp, world.player.hp + p.heal)
+    const gained = Math.round(world.player.hp - before)
+    world.audio.play('pickup')
+    if (gained > 0) announce(world, `+${gained}`, world.player.x, world.player.y - 24, COLORS.health)
   } else {
     world.equipWeapon(p.weaponId)
     world.audio.play('weapon')

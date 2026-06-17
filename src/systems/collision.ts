@@ -1,3 +1,4 @@
+import { HEALTH_DROP_CHANCE, HEALTH_HEAL, HEALTH_HEAL_ELITE } from '../config.ts'
 import { distSq } from '../core/vec.ts'
 import { PICKUP_WEAPON_IDS } from '../content/weapons.ts'
 import {
@@ -11,7 +12,7 @@ import {
   spawnRing,
 } from '../effects/fx.ts'
 import { spawnAcidPool } from './acid.ts'
-import { dropGem, spawnWeaponDrop } from './pickups.ts'
+import { dropGem, dropHealth, spawnWeaponDrop } from './pickups.ts'
 import { spawnEnemy } from './spawn.ts'
 import type { Enemy } from '../game/enemy.ts'
 import type { Projectile } from '../game/projectile.ts'
@@ -212,6 +213,21 @@ function killEnemy(world: World, e: Enemy): void {
   }
 
   dropGem(world, e.x, e.y, def.xp)
+
+  // Perk-free sustain: kills can drop a medkit. Roll the RNG always (keeps the
+  // daily stream deterministic) but only DROP when hurt — so clearing a swarm
+  // claws HP back when you need it, without littering medkits at full health.
+  const hurt = world.player.hp < world.player.maxHp - 0.5
+  if (def.boss) {
+    for (let i = 0; i < 5; i++) {
+      const a = world.rng.angle()
+      dropHealth(world, e.x + Math.cos(a) * 26, e.y + Math.sin(a) * 26, HEALTH_HEAL_ELITE)
+    }
+  } else if (def.elite) {
+    dropHealth(world, e.x, e.y, HEALTH_HEAL_ELITE)
+  } else if (world.rng.bool(HEALTH_DROP_CHANCE) && hurt) {
+    dropHealth(world, e.x, e.y, HEALTH_HEAL)
+  }
 
   if (def.behavior === 'splitter' && def.splitInto) {
     const count = def.splitCount ?? 2

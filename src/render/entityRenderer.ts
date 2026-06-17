@@ -77,6 +77,11 @@ export function renderEntities(world: World, alpha: number): void {
       s.rotation = t * 2.4 + p.phase
       s.scale.set(1.15 * (1 + Math.sin(t * 6 + p.phase) * 0.2))
       s.y += Math.sin(t * 4 + p.phase) * 3
+    } else if (p.kind === 'health') {
+      // Heartbeat pulse + bob; a gentle sway, no spin (reads as a medkit).
+      s.rotation = Math.sin(t * 3 + p.phase) * 0.12
+      s.scale.set(1 + Math.sin(t * 5 + p.phase) * 0.16)
+      s.y += Math.sin(t * 4 + p.phase) * 3
     } else {
       s.rotation = Math.sin(t * 2 + p.phase) * 0.15
       s.scale.set(1 + Math.sin(t * 5 + p.phase) * 0.12)

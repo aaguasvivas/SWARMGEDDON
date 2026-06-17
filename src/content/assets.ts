@@ -136,6 +136,13 @@ function drawAcidGlob(g: Graphics): void {
   g.circle(-2, 2, 2.5).fill({ color: W, alpha: 0.85 })
 }
 
+/** Health medkit cross (tinted at spawn). */
+function drawHealth(g: Graphics): void {
+  g.roundRect(-3.5, -10, 7, 20, 2).fill(W)
+  g.roundRect(-10, -3.5, 20, 7, 2).fill(W)
+  g.roundRect(-2, -8.5, 4, 17, 1.5).fill({ color: W, alpha: 0.6 })
+}
+
 /** XP crystal (tinted at spawn). */
 function drawGem(g: Graphics): void {
   g.poly([0, -7, 5, 0, 0, 7, -5, 0]).fill(W)
@@ -252,6 +259,7 @@ export const PLACEHOLDER_SPRITES: Record<string, SpriteBuilder> = {
   ring: drawRing,
   gib: drawGib,
   gem: drawGem,
+  health: drawHealth,
   crate: drawCrate,
   acidPool: drawAcidPool,
 }

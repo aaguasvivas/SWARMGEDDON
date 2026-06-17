@@ -1,7 +1,7 @@
 import type { Sprite } from 'pixi.js'
 import type { Poolable } from '../core/pool.ts'
 
-export type PickupKind = 'xp' | 'weapon'
+export type PickupKind = 'xp' | 'weapon' | 'health'
 
 /**
  * Field pickup: an XP crystal (auto-magnetized, grants XP) or a weapon pod
@@ -20,6 +20,7 @@ export class Pickup implements Poolable {
 
   kind: PickupKind = 'xp'
   xp = 0
+  heal = 0
   weaponId = ''
   radius = 8
   /** Seconds until it despawns if uncollected. */
