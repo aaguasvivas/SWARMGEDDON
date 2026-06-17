@@ -1,6 +1,6 @@
 import { Container, Graphics } from 'pixi.js'
 import { COLORS, PLAYER_MAX_HP, PLAYER_RADIUS, PLAYER_SPEED } from '../config.ts'
-import { clamp, lerp, lerpAngle, type Vec2 } from '../core/vec.ts'
+import { clamp, lerp, type Vec2 } from '../core/vec.ts'
 import type { Bounds } from './arena.ts'
 
 /**
@@ -20,7 +20,6 @@ export class Player {
 
   private prevX = 0
   private prevY = 0
-  private prevFacing = 0
 
   readonly radius = PLAYER_RADIUS
   readonly speed = PLAYER_SPEED
@@ -44,7 +43,7 @@ export class Player {
   spawn(x: number, y: number): void {
     this.x = this.prevX = x
     this.y = this.prevY = y
-    this.facing = this.prevFacing = 0
+    this.facing = 0
     this.view.position.set(x, y)
   }
 
@@ -56,7 +55,6 @@ export class Player {
   update(dt: number, move: Vec2, aimDir: Vec2, bounds: Bounds, speedMul = 1): void {
     this.prevX = this.x
     this.prevY = this.y
-    this.prevFacing = this.facing
 
     const sp = this.speed * speedMul
     this.x += move.x * sp * dt
@@ -71,10 +69,12 @@ export class Player {
     }
   }
 
-  /** Interpolated render between the last two sim steps. */
+  /** Interpolated render between the last two sim steps. Position interpolates
+   *  for smoothness, but the barrel snaps straight to the aim so fast turns and
+   *  spinning to shoot in all directions feel crisp (no rotational lag). */
   render(alpha: number): void {
     this.view.x = lerp(this.prevX, this.x, alpha)
     this.view.y = lerp(this.prevY, this.y, alpha)
-    this.view.rotation = lerpAngle(this.prevFacing, this.facing, alpha)
+    this.view.rotation = this.facing
   }
 }

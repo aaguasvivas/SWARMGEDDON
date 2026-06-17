@@ -8,17 +8,20 @@ import { COLORS } from '../config.ts'
  * `entities`, particles/floating-text in `fx`, HUD + touch sticks in `ui`.
  */
 export interface Layers {
-  /** Shake/warp transform container (pivot at screen center). Do NOT filter
-   *  this — filters + a pivot mis-place the result. */
+  /** Camera + shake transform (pure translation). Pan this to follow the player. */
   world: Container
-  /** Identity-transform child that holds the game scene and carries the bloom
-   *  filter (so the filter renders in clean local space). */
+  /** Carries the bloom filter. Identity transform relative to `world`; its
+   *  filterArea is pinned to the screen so the filter only processes the visible
+   *  window, not the whole (huge) arena. */
   scene: Container
+  /** Reality-warp host (scale/rotation around the player) — a child of the
+   *  filtered scene, so the filter never sits on a pivoted container. */
+  warpHost: Container
   floor: Container // arena background + grid + border
   ichor: Container // persistent ichor render-texture (beneath entities)
   entities: Container // player, enemies, projectiles, pickups
   fx: Container // particles, gibs, floating numbers, screen-space effects
-  ui: Container // HUD, debug overlay, virtual sticks, crosshair (does NOT shake)
+  ui: Container // HUD, debug overlay, virtual sticks, crosshair (does NOT pan)
 }
 
 export interface GameRenderer {
@@ -53,14 +56,16 @@ export async function createRenderer(mount: HTMLElement): Promise<GameRenderer> 
   const layers: Layers = {
     world: new Container(),
     scene: new Container(),
+    warpHost: new Container(),
     floor: new Container(),
     ichor: new Container(),
     entities: new Container(),
     fx: new Container(),
     ui: new Container(),
   }
-  // world (shake/warp transform) -> scene (filtered, identity) -> content.
-  layers.scene.addChild(layers.floor, layers.ichor, layers.entities, layers.fx)
+  // world (camera/shake) -> scene (bloom, screen-pinned) -> warpHost (warp) -> content.
+  layers.warpHost.addChild(layers.floor, layers.ichor, layers.entities, layers.fx)
+  layers.scene.addChild(layers.warpHost)
   layers.world.addChild(layers.scene)
   app.stage.addChild(layers.world, layers.ui)
 

@@ -1,4 +1,5 @@
 import { MAX_ENEMIES } from '../config.ts'
+import { clamp } from '../core/vec.ts'
 import { ENEMIES } from '../content/enemies.ts'
 import {
   BOSS_INTERVAL,
@@ -26,7 +27,14 @@ export function spawnSystem(world: World, dt: number): void {
   let guard = 0
   while (world.spawnTimer <= 0 && guard++ < 64) {
     world.spawnTimer += interval
-    for (let i = 0; i < batch; i++) spawnFromEdge(world, pickEnemy(world.rng, t))
+    if (world.enemies.size >= MAX_ENEMIES) {
+      world.spawnTimer = interval // at the cap: stop attempting, don't bank pulses
+      break
+    }
+    for (let i = 0; i < batch; i++) {
+      if (world.enemies.size >= MAX_ENEMIES) break
+      spawnFromEdge(world, pickEnemy(world.rng, t))
+    }
   }
 
   // Elites: one hive-guardian per cadence, intentionally stepping up to a small
@@ -49,28 +57,65 @@ export function spawnSystem(world: World, dt: number): void {
   }
 }
 
-function edgePoint(world: World, margin: number): { x: number; y: number } {
-  const b = world.arena.bounds
+// FIXED spawn extents (NOT the actual viewport) — big enough to sit off-screen
+// for any reasonable viewport, and constant so the Daily Challenge is truly
+// device-independent (spawn positions never depend on screen size).
+const SPAWN_HALF_W = 820
+const SPAWN_HALF_H = 580
+
+/**
+ * A point just outside the visible window, around the player, so enemies stream
+ * in from the screen edges and converge. Only picks sides that have off-screen
+ * room inside the world, so they never pop in on-screen when the player hugs a
+ * world wall.
+ */
+function viewportSpawnPoint(world: World): { x: number; y: number } {
   const rng = world.rng
-  switch (rng.int(0, 3)) {
+  const b = world.arena.bounds
+  const px = world.player.x
+  const py = world.player.y
+
+  // Sides (0=top,1=right,2=bottom,3=left) that have off-screen room in-arena.
+  const sides: number[] = []
+  if (py - SPAWN_HALF_H >= b.y) sides.push(0)
+  if (px + SPAWN_HALF_W <= b.x + b.w) sides.push(1)
+  if (py + SPAWN_HALF_H <= b.y + b.h) sides.push(2)
+  if (px - SPAWN_HALF_W >= b.x) sides.push(3)
+  // The huge arena always leaves at least two open sides; fall back just in case.
+  const side = sides.length ? sides[rng.int(0, sides.length - 1)]! : rng.int(0, 3)
+
+  let x = px
+  let y = py
+  switch (side) {
     case 0:
-      return { x: rng.range(b.x, b.x + b.w), y: b.y - margin }
+      x = px + rng.range(-SPAWN_HALF_W, SPAWN_HALF_W)
+      y = py - SPAWN_HALF_H
+      break
     case 1:
-      return { x: b.x + b.w + margin, y: rng.range(b.y, b.y + b.h) }
+      x = px + SPAWN_HALF_W
+      y = py + rng.range(-SPAWN_HALF_H, SPAWN_HALF_H)
+      break
     case 2:
-      return { x: rng.range(b.x, b.x + b.w), y: b.y + b.h + margin }
+      x = px + rng.range(-SPAWN_HALF_W, SPAWN_HALF_W)
+      y = py + SPAWN_HALF_H
+      break
     default:
-      return { x: b.x - margin, y: rng.range(b.y, b.y + b.h) }
+      x = px - SPAWN_HALF_W
+      y = py + rng.range(-SPAWN_HALF_H, SPAWN_HALF_H)
+  }
+  return {
+    x: clamp(x, b.x + 24, b.x + b.w - 24),
+    y: clamp(y, b.y + 24, b.y + b.h - 24),
   }
 }
 
 function spawnFromEdge(world: World, defId: string): Enemy | null {
-  const p = edgePoint(world, 34)
+  const p = viewportSpawnPoint(world)
   return spawnEnemy(world, defId, p.x, p.y)
 }
 
 function spawnBoss(world: World): void {
-  const p = edgePoint(world, 70)
+  const p = viewportSpawnPoint(world)
   const queen = spawnEnemy(world, 'queen', p.x, p.y)
   if (!queen) return
   world.bossAlive = true

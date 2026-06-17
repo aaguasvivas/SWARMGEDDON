@@ -178,6 +178,22 @@ export function spawnExplosion(world: World, x: number, y: number, radius: numbe
   }
 }
 
+/** Expanding shockwave ring (death-pop / explosion). Blooms beautifully. */
+export function spawnRing(world: World, x: number, y: number, color: number, targetScale: number): void {
+  if (world.particles.size >= MAX_PARTICLES) return
+  const p = world.particles.acquire()
+  begin(p, x, y)
+  p.vx = 0
+  p.vy = 0
+  p.life = p.maxLife = 0.34
+  p.size = 0.2
+  p.grow = (targetScale - 0.2) / 0.34
+  p.tint = color
+  p.additive = true
+  p.sprite.texture = world.ringTex
+  p.sprite.blendMode = 'add'
+}
+
 /** Lightning arc sparks along a segment (chain lightning). */
 export function spawnChainArc(world: World, x1: number, y1: number, x2: number, y2: number): void {
   const rng = world.rng

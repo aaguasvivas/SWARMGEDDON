@@ -36,12 +36,15 @@ export const ELITE_INTERVAL = 48
 export const BOSS_FIRST = 175
 export const BOSS_INTERVAL = 165
 
+/** Seconds between spawn pulses — gentle opening (don't punish a slow start),
+ *  tightening to a relentless late game. */
 export function spawnInterval(time: number): number {
-  return Math.max(0.1, 0.9 - time * 0.008)
+  return Math.max(0.08, 0.95 - time * 0.0072)
 }
 
+/** Enemies per pulse — grows over time so the screen fills into a sea of bodies. */
 export function spawnBatch(time: number): number {
-  return 1 + Math.floor(time / 24)
+  return 1 + Math.floor(time / 20)
 }
 
 /** Weighted pick among all currently-unlocked regular enemy types. */

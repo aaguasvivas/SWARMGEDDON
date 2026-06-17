@@ -8,6 +8,7 @@ import {
   spawnGibs,
   spawnHitSpark,
   spawnImpact,
+  spawnRing,
 } from '../effects/fx.ts'
 import { spawnAcidPool } from './acid.ts'
 import { dropGem, spawnWeaponDrop } from './pickups.ts'
@@ -102,6 +103,9 @@ function applyHit(world: World, e: Enemy, p: Projectile): void {
     if (dot < -0.25) dmg *= 1 - e.def.frontArmor
   }
 
+  // Giant Slayer: bonus damage vs elites & bosses.
+  if (m.eliteDamageMul !== 1 && (e.def.elite || e.def.boss)) dmg *= m.eliteDamageMul
+
   // Knockback nudge (heavier enemies shrug it off).
   const sp = Math.hypot(p.vx, p.vy) || 1
   const k = (p.knockback * 0.02) / (e.radius / 14)
@@ -118,6 +122,11 @@ function applyHit(world: World, e: Enemy, p: Projectile): void {
   world.audio.play('hit')
 
   dealDamage(world, e, dmg)
+
+  // Executioner: cull badly-wounded non-boss enemies outright.
+  if (m.executeFrac > 0 && e.alive && !e.def.boss && e.hp <= e.maxHp * m.executeFrac) {
+    dealDamage(world, e, e.hp)
+  }
 
   if (p.chain > 0) chainLightning(world, e, p, dmg * 0.6)
 }
@@ -162,6 +171,7 @@ function chainLightning(world: World, from: Enemy, p: Projectile, dmg: number): 
 /** AoE explosion (rockets / explosive rounds). */
 function explode(world: World, x: number, y: number, radius: number, dmg: number): void {
   spawnExplosion(world, x, y, radius)
+  spawnRing(world, x, y, 0xffd27a, radius / 22)
   world.ichor.queueStamp(x, y, world.rng)
   world.juice.addTrauma(0.18)
   world.audio.play('heavy')
@@ -184,6 +194,18 @@ function killEnemy(world: World, e: Enemy): void {
   spawnGibs(world, e.x, e.y, def.gibCount, def.gibColor)
   world.juice.addTrauma(def.boss ? 0.6 : def.elite ? 0.2 : 0.05)
   world.audio.play('kill')
+
+  // Death-pop shockwave ring (+ a punchy hit-stop on the big ones). Skip the
+  // xp-1 chaff so a swarm wipe stays clean and cheap.
+  if (def.boss) {
+    spawnRing(world, e.x, e.y, def.gibColor, 5.5)
+    world.juice.addHitstop(0.12)
+  } else if (def.elite) {
+    spawnRing(world, e.x, e.y, def.gibColor, 3)
+    world.juice.addHitstop(0.05)
+  } else if (def.xp >= 2) {
+    spawnRing(world, e.x, e.y, def.gibColor, 1.4)
+  }
 
   if (world.mods.lifestealPerKill > 0) {
     world.player.hp = Math.min(world.player.maxHp, world.player.hp + world.mods.lifestealPerKill)

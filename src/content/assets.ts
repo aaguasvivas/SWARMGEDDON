@@ -59,6 +59,12 @@ function drawParticle(g: Graphics): void {
   g.circle(0, 0, 3).fill(W)
 }
 
+/** Hollow ring (death-pop shockwave). White, tinted at spawn; expands + fades. */
+function drawRing(g: Graphics): void {
+  g.circle(0, 0, 28).stroke({ width: 6, color: W, alpha: 0.95 })
+  g.circle(0, 0, 28).stroke({ width: 14, color: W, alpha: 0.2 })
+}
+
 /** Chunky gib shard — irregular for organic gore. */
 function drawGib(g: Graphics): void {
   g.poly([-4, -3, 3, -4, 5, 1, 1, 4, -4, 3]).fill(W)
@@ -243,6 +249,7 @@ export const PLACEHOLDER_SPRITES: Record<string, SpriteBuilder> = {
   bullet: drawBullet,
   acidGlob: drawAcidGlob,
   particle: drawParticle,
+  ring: drawRing,
   gib: drawGib,
   gem: drawGem,
   crate: drawCrate,

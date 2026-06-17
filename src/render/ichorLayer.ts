@@ -74,7 +74,9 @@ export class IchorLayer {
     this.rt = RenderTexture.create({
       width: Math.max(1, Math.ceil(w)),
       height: Math.max(1, Math.ceil(h)),
-      resolution: 1,
+      // The arena is large; the gore is soft, so a sub-1 backing resolution is
+      // visually free and keeps this big texture's memory down (~2MB vs ~21MB).
+      resolution: 0.6,
     })
     this.view.texture = this.rt
     this.view.position.set(x, y)

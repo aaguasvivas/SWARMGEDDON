@@ -1,5 +1,6 @@
-import { Container, Graphics } from 'pixi.js'
+import { Container, Graphics, Rectangle } from 'pixi.js'
 import { COLORS, DEFAULT_SEED, FIXED_DT, MAX_FRAME_TIME } from './config.ts'
+import { clamp } from './core/vec.ts'
 import { GameLoop } from './core/time.ts'
 import { Rng, seedFromString } from './core/rng.ts'
 import { initSafeArea, getInsets } from './platform/safeArea.ts'
@@ -60,18 +61,21 @@ async function boot(): Promise<void> {
   const sim = new Rng(DEFAULT_SEED)
 
   const arena = new Arena()
-  arena.setDecor(makeDecor(cosmetic, 56))
+  arena.setDecor(makeDecor(cosmetic, 220)) // more specks for the bigger world
+  arena.build() // fixed world — drawn once
   layers.floor.addChild(arena.view)
 
   const ichor = new IchorLayer(app.renderer, cosmetic)
+  ichor.resize(arena.bounds.w, arena.bounds.h, arena.bounds.x, arena.bounds.y) // once; arena is fixed
   layers.ichor.addChild(ichor.view)
 
   const player = new Player()
   const world = new World(sim, arena, player, ichor, audio, layers, texReg)
-  layers.scene.addChild(player.view) // above the swarm, inside the filtered scene
+  layers.warpHost.addChild(player.view) // above the swarm, inside the warped/bloomed scene
 
-  // Bloom + grade over the game scene (UI stays crisp & unbloomed). Applied to
-  // `scene` (identity transform), not `world` (which carries the warp pivot).
+  // Bloom + grade over the game scene (UI stays crisp & unbloomed). On `scene`
+  // (identity vs the camera-translated `world`); filterArea is pinned to the
+  // screen in layout() so the filter only processes the visible window.
   const postFX = new PostFX(layers.scene)
 
   const input = new InputManager(app.canvas)
@@ -79,6 +83,7 @@ async function boot(): Promise<void> {
   const vignette = new Vignette()
   const crosshair = buildCrosshair()
   const hurtOverlay = new Graphics()
+  const flashOverlay = new Graphics() // brief white pop on level-up
   const hud = new Hud()
   const modal = new LevelUpModal()
   const mainMenu = new MainMenu()
@@ -87,7 +92,7 @@ async function boot(): Promise<void> {
   const debug = new DebugOverlay()
   // vignette sits at the bottom of the UI (above the world, below the HUD).
   layers.ui.addChild(
-    vignette.view, hud.view, input.touch.view, hurtOverlay, crosshair,
+    vignette.view, hud.view, input.touch.view, hurtOverlay, flashOverlay, crosshair,
     modal.view, mainMenu.view, gameOver.view, settingsPanel.view, debug.view,
   )
 
@@ -110,6 +115,7 @@ async function boot(): Promise<void> {
 
   function startRun(mode: RunMode): void {
     world.beginRun(runSeed(mode), mode)
+    applyCamera(player.x, player.y) // seed the camera before the first sim step
     screen = 'playing'
     input.setEnabled(true)
     modal.close()
@@ -134,6 +140,7 @@ async function boot(): Promise<void> {
     screen = 'gameover'
     input.setEnabled(false)
     buzz(150)
+    input.rumble(320, 0.9)
   }
 
   function toMenu(): void {
@@ -169,13 +176,13 @@ async function boot(): Promise<void> {
     }
   }
 
-  // --- layout ---
+  // --- layout (screen-dependent only; the arena/ichor are fixed-size) ---
   function layout(): void {
     const w = app.screen.width
     const h = app.screen.height
     const insets = getInsets()
-    arena.layout(w, h, insets)
-    ichor.resize(arena.bounds.w, arena.bounds.h, arena.bounds.x, arena.bounds.y)
+    world.viewW = w
+    world.viewH = h
     hud.layout(w, h, insets)
     debug.layout(insets)
     vignette.resize(w, h)
@@ -183,10 +190,13 @@ async function boot(): Promise<void> {
     mainMenu.layout(w, h)
     gameOver.layout(w, h)
     settingsPanel.layout(w, h)
-    layers.world.pivot.set(w / 2, h / 2) // warp/scale pivots at screen center
+    // Pin the bloom to the visible window (not the whole 2800x1900 arena).
+    layers.scene.filterArea = new Rectangle(0, 0, w, h)
     hurtOverlay.clear()
     hurtOverlay.rect(0, 0, w, h).fill(COLORS.hurtFlash)
-    // Idle the player at center so the menu has a live arena behind it.
+    flashOverlay.clear()
+    flashOverlay.rect(0, 0, w, h).fill(0xeafff6)
+    // Idle the player at world center so the menu has a live arena behind it.
     if (screen === 'menu') player.spawn(arena.bounds.x + arena.bounds.w / 2, arena.bounds.y + arena.bounds.h / 2)
   }
   layout()
@@ -228,6 +238,16 @@ async function boot(): Promise<void> {
     }
   })
 
+  // Follow camera: center on (px,py), clamped so we never show past the world
+  // wall. Writes world.camX/camY (world-space top-left of the visible window).
+  function applyCamera(px: number, py: number): void {
+    const b = world.arena.bounds
+    const w = world.viewW
+    const h = world.viewH
+    world.camX = b.w <= w ? b.x - (w - b.w) / 2 : clamp(px - w / 2, b.x, b.x + b.w - w)
+    world.camY = b.h <= h ? b.y - (h - b.h) / 2 : clamp(py - h / 2, b.y, b.y + b.h - h)
+  }
+
   // One fixed simulation step (extracted so dev tooling can drive it).
   function stepSim(dt: number): void {
     if (screen !== 'playing' || world.paused) return
@@ -243,7 +263,10 @@ async function boot(): Promise<void> {
     }
 
     world.time += dt
-    input.update(player.x, player.y)
+    // Aim is cursor-relative to the player's SCREEN position, using the camera
+    // from the last rendered frame (exactly what the player saw and aimed at).
+    // The camera itself is recomputed each render from the interpolated position.
+    input.update(player.x - world.camX, player.y - world.camY)
     spawnSystem(world, dt)
     buildEnemyHash(world)
     aiSystem(world, dt)
@@ -269,6 +292,8 @@ async function boot(): Promise<void> {
   }
 
   let warpAmt = 0
+  let levelFlash = 0
+  let prevHurt = 0
   const loop = new GameLoop(
     FIXED_DT,
     MAX_FRAME_TIME,
@@ -296,24 +321,53 @@ async function boot(): Promise<void> {
         } else {
           modal.open(draft)
           buzz(30)
+          input.rumble(90, 0.4)
+          levelFlash = 1
         }
       }
       if ((!world.paused || !playing) && modal.isOpen()) modal.close()
 
       const fd = loop.frameMs / 1000
+      // Rumble on a discrete hit (hurtFlash jumps); contact's gradual drain won't trigger.
+      if (playing && world.hurtFlash - prevHurt > 0.15) input.rumble(120, 0.5)
+      prevHurt = world.hurtFlash
       world.hurtFlash = Math.max(0, world.hurtFlash - fd * 2.2)
-      hurtOverlay.alpha = playing ? world.hurtFlash * 0.45 : 0
 
-      // Screen shake (scaled by setting) + reality-warp distortion.
+      // Hurt vignette + a low-HP danger pulse so you feel the pressure.
+      let red = world.hurtFlash * 0.45
+      if (playing) {
+        const frac = world.player.hp / world.player.maxHp
+        if (frac < 0.32) {
+          const t = performance.now() / 1000
+          red = Math.max(red, (1 - frac / 0.32) * (0.12 + Math.sin(t * 7) * 0.06))
+        }
+      }
+      hurtOverlay.alpha = playing ? red : 0
+
+      // Level-up flash.
+      levelFlash = Math.max(0, levelFlash - fd * 3.5)
+      flashOverlay.alpha = levelFlash * 0.4
+
+      // Follow camera (smooth, from the interpolated player position) + shake.
       world.juice.updateShake(fd)
+      applyCamera(player.view.x, player.view.y)
+      layers.world.position.set(
+        -world.camX + world.juice.offsetX * shakeMul,
+        -world.camY + world.juice.offsetY * shakeMul,
+      )
+
+      // Reality-warp distortion: scale/rotate around the player, inside the
+      // bloomed scene (so the filter never sits on a transformed container).
       const warpTarget = playing && world.warperActive ? 1 : 0
       warpAmt += (warpTarget - warpAmt) * Math.min(1, fd * 4)
       const now = performance.now() / 1000
-      const cx = app.screen.width / 2
-      const cy = app.screen.height / 2
-      layers.world.scale.set(1 + Math.sin(now * 6) * 0.02 * warpAmt)
-      layers.world.rotation = Math.sin(now * 1.3) * 0.012 * warpAmt
-      layers.world.position.set(cx + world.juice.offsetX * shakeMul, cy + world.juice.offsetY * shakeMul)
+      const wh = layers.warpHost
+      // pivot == position so scale/rotation orbit the player while leaving the
+      // content otherwise in place (the offsets cancel at scale 1 / rotation 0).
+      wh.pivot.set(player.view.x, player.view.y)
+      wh.position.set(player.view.x, player.view.y)
+      wh.scale.set(1 + Math.sin(now * 6) * 0.02 * warpAmt)
+      wh.rotation = Math.sin(now * 1.3) * 0.012 * warpAmt
 
       // Adaptive music.
       audio.intensity = playing ? Math.min(1, world.enemies.size / 120 + (world.bossAlive ? 0.4 : 0)) : 0.12

@@ -1,5 +1,5 @@
 import type { Texture } from 'pixi.js'
-import { HASH_CELL, PLAYER_MAX_HP, SHAKE_DECAY, SHAKE_MAX_OFFSET, WEAPON_DROP_INTERVAL } from '../config.ts'
+import { HASH_CELL, PLAYER_MAX_HP, SHAKE_DECAY, SHAKE_MAX_OFFSET } from '../config.ts'
 import { Pool } from '../core/pool.ts'
 import { Rng } from '../core/rng.ts'
 import { SpatialHash } from '../core/spatialHash.ts'
@@ -45,6 +45,7 @@ export class World {
 
   readonly sparkTex: Texture
   readonly gibTex: Texture
+  readonly ringTex: Texture
 
   weapon: WeaponDef = WEAPONS[DEFAULT_WEAPON_ID]!
   ammo = -1
@@ -77,6 +78,13 @@ export class World {
   /** Show the one-time "collect for XP" hint on the first gem (until seen once). */
   showGemHint = false
 
+  /** Visible viewport size (screen, CSS px) — used to spawn just off-screen. */
+  viewW = 1280
+  viewH = 720
+  /** Camera top-left in world space (player-centered, clamped to arena). */
+  camX = 0
+  camY = 0
+
   constructor(
     readonly rng: Rng,
     readonly arena: Arena,
@@ -88,6 +96,7 @@ export class World {
   ) {
     this.sparkTex = texReg.getTexture('particle')
     this.gibTex = texReg.getTexture('gib')
+    this.ringTex = texReg.getTexture('ring')
 
     this.enemies = new Pool<Enemy>(
       () => { const s = texReg.makeSprite('swarmer'); layers.entities.addChild(s); return new Enemy(s) },
@@ -146,7 +155,7 @@ export class World {
     this.revivesUsed = 0
     this.spawnTimer = 0
     this.fireCooldown = 0
-    this.weaponDropTimer = WEAPON_DROP_INTERVAL
+    this.weaponDropTimer = 7 // first weapon pod comes early so a slow start isn't brutal
     this.eliteTimer = 0
     this.bossTimer = BOSS_FIRST
     this.hurtFlash = 0

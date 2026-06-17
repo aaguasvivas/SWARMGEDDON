@@ -67,6 +67,16 @@ export class InputManager {
    * current position, needed to turn an absolute mouse position into a facing
    * direction.
    */
+  /** Rumble the active gamepad (dual-rumble), if it has a vibration actuator. */
+  rumble(durationMs: number, strong: number, weak = strong * 0.6): void {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : []
+    const pad = this.gamepadIndex >= 0 ? pads[this.gamepadIndex] : null
+    const act = (pad as (Gamepad & { vibrationActuator?: { playEffect?: (type: string, opts: object) => Promise<unknown> } }) | null)?.vibrationActuator
+    if (act?.playEffect) {
+      act.playEffect('dual-rumble', { duration: durationMs, strongMagnitude: strong, weakMagnitude: weak }).catch(() => {})
+    }
+  }
+
   /** Toggle gameplay input (off in menus). Drops any held touches. */
   setEnabled(on: boolean): void {
     this.enabled = on

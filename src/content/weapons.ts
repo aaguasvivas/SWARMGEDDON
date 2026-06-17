@@ -86,6 +86,16 @@ export const WEAPONS: Record<string, WeaponDef> = {
     spread: 0.008, projectilesPerShot: 1, pierce: 5, knockback: 8, projectileLife: 0.5,
     projectileRadius: 3, tint: 0xff6cf0, ammo: 600, shake: 0.015, sfx: 'beam',
   },
+  vortex: {
+    id: 'vortex', name: 'Vortex Cannon', fireRate: 2.2, damage: 22, projectileSpeed: 430,
+    spread: 0.02, projectilesPerShot: 1, pierce: 12, knockback: 360, projectileLife: 1.3,
+    projectileRadius: 9, tint: 0x9b7aff, ammo: 64, shake: 0.13, sfx: 'plasma',
+  },
+  hailstorm: {
+    id: 'hailstorm', name: 'Hailstorm', fireRate: 9, damage: 5, projectileSpeed: 780,
+    spread: 0.22, projectilesPerShot: 3, pierce: 1, knockback: 50, projectileLife: 0.5,
+    projectileRadius: 3, tint: 0x86f7ff, ammo: 360, shake: 0.04, sfx: 'smg',
+  },
 }
 
 /** Weapon ids that can drop as field pickups (everything but the default). */

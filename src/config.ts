@@ -19,12 +19,19 @@ export const MAX_FRAME_TIME = 0.05
 /** Default RNG seed when not running a seeded daily challenge. */
 export const DEFAULT_SEED = 0x5eed1e
 
-/** Pixels of empty gutter between the screen edge (inside safe area) and the arena. */
-export const ARENA_MARGIN = 24
+/**
+ * The play-field is a FIXED large world (not the viewport) with a follow camera
+ * that keeps the player near screen center. This gives Crimsonland's "huge
+ * field" feel, room to kite out of tight spots, and a full 360° aim circle that
+ * never runs off the screen edge. Fixed size also makes the Daily Challenge
+ * truly device-independent (spawn positions no longer depend on screen size).
+ */
+export const ARENA_W = 2800
+export const ARENA_H = 1900
 
-/** Player movement constants (world units; world units == CSS px in the fixed-camera arena). */
+/** Player movement constants (world units). */
 export const PLAYER_RADIUS = 18
-export const PLAYER_SPEED = 270 // units per second
+export const PLAYER_SPEED = 285 // units per second
 
 /** Gamepad analog deadzone — sticks rest noisily around center. */
 export const STICK_DEADZONE = 0.18

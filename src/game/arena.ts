@@ -1,6 +1,5 @@
 import { Container, Graphics } from 'pixi.js'
-import { COLORS, ARENA_MARGIN } from '../config.ts'
-import type { Insets } from '../platform/safeArea.ts'
+import { ARENA_H, ARENA_W, COLORS } from '../config.ts'
 
 export interface Bounds {
   x: number
@@ -9,7 +8,7 @@ export interface Bounds {
   h: number
 }
 
-/** A dim floor speck, stored in normalized [0,1] arena space so it scales on resize. */
+/** A dim floor speck, stored in normalized [0,1] arena space. */
 export interface DecorSpeck {
   nx: number
   ny: number
@@ -17,45 +16,38 @@ export interface DecorSpeck {
   alpha: number
 }
 
-const GRID = 64 // grid cell size in world units
+const GRID = 80 // grid cell size in world units
 
 /**
- * The bounded play-field. Fixed camera (Crimsonland-style): the arena simply
- * fills the viewport inside the safe-area inset + a margin, and the player is
- * clamped within. Background + grid + glowing border are redrawn only on
- * resize (cold path), so per-frame floor cost is zero.
+ * The bounded play-field: a FIXED large world (camera follows the player). The
+ * floor, grid, and glowing border are drawn once at boot — per-frame floor cost
+ * is zero, and the grid scrolling under the camera sells the sense of a huge
+ * field. The player is clamped to these bounds.
  */
 export class Arena {
   readonly view = new Container()
-  bounds: Bounds = { x: 0, y: 0, w: 0, h: 0 }
+  readonly bounds: Bounds = { x: 0, y: 0, w: ARENA_W, h: ARENA_H }
 
   private floor = new Graphics()
   private decorG = new Graphics()
   private grid = new Graphics()
   private border = new Graphics()
   private decor: readonly DecorSpeck[] = []
+  private built = false
 
   constructor() {
     this.view.addChild(this.floor, this.decorG, this.grid, this.border)
   }
 
-  /**
-   * Deterministic floor specks generated from the seeded RNG. Same seed -> same
-   * scatter on every reload, which is the simplest visible proof that the PRNG
-   * pipeline is deterministic (and that the daily challenge will reproduce).
-   */
+  /** Deterministic floor specks generated from the seeded RNG. */
   setDecor(decor: readonly DecorSpeck[]): void {
     this.decor = decor
-    if (this.bounds.w > 0) this.draw()
+    if (this.built) this.draw()
   }
 
-  /** Recompute bounds for the current screen + insets, then redraw. */
-  layout(screenW: number, screenH: number, insets: Insets): void {
-    const x = insets.left + ARENA_MARGIN
-    const y = insets.top + ARENA_MARGIN
-    const w = screenW - insets.left - insets.right - ARENA_MARGIN * 2
-    const h = screenH - insets.top - insets.bottom - ARENA_MARGIN * 2
-    this.bounds = { x, y, w: Math.max(0, w), h: Math.max(0, h) }
+  /** Draw the fixed world once. */
+  build(): void {
+    this.built = true
     this.draw()
   }
 
@@ -88,11 +80,11 @@ export class Arena {
         .stroke({ width: 1, color: bright ? COLORS.gridLineBright : COLORS.gridLine, alpha: 0.9 })
     }
 
-    // Border: a soft outer glow line + a crisp inner line.
+    // Border: a soft outer glow line + a crisp inner line (the world edge).
     this.border.clear()
     this.border
-      .rect(x - 2, y - 2, w + 4, h + 4)
-      .stroke({ width: 6, color: COLORS.arenaBorderGlow, alpha: 0.18 })
-    this.border.rect(x, y, w, h).stroke({ width: 2, color: COLORS.arenaBorder, alpha: 0.9 })
+      .rect(x - 3, y - 3, w + 6, h + 6)
+      .stroke({ width: 8, color: COLORS.arenaBorderGlow, alpha: 0.22 })
+    this.border.rect(x, y, w, h).stroke({ width: 3, color: COLORS.arenaBorder, alpha: 0.95 })
   }
 }

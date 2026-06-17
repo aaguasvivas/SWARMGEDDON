@@ -29,6 +29,8 @@ export interface Modifiers {
   damageReduction: number // 0..1 incoming damage cut
   revives: number // extra lives
   berserker: number // fire rate scales with missing HP
+  eliteDamageMul: number // bonus damage vs elites/bosses
+  executeFrac: number // instantly cull non-boss enemies below this HP fraction
 }
 
 export function baseModifiers(): Modifiers {
@@ -38,6 +40,7 @@ export function baseModifiers(): Modifiers {
     bonusHp: 0, hpMul: 1, regenPerSec: 0, lifestealPerKill: 0, magnetMul: 1,
     critChance: 0, critMul: 2, xpMul: 1, bounces: 0, explosiveRounds: 0, slowOnHit: 0,
     thorns: 0, dodge: 0, damageReduction: 0, revives: 0, berserker: 0,
+    eliteDamageMul: 1, executeFrac: 0,
   }
 }
 
@@ -78,6 +81,8 @@ export const PERKS: readonly PerkDef[] = [
   { id: 'second_wind', name: 'Second Wind', desc: 'revive once at 50% HP', rarity: 'rare', maxStacks: 1, apply: (m, s) => (m.revives += s) },
   { id: 'berserker', name: 'Berserker', desc: 'fire faster as HP drops', rarity: 'rare', maxStacks: 1, apply: (m, s) => (m.berserker += s) },
   { id: 'glass_cannon', name: 'Glass Cannon', desc: '+45% damage, -25% max HP', rarity: 'rare', maxStacks: 1, apply: (m, s) => { m.damageMul *= 1 + 0.45 * s; m.hpMul *= Math.pow(0.75, s) } },
+  { id: 'giant_slayer', name: 'Giant Slayer', desc: '+35% damage to elites & bosses', rarity: 'rare', maxStacks: 3, apply: (m, s) => (m.eliteDamageMul *= 1 + 0.35 * s) },
+  { id: 'executioner', name: 'Executioner', desc: 'cull non-boss enemies below 12% HP', rarity: 'rare', maxStacks: 2, apply: (m, s) => (m.executeFrac = Math.min(0.3, m.executeFrac + 0.12 * s)) },
 ]
 
 const PERK_BY_ID = new Map(PERKS.map((p) => [p.id, p]))
