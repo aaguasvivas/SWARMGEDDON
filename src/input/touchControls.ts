@@ -49,6 +49,14 @@ export class TouchControls {
     return this.moveId !== -1 || this.aimId !== -1
   }
 
+  /** Whether the move / aim stick is currently held (for the onboarding hint). */
+  get moving(): boolean {
+    return this.moveId !== -1
+  }
+  get aiming(): boolean {
+    return this.aimId !== -1
+  }
+
   private buildStick(): Container {
     const c = new Container()
     const base = new Graphics()

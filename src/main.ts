@@ -23,6 +23,8 @@ import { LevelUpModal } from './ui/levelupModal.ts'
 import { MainMenu } from './ui/mainMenu.ts'
 import { GameOver } from './ui/gameOver.ts'
 import { SettingsPanel } from './ui/settingsPanel.ts'
+import { TouchHint } from './ui/touchHint.ts'
+import { loadJSON, saveJSON } from './platform/storage.ts'
 import { loadSettings, saveSettings, type Settings } from './state/settings.ts'
 import { recordRun, type RunResult } from './state/persistence.ts'
 import { shareRunCard } from './share/shareCard.ts'
@@ -89,12 +91,23 @@ async function boot(): Promise<void> {
   const mainMenu = new MainMenu()
   const gameOver = new GameOver()
   const settingsPanel = new SettingsPanel()
+  const touchHint = new TouchHint()
   const debug = new DebugOverlay()
   // vignette sits at the bottom of the UI (above the world, below the HUD).
   layers.ui.addChild(
     vignette.view, hud.view, input.touch.view, hurtOverlay, flashOverlay, crosshair,
-    modal.view, mainMenu.view, gameOver.view, settingsPanel.view, debug.view,
+    touchHint.view, modal.view, mainMenu.view, gameOver.view, settingsPanel.view, debug.view,
   )
+
+  // Touch onboarding state: show the dual-stick guide on touch devices until the
+  // player has used both sticks once (persisted), fading each side as it's used.
+  const isTouchDevice =
+    'ontouchstart' in window ||
+    navigator.maxTouchPoints > 0 ||
+    new URLSearchParams(location.search).get('touch') === '1' // testing override
+  let touchLearned = loadJSON('seenTouchControls', false)
+  let touchMoveUsed = false
+  let touchAimUsed = false
 
   // --- settings ---
   let settings = loadSettings()
@@ -116,6 +129,8 @@ async function boot(): Promise<void> {
   function startRun(mode: RunMode): void {
     world.beginRun(runSeed(mode), mode)
     applyCamera(player.x, player.y) // seed the camera before the first sim step
+    touchMoveUsed = false
+    touchAimUsed = false
     screen = 'playing'
     input.setEnabled(true)
     modal.close()
@@ -185,6 +200,7 @@ async function boot(): Promise<void> {
     world.viewH = h
     hud.layout(w, h, insets)
     debug.layout(insets)
+    touchHint.layout(w, h, insets)
     vignette.resize(w, h)
     modal.setScreen(w, h)
     mainMenu.layout(w, h)
@@ -328,6 +344,21 @@ async function boot(): Promise<void> {
       if ((!world.paused || !playing) && modal.isOpen()) modal.close()
 
       const fd = loop.frameMs / 1000
+
+      // Touch onboarding: show the dual-stick guide on touch until both sticks
+      // have been used once (then remember it, forever). Each side fades on use.
+      if (playing) {
+        if (input.touch.moving) touchMoveUsed = true
+        if (input.touch.aiming) touchAimUsed = true
+        if (touchMoveUsed && touchAimUsed && !touchLearned) {
+          touchLearned = true
+          saveJSON('seenTouchControls', true)
+        }
+      }
+      const showTouchHint = playing && isTouchDevice && !input.hasPointer && !touchLearned
+      touchHint.view.visible = showTouchHint
+      if (showTouchHint) touchHint.update(fd, touchMoveUsed, touchAimUsed)
+
       // Rumble on a discrete hit (hurtFlash jumps); contact's gradual drain won't trigger.
       if (playing && world.hurtFlash - prevHurt > 0.15) input.rumble(120, 0.5)
       prevHurt = world.hurtFlash
@@ -397,6 +428,7 @@ async function boot(): Promise<void> {
     ;(window as unknown as { __SWARM: unknown }).__SWARM = {
       world,
       app,
+      touchHint,
       setGlow: (v: number) => postFX.setIntensity(v),
       get screen() {
         return screen
