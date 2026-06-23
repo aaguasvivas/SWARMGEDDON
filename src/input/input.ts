@@ -55,6 +55,9 @@ export class InputManager {
     window.addEventListener('pointermove', this.onPointerMove)
     window.addEventListener('pointerup', this.onPointerUp)
     window.addEventListener('pointercancel', this.onPointerUp)
+    // If the browser yanks pointer capture (e.g. it decides a drag is a native
+    // gesture), release that stick so it can't latch "on".
+    canvas.addEventListener('lostpointercapture', this.onPointerUp)
     window.addEventListener('blur', this.onBlur)
     canvas.addEventListener('contextmenu', this.onContextMenu)
 
@@ -220,6 +223,14 @@ export class InputManager {
   private onPointerDown = (e: PointerEvent): void => {
     if (e.pointerType === 'touch') {
       if (!this.enabled) return // let menu buttons handle the tap
+      // Capture this pointer to the canvas so its move/up/cancel are guaranteed to
+      // reach us even if the finger leaves the element — the fix for sticks that
+      // got "stuck" when a pointerup went missing.
+      try {
+        this.canvas.setPointerCapture(e.pointerId)
+      } catch {
+        /* pointer already released */
+      }
       this.touch.onDown(e.pointerId, e.clientX - this.rectLeft(), e.clientY - this.rectTop(), this.canvas.clientWidth)
       this.lastType = 'touch'
     } else {

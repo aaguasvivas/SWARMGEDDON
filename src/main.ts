@@ -428,6 +428,8 @@ async function boot(): Promise<void> {
     ;(window as unknown as { __SWARM: unknown }).__SWARM = {
       world,
       app,
+      audio,
+      input,
       touchHint,
       setGlow: (v: number) => postFX.setIntensity(v),
       get screen() {

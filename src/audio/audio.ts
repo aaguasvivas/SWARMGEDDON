@@ -206,6 +206,19 @@ export class AudioEngine {
   updateMusic(): void {
     if (!this.unlocked || !this.ctx || !this.musicBus) return
     const ctx = this.ctx
+    // Self-heal: the context can be suspended/interrupted out from under us — a
+    // tab switch, the OS taking audio focus, a phone interruption — and it never
+    // resumes on its own. That's how audio "just stops" (e.g. after tabbing away
+    // on the game-over screen, then starting a new run). Nudge it back here, every
+    // frame, and resync the clock so we don't burst a pile of past-due notes.
+    if (ctx.state !== 'running') {
+      void ctx.resume().catch(() => {})
+      this.nextNoteTime = ctx.currentTime
+      return
+    }
+    // Recover from a long stall (a backgrounded tab throttles rAF, so this isn't
+    // called while the audio clock keeps running) without scheduling a burst.
+    if (this.nextNoteTime < ctx.currentTime - 0.5) this.nextNoteTime = ctx.currentTime
     const bpm = 96 + this.intensity * 48
     const beat = 60 / bpm
     while (this.nextNoteTime < ctx.currentTime + 0.12) {

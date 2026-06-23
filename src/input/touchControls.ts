@@ -71,22 +71,29 @@ export class TouchControls {
   }
 
   onDown(id: number, x: number, y: number, screenW: number): void {
+    // The latest touch on a half (re)claims that half's stick. We deliberately do
+    // NOT bail when the stick is already held: if a previous pointer's up went
+    // missing and left the stick stuck "on", re-basing to the new finger recovers
+    // it instantly (and clears the stale vector so it can't keep firing).
     if (x < screenW / 2) {
-      if (this.moveId !== -1) return
       this.moveId = id
       this.moveBaseX = x
       this.moveBaseY = y
       this.moveStick.position.set(x, y)
       this.moveStick.visible = true
       this.moveKnob.position.set(0, 0)
+      this.move.x = 0
+      this.move.y = 0
     } else {
-      if (this.aimId !== -1) return
       this.aimId = id
       this.aimBaseX = x
       this.aimBaseY = y
       this.aimStick.position.set(x, y)
       this.aimStick.visible = true
       this.aimKnob.position.set(0, 0)
+      this.aim.x = 0
+      this.aim.y = 0
+      this.aimActive = false
     }
   }
 

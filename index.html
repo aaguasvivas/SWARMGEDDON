@@ -41,6 +41,11 @@
       }
       #app canvas {
         display: block;
+        /* The canvas is the actual touch target, and touch-action is NOT
+           inherited from <body> — without this the browser can claim a drag as a
+           native gesture and swallow the pointerup, leaving a virtual stick stuck
+           "on" (frozen aim, firing one direction). Pin it off on the canvas too. */
+        touch-action: none;
       }
     </style>
   </head>
