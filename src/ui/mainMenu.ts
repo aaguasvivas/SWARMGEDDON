@@ -36,8 +36,9 @@ export class MainMenu {
     this.info = new Text({ text: '', style: { fontFamily: MONO, fontSize: 13, fill: COLORS.hudText, align: 'center', lineHeight: 19 } })
     this.info.anchor.set(0.5)
     this.controlsHint = new Text({
-      text: 'hold to fire  ·  prefer not to hold? turn on Auto-fire in Settings',
-      style: { fontFamily: MONO, fontSize: 12, fill: COLORS.hudDim, align: 'center' },
+      text: 'Hold to fire — prefer not to? Turn on Auto-fire in Settings',
+      // Wrap instead of running off the edge on a phone; width set in layout().
+      style: { fontFamily: MONO, fontSize: 12, fill: COLORS.hudDim, align: 'center', wordWrap: true, wordWrapWidth: 460, lineHeight: 17 },
     })
     this.controlsHint.anchor.set(0.5)
 
@@ -55,6 +56,11 @@ export class MainMenu {
     this.backdrop.clear()
     this.backdrop.rect(0, 0, w, h).fill({ color: 0x05070d, alpha: 0.62 })
     const cx = w / 2
+    // Keep everything inside narrow phone screens: shrink the title to fit and
+    // wrap the controls hint to the available width.
+    this.title.scale.set(Math.min(1, (w - 40) / 360))
+    this.controlsHint.style.wordWrapWidth = Math.min(w - 32, 460)
+    this.controlsHint.style.fontSize = w < 520 ? 11 : 12
     let y = h * 0.5 - 150
     this.title.position.set(cx, y)
     y += 44

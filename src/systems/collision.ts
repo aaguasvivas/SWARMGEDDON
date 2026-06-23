@@ -214,10 +214,12 @@ function killEnemy(world: World, e: Enemy): void {
 
   dropGem(world, e.x, e.y, def.xp)
 
-  // Perk-free sustain: kills can drop a medkit. Roll the RNG always (keeps the
-  // daily stream deterministic) but only DROP when hurt — so clearing a swarm
-  // claws HP back when you need it, without littering medkits at full health.
-  const hurt = world.player.hp < world.player.maxHp - 0.5
+  // Perk-free sustain: kills can drop a medkit, biased toward HARD MOMENTS. The
+  // lower your HP, the likelier a kill coughs one up — so a horde that's chipping
+  // you down also feeds you the medkits to survive it, while a healthy player
+  // gets almost none (the difficulty stays intact). Roll the RNG always (keeps
+  // the daily stream deterministic), then gate on a danger-scaled threshold.
+  const roll = world.rng.float()
   if (def.boss) {
     for (let i = 0; i < 5; i++) {
       const a = world.rng.angle()
@@ -225,8 +227,13 @@ function killEnemy(world: World, e: Enemy): void {
     }
   } else if (def.elite) {
     dropHealth(world, e.x, e.y, HEALTH_HEAL_ELITE)
-  } else if (world.rng.bool(HEALTH_DROP_CHANCE) && hurt) {
-    dropHealth(world, e.x, e.y, HEALTH_HEAL)
+  } else {
+    const hpFrac = world.player.hp / world.player.maxHp
+    if (hpFrac < 0.985) {
+      // ~1x base at full HP up to ~4x near death.
+      const chance = HEALTH_DROP_CHANCE * (1 + (1 - hpFrac) * 3)
+      if (roll < chance) dropHealth(world, e.x, e.y, HEALTH_HEAL)
+    }
   }
 
   if (def.behavior === 'splitter' && def.splitInto) {
