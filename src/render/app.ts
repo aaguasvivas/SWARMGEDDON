@@ -8,14 +8,19 @@ import { COLORS } from '../config.ts'
  * `entities`, particles/floating-text in `fx`, HUD + touch sticks in `ui`.
  */
 export interface Layers {
-  /** Camera + shake transform (pure translation). Pan this to follow the player. */
+  /** Camera + shake transform (pure translation). Pan this to follow the player.
+   *  Lives *inside* the bloomed `scene`, so the camera never drags the bloom's
+   *  screen-space filterArea off-screen. */
   world: Container
-  /** Carries the bloom filter. Identity transform relative to `world`; its
-   *  filterArea is pinned to the screen so the filter only processes the visible
-   *  window, not the whole (huge) arena. */
+  /** Carries the bloom filter. A direct, IDENTITY-transform child of the stage —
+   *  i.e. true screen space — so its filterArea (0,0,w,h) always maps to the
+   *  visible window. The camera/shake translate is applied to its `world` child,
+   *  *under* the filter, so the bloom processes exactly the on-screen image.
+   *  (Putting the filter inside the camera-translated container instead clips the
+   *  world to a black rectangle that slides with the camera.) */
   scene: Container
-  /** Reality-warp host (scale/rotation around the player) — a child of the
-   *  filtered scene, so the filter never sits on a pivoted container. */
+  /** Reality-warp host (scale/rotation around the player) — nested under the
+   *  camera, so the filter never sits on a pivoted/translated container. */
   warpHost: Container
   floor: Container // arena background + grid + border
   ichor: Container // persistent ichor render-texture (beneath entities)
@@ -63,11 +68,14 @@ export async function createRenderer(mount: HTMLElement): Promise<GameRenderer> 
     fx: new Container(),
     ui: new Container(),
   }
-  // world (camera/shake) -> scene (bloom, screen-pinned) -> warpHost (warp) -> content.
+  // scene (bloom, screen-space) -> world (camera/shake) -> warpHost (warp) -> content.
+  // The bloom sits ABOVE the camera/shake translate (on `scene`, an identity child
+  // of the stage), so its screen-space filterArea is never dragged off-screen by
+  // the camera — the world stays fully visible everywhere in the arena.
   layers.warpHost.addChild(layers.floor, layers.ichor, layers.entities, layers.fx)
-  layers.scene.addChild(layers.warpHost)
-  layers.world.addChild(layers.scene)
-  app.stage.addChild(layers.world, layers.ui)
+  layers.world.addChild(layers.warpHost)
+  layers.scene.addChild(layers.world)
+  app.stage.addChild(layers.scene, layers.ui)
 
   // Enable Pixi's event system so interactive UI (the level-up cards) gets
   // pointer events. Gameplay input is handled separately via DOM listeners.

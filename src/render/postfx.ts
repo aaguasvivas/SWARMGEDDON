@@ -8,8 +8,9 @@ import { AdvancedBloomFilter } from 'pixi-filters'
  *
  * Bloom is multi-pass, so the `setIntensity(0)` path removes ALL filters — a
  * true off-switch for low-end devices, exposed via the Glow setting. Applied to
- * the shakeable/warpable `world` container; the container's own transform is
- * applied after the filter, so shake + reality-warp still work.
+ * the screen-space `scene` container (an identity child of the stage, ABOVE the
+ * camera/shake/warp translate), so the bloom processes exactly the visible window
+ * and its filterArea is never dragged off-screen by the camera.
  */
 export class PostFX {
   private readonly bloom: AdvancedBloomFilter
