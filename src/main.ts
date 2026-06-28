@@ -28,6 +28,7 @@ import { loadJSON, saveJSON } from './platform/storage.ts'
 import { loadSettings, saveSettings, type Settings } from './state/settings.ts'
 import { recordRun, type RunResult } from './state/persistence.ts'
 import { shareRunCard } from './share/shareCard.ts'
+import { setupUpdatePrompt } from './pwa/updatePrompt.ts'
 import { spawnSystem, spawnEnemy, debugFloodSwarmers } from './systems/spawn.ts'
 import { aiSystem, buildEnemyHash } from './systems/ai.ts'
 import { weaponSystem } from './systems/weapons.ts'
@@ -46,6 +47,7 @@ type Screen = 'menu' | 'playing' | 'gameover'
  */
 async function boot(): Promise<void> {
   initSafeArea()
+  setupUpdatePrompt() // register the SW + show a toast when a new build is live
   const mount = document.getElementById('app')
   if (!mount) throw new Error('#app mount not found')
 
@@ -316,6 +318,7 @@ async function boot(): Promise<void> {
     stepSim,
     (alpha) => {
       const playing = screen === 'playing'
+      const fd = loop.frameMs / 1000
       renderEntities(world, alpha)
       player.render(alpha)
       ichor.flush()
@@ -326,7 +329,7 @@ async function boot(): Promise<void> {
       if (showCrosshair) crosshair.position.set(input.pointerX, input.pointerY)
 
       hud.view.visible = playing
-      if (playing) hud.update(world)
+      if (playing) hud.update(world, fd)
 
       // Level-up modal lifecycle.
       if (playing && world.paused && world.pendingLevelUps > 0 && !modal.isOpen()) {
@@ -342,8 +345,6 @@ async function boot(): Promise<void> {
         }
       }
       if ((!world.paused || !playing) && modal.isOpen()) modal.close()
-
-      const fd = loop.frameMs / 1000
 
       // Touch onboarding: show the dual-stick guide on touch until both sticks
       // have been used once (then remember it, forever). Each side fades on use.
@@ -430,6 +431,7 @@ async function boot(): Promise<void> {
       app,
       audio,
       input,
+      hud,
       touchHint,
       setGlow: (v: number) => postFX.setIntensity(v),
       get screen() {

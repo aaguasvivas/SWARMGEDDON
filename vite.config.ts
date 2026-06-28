@@ -7,7 +7,11 @@ export default defineConfig(({ mode }) => ({
   base: './',
   plugins: [
     VitePWA({
-      registerType: 'autoUpdate',
+      // We register the SW ourselves (src/pwa/updatePrompt.ts) so we can show a
+      // "new version — tap to update" toast instead of silently auto-updating
+      // (which left stale tabs serving the old build until they happened to reload).
+      registerType: 'prompt',
+      injectRegister: false,
       includeAssets: ['icon.svg'],
       // Capacitor loads from a native scheme where a service worker can't
       // register — disable PWA for the native build (`vite build --mode capacitor`).
