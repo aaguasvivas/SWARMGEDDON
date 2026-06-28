@@ -23,6 +23,8 @@ import { LevelUpModal } from './ui/levelupModal.ts'
 import { MainMenu } from './ui/mainMenu.ts'
 import { GameOver } from './ui/gameOver.ts'
 import { SettingsPanel } from './ui/settingsPanel.ts'
+import { Leaderboard } from './ui/leaderboard.ts'
+import { submitScore } from './net/leaderboard.ts'
 import { TouchHint } from './ui/touchHint.ts'
 import { loadJSON, saveJSON } from './platform/storage.ts'
 import { loadSettings, saveSettings, type Settings } from './state/settings.ts'
@@ -38,7 +40,7 @@ import { collisionSystem } from './systems/collision.ts'
 import { acidSystem } from './systems/acid.ts'
 import { particleSystem } from './systems/particles.ts'
 
-type Screen = 'menu' | 'playing' | 'gameover'
+type Screen = 'menu' | 'playing' | 'gameover' | 'leaderboard'
 
 /**
  * Phase 3 bootstrap + game state machine. boot -> menu -> playing -> gameover.
@@ -93,12 +95,13 @@ async function boot(): Promise<void> {
   const mainMenu = new MainMenu()
   const gameOver = new GameOver()
   const settingsPanel = new SettingsPanel()
+  const leaderboard = new Leaderboard()
   const touchHint = new TouchHint()
   const debug = new DebugOverlay()
   // vignette sits at the bottom of the UI (above the world, below the HUD).
   layers.ui.addChild(
     vignette.view, hud.view, input.touch.view, hurtOverlay, flashOverlay, crosshair,
-    touchHint.view, modal.view, mainMenu.view, gameOver.view, settingsPanel.view, debug.view,
+    touchHint.view, modal.view, mainMenu.view, gameOver.view, settingsPanel.view, leaderboard.view, debug.view,
   )
 
   // Touch onboarding state: show the dual-stick guide on touch devices until the
@@ -139,6 +142,7 @@ async function boot(): Promise<void> {
     mainMenu.hide()
     gameOver.hide()
     settingsPanel.hide()
+    leaderboard.hide()
   }
 
   function endRun(): void {
@@ -158,6 +162,11 @@ async function boot(): Promise<void> {
     input.setEnabled(false)
     buzz(150)
     input.rumble(320, 0.9)
+    // Submit to the global leaderboard (no-op if unconfigured); show the rank
+    // back on the game-over screen if the player is still looking at it.
+    void submitScore(result).then((r) => {
+      if (r && screen === 'gameover') gameOver.setRank(r.rank)
+    })
   }
 
   function toMenu(): void {
@@ -165,17 +174,29 @@ async function boot(): Promise<void> {
     input.setEnabled(false)
     gameOver.hide()
     settingsPanel.hide()
+    leaderboard.hide()
     mainMenu.refresh(todayStr())
     mainMenu.show()
   }
 
+  function toLeaderboard(): void {
+    screen = 'leaderboard'
+    input.setEnabled(false)
+    mainMenu.hide()
+    gameOver.hide()
+    leaderboard.open()
+  }
+
   mainMenu.onPlay = startRun
   mainMenu.onSettings = () => settingsPanel.open(settings)
+  mainMenu.onLeaderboard = toLeaderboard
   gameOver.onRetry = () => startRun(world.mode)
   gameOver.onMenu = toMenu
+  gameOver.onLeaderboard = toLeaderboard
   gameOver.onShare = () => {
     if (lastResult) void shareRunCard(lastResult)
   }
+  leaderboard.onBack = toMenu
   settingsPanel.onChange = (s) => {
     settings = s
     applySettings(s)
@@ -208,6 +229,7 @@ async function boot(): Promise<void> {
     mainMenu.layout(w, h)
     gameOver.layout(w, h)
     settingsPanel.layout(w, h)
+    leaderboard.layout(w, h)
     // Pin the bloom to the visible window (not the whole 2800x1900 arena).
     layers.scene.filterArea = new Rectangle(0, 0, w, h)
     hurtOverlay.clear()
@@ -432,6 +454,8 @@ async function boot(): Promise<void> {
       audio,
       input,
       hud,
+      leaderboard,
+      toLeaderboard: () => toLeaderboard(),
       touchHint,
       setGlow: (v: number) => postFX.setIntensity(v),
       get screen() {

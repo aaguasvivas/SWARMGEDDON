@@ -6,6 +6,14 @@ dist/
 dist-ssr/
 *.local
 
+# env (the leaderboard URL is set per-deploy; see .env.example + server/README.md)
+.env
+.env.*
+!.env.example
+
+# wrangler local state (server/)
+server/.wrangler/
+
 # editor / OS
 .DS_Store
 .vscode/*

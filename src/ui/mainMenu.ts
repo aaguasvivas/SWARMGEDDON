@@ -2,6 +2,7 @@ import { Container, Graphics, Text } from 'pixi.js'
 import { GlowFilter } from 'pixi-filters'
 import { COLORS } from '../config.ts'
 import { dailyCompletedToday, loadBest } from '../state/persistence.ts'
+import { leaderboardEnabled } from '../net/leaderboard.ts'
 import type { RunMode } from '../game/world.ts'
 import { Button } from './button.ts'
 
@@ -17,6 +18,7 @@ export class MainMenu {
   readonly view = new Container()
   onPlay: (mode: RunMode) => void = () => {}
   onSettings: () => void = () => {}
+  onLeaderboard: () => void = () => {}
 
   private backdrop = new Graphics()
   private title: Text
@@ -26,6 +28,7 @@ export class MainMenu {
   private endless: Button
   private daily: Button
   private settings: Button
+  private leaderboard: Button
 
   constructor() {
     this.title = new Text({ text: 'SWARMGEDDON', style: { fontFamily: MONO, fontSize: 46, fontWeight: 'bold', fill: COLORS.player, letterSpacing: 2 } })
@@ -44,12 +47,14 @@ export class MainMenu {
 
     this.endless = new Button('ENDLESS', 280, 58, COLORS.player)
     this.daily = new Button('DAILY CHALLENGE', 280, 58, 0xffc24a)
-    this.settings = new Button('SETTINGS', 280, 46, COLORS.hudDim, 15)
+    this.settings = new Button('SETTINGS', 136, 46, COLORS.hudDim, 14)
+    this.leaderboard = new Button('LEADERS', 136, 46, 0x57c8ff, 14)
     this.endless.onClick = () => this.onPlay('endless')
     this.daily.onClick = () => this.onPlay('daily')
     this.settings.onClick = () => this.onSettings()
+    this.leaderboard.onClick = () => this.onLeaderboard()
 
-    this.view.addChild(this.backdrop, this.title, this.tagline, this.endless.view, this.daily.view, this.settings.view, this.info, this.controlsHint)
+    this.view.addChild(this.backdrop, this.title, this.tagline, this.endless.view, this.daily.view, this.settings.view, this.leaderboard.view, this.info, this.controlsHint)
   }
 
   layout(w: number, h: number): void {
@@ -70,7 +75,16 @@ export class MainMenu {
     y += 70
     this.daily.position(cx - 140, y)
     y += 70
-    this.settings.position(cx - 140, y)
+    // SETTINGS + LEADERS share a row (keeps the menu short on phone-landscape).
+    // When no leaderboard backend is configured, center SETTINGS alone.
+    const showBoard = leaderboardEnabled()
+    this.leaderboard.view.visible = showBoard
+    if (showBoard) {
+      this.settings.position(cx - 140, y)
+      this.leaderboard.position(cx + 4, y)
+    } else {
+      this.settings.position(cx - 68, y)
+    }
     y += 64
     this.info.position.set(cx, y + 8)
     this.controlsHint.position.set(cx, y + 48)

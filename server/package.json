@@ -1,0 +1,17 @@
+{
+  "name": "swarmgeddon-leaderboard",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Cloudflare Worker + D1 global leaderboard for SWARMGEDDON",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:create": "wrangler d1 create swarmgeddon",
+    "db:migrate": "wrangler d1 execute swarmgeddon --remote --file=./schema.sql",
+    "db:migrate:local": "wrangler d1 execute swarmgeddon --local --file=./schema.sql"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240919.0",
+    "wrangler": "^3.78.0"
+  }
+}

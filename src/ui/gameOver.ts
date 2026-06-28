@@ -1,6 +1,7 @@
 import { Container, Graphics, Text } from 'pixi.js'
 import { GlowFilter } from 'pixi-filters'
 import { COLORS } from '../config.ts'
+import { leaderboardEnabled } from '../net/leaderboard.ts'
 import type { RunResult } from '../state/persistence.ts'
 import { Button } from './button.ts'
 
@@ -17,14 +18,17 @@ export class GameOver {
   onRetry: () => void = () => {}
   onMenu: () => void = () => {}
   onShare: () => void = () => {}
+  onLeaderboard: () => void = () => {}
 
   private backdrop = new Graphics()
   private title: Text
   private best: Text
+  private rank: Text
   private stats: Text
   private retry: Button
   private menu: Button
   private share: Button
+  private board: Button
   private w = 0
   private h = 0
 
@@ -34,18 +38,27 @@ export class GameOver {
     this.title.filters = [new GlowFilter({ color: COLORS.hurtFlash, distance: 14, outerStrength: 2, innerStrength: 0, quality: 0.3 })]
     this.best = new Text({ text: '', style: { fontFamily: MONO, fontSize: 15, fontWeight: 'bold', fill: 0xffe066 } })
     this.best.anchor.set(0.5)
+    this.rank = new Text({ text: '', style: { fontFamily: MONO, fontSize: 14, fontWeight: 'bold', fill: 0x57c8ff } })
+    this.rank.anchor.set(0.5)
     this.stats = new Text({ text: '', style: { fontFamily: MONO, fontSize: 16, fill: COLORS.hudText, align: 'center', lineHeight: 24 } })
     this.stats.anchor.set(0.5)
 
     this.retry = new Button('RETRY', 180, 52, COLORS.player)
     this.menu = new Button('MENU', 180, 52, COLORS.hudDim)
-    this.share = new Button('SHARE RUN', 180, 46, 0x57c8ff, 15)
+    this.share = new Button('SHARE RUN', 136, 46, 0x57c8ff, 14)
+    this.board = new Button('LEADERS', 136, 46, 0xffc24a, 14)
     this.retry.onClick = () => this.onRetry()
     this.menu.onClick = () => this.onMenu()
     this.share.onClick = () => this.onShare()
+    this.board.onClick = () => this.onLeaderboard()
 
-    this.view.addChild(this.backdrop, this.title, this.best, this.stats, this.retry.view, this.menu.view, this.share.view)
+    this.view.addChild(this.backdrop, this.title, this.best, this.rank, this.stats, this.retry.view, this.menu.view, this.share.view, this.board.view)
     this.view.visible = false
+  }
+
+  /** Show the player's global rank once the async submit comes back. */
+  setRank(rank: number): void {
+    this.rank.text = `◆  GLOBAL RANK #${rank}  ◆`
   }
 
   layout(w: number, h: number): void {
@@ -59,21 +72,32 @@ export class GameOver {
     this.backdrop.clear()
     this.backdrop.rect(0, 0, w, h).fill({ color: 0x05070d, alpha: 0.74 })
     const cx = w / 2
-    let y = h * 0.5 - 150
+    let y = h * 0.5 - 156
     this.title.position.set(cx, y)
-    y += 36
-    this.best.position.set(cx, y)
     y += 34
+    this.best.position.set(cx, y)
+    y += 22
+    this.rank.position.set(cx, y)
+    y += 20
     this.stats.position.set(cx, y + 24)
     y += 118
     this.retry.position(cx - 188, y)
     this.menu.position(cx + 8, y)
     y += 64
-    this.share.position(cx - 90, y)
+    // SHARE + LEADERS share a row; SHARE centers alone with no leaderboard backend.
+    const showBoard = leaderboardEnabled()
+    this.board.view.visible = showBoard
+    if (showBoard) {
+      this.share.position(cx - 140, y)
+      this.board.position(cx + 4, y)
+    } else {
+      this.share.position(cx - 68, y)
+    }
   }
 
   show(result: RunResult, isHigh: boolean): void {
     this.best.text = isHigh ? '★ NEW BEST ★' : ''
+    this.rank.text = '' // filled in async by setRank() once the submit returns
     this.stats.text =
       `${result.mode === 'daily' ? 'DAILY CHALLENGE' : 'ENDLESS'}\n` +
       `survived  ${fmtTime(result.time)}\n` +
