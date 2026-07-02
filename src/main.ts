@@ -152,12 +152,14 @@ async function boot(): Promise<void> {
     const a = arenaById(selArenaId)
     const cOpen = isUnlocked(c.id, c.unlock)
     const aOpen = isUnlocked(a.id, a.unlock)
-    const cHint = cOpen ? `${c.name}: ${c.passiveDesc}` : `${c.name} locked — ${c.unlock.earnDesc}`
-    const aHint = aOpen ? `vs ${a.broodName}` : `${a.name} locked — ${a.unlock.earnDesc}`
+    // Two SHORT lines (pilot, then arena) — a single run-on line wraps
+    // unpredictably on phones and is hard to scan.
+    const cHint = cOpen ? `${c.name}: ${c.passiveDesc}` : `🔒 ${c.name}: ${c.unlock.earnDesc}`
+    const aHint = aOpen ? `${a.name}: vs ${a.broodName}` : `🔒 ${a.name}: ${a.unlock.earnDesc}`
     mainMenu.setLoadout(
       cOpen ? `▸ ${c.name}` : `🔒 ${c.name}`,
       aOpen ? `▸ ${a.name}` : `🔒 ${a.name}`,
-      `${cHint}  ·  ${aHint}`,
+      `${cHint}\n${aHint}`,
       c.colors.body,
     )
   }

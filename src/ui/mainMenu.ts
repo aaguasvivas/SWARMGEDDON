@@ -52,7 +52,9 @@ export class MainMenu {
     this.controlsHint.anchor.set(0.5)
 
     this.loadoutHint = new Text({ text: '', style: { fontFamily: MONO, fontSize: 11, fill: COLORS.hudDim, align: 'center', wordWrap: true, wordWrapWidth: 500, lineHeight: 15 } })
-    this.loadoutHint.anchor.set(0.5)
+    // Top-anchored: the hint grows DOWN into its reserved slot, never up into
+    // the selector buttons (it doubles to two lines when items are locked).
+    this.loadoutHint.anchor.set(0.5, 0)
 
     this.endless = new Button('ENDLESS', 280, 58, COLORS.player)
     this.daily = new Button('DAILY CHALLENGE', 280, 58, 0xffc24a)
@@ -96,21 +98,27 @@ export class MainMenu {
     this.controlsHint.style.wordWrapWidth = Math.min(w - 32, 460)
     this.controlsHint.style.fontSize = w < 520 ? 11 : 12
     this.loadoutHint.style.wordWrapWidth = Math.min(w - 24, 500)
-    // Short screens (phone landscape): drop the tagline so the added loadout
-    // row doesn't push the menu off the bottom.
+    // Short screens (phone landscape): drop the tagline AND the hold-to-fire
+    // hint (touch aims-and-fires by drag, so it's the least useful line there),
+    // and tighten every gap — otherwise the stack overflows 375px-tall screens,
+    // clipping the title and squeezing the loadout hint into the score lines.
     const short = h < 560
     this.tagline.visible = !short
-    let y = h * 0.5 - (short ? 168 : 174)
+    this.controlsHint.visible = !short
+    const titleH = short ? 32 : 44
+    const bigRow = short ? 64 : 68
+    const smallRow = short ? 50 : 54
+    let y = h * 0.5 - (short ? 148 : 178)
     this.title.position.set(cx, y)
-    y += short ? 34 : 44
+    y += titleH
     if (!short) {
       this.tagline.position.set(cx, y)
       y += 42
     }
     this.endless.position(cx - 140, y)
-    y += 68
+    y += bigRow
     this.daily.position(cx - 140, y)
-    y += 68
+    y += bigRow
     // SETTINGS + LEADERS share a row (keeps the menu short on phone-landscape).
     // When no leaderboard backend is configured, center SETTINGS alone.
     const showBoard = leaderboardEnabled()
@@ -121,16 +129,18 @@ export class MainMenu {
     } else {
       this.settings.position(cx - 68, y)
     }
-    y += 54
-    // Loadout row: PILOT + ARENA cyclers with a one-line hint beneath.
+    y += smallRow
+    // Loadout row: PILOT + ARENA cyclers, then the hint in a RESERVED two-line
+    // slot (top-anchored) so it can never collide with the buttons or scores.
     this.pilot.position(cx - 140, y)
     this.arena.position(cx + 4, y)
     this.pilotSwatch.position.set(cx - 140 + 14, y + 20)
-    y += 48
-    this.loadoutHint.position.set(cx, y + 2)
-    y += 18
-    this.info.position.set(cx, y + 12)
-    this.controlsHint.position.set(cx, y + 50)
+    y += 46
+    this.loadoutHint.position.set(cx, y)
+    y += 36
+    this.info.position.set(cx, y + 19)
+    y += 44
+    if (!short) this.controlsHint.position.set(cx, y + 14)
   }
 
   refresh(today: string): void {
