@@ -29,10 +29,14 @@ export class PostFX {
       blur: 5,
       quality: 3,
     })
-    // Render the bloom at half resolution — the glow is soft so it's visually
-    // indistinguishable, but the multi-pass blur costs ~1/4 the fill rate. This
-    // is what keeps a full-screen bloom affordable at 500+ enemies on mobile.
-    this.bloom.resolution = 0.5
+    // IMPORTANT: a filter's `resolution` is NOT just its own passes — Pixi takes
+    // the MIN across the whole filter chain when it flattens the scene into the
+    // input texture, so a 0.5 here rendered the ENTIRE world at half resolution
+    // (blurry map, crisp UI — audit finding). Keep both filters at 1 (CSS-pixel
+    // capture, sharp at normal viewing) as the perf/quality floor; full-DPR
+    // capture is a measured Phase-1 decision (4x the bloom fill on retina).
+    this.grade.resolution = 1
+    this.bloom.resolution = 1
 
     this.apply()
   }
