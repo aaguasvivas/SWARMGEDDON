@@ -47,9 +47,20 @@ export class InputManager {
   // Reusable scratch for the gamepad poll (no per-frame allocation).
   private gp = { active: false, mx: 0, my: 0, ax: 0, ay: 0, aimActive: false, fire: false }
 
+  // Cached canvas origin in CSS px. getBoundingClientRect() forces a synchronous
+  // style/layout pass — calling it per pointer EVENT (a 120Hz+ mouse fires
+  // hundreds of moves/sec, and we called it twice per event) thrashes layout on
+  // the main thread and shows up as input/movement jank. The canvas is a fixed,
+  // full-window element, so its origin only changes on resize; refresh there
+  // (plus once per pointerdown as a cheap safety net) and read the cache on move.
+  private rectL = 0
+  private rectT = 0
+
   constructor(private readonly canvas: HTMLCanvasElement) {
     window.addEventListener('keydown', this.onKeyDown)
     window.addEventListener('keyup', this.onKeyUp)
+    this.refreshRect()
+    window.addEventListener('resize', this.refreshRect)
 
     canvas.addEventListener('pointerdown', this.onPointerDown)
     window.addEventListener('pointermove', this.onPointerMove)
@@ -221,6 +232,7 @@ export class InputManager {
   }
 
   private onPointerDown = (e: PointerEvent): void => {
+    this.refreshRect() // once per gesture start — cheap, keeps the cache honest
     if (e.pointerType === 'touch') {
       if (!this.enabled) return // let menu buttons handle the tap
       // Capture this pointer to the canvas so its move/up/cancel are guaranteed to
@@ -231,11 +243,11 @@ export class InputManager {
       } catch {
         /* pointer already released */
       }
-      this.touch.onDown(e.pointerId, e.clientX - this.rectLeft(), e.clientY - this.rectTop(), this.canvas.clientWidth)
+      this.touch.onDown(e.pointerId, e.clientX - this.rectL, e.clientY - this.rectT, this.canvas.clientWidth)
       this.lastType = 'touch'
     } else {
-      this.pointerX = e.clientX - this.rectLeft()
-      this.pointerY = e.clientY - this.rectTop()
+      this.pointerX = e.clientX - this.rectL
+      this.pointerY = e.clientY - this.rectT
       this.hasPointer = true
       if (e.button === 0) this.mouseFiring = true
       this.lastType = 'kbm'
@@ -244,11 +256,11 @@ export class InputManager {
 
   private onPointerMove = (e: PointerEvent): void => {
     if (e.pointerType === 'touch') {
-      this.touch.onMove(e.pointerId, e.clientX - this.rectLeft(), e.clientY - this.rectTop())
+      this.touch.onMove(e.pointerId, e.clientX - this.rectL, e.clientY - this.rectT)
       this.lastType = 'touch'
     } else {
-      this.pointerX = e.clientX - this.rectLeft()
-      this.pointerY = e.clientY - this.rectTop()
+      this.pointerX = e.clientX - this.rectL
+      this.pointerY = e.clientY - this.rectT
       this.hasPointer = true
     }
   }
@@ -281,11 +293,10 @@ export class InputManager {
     if (e.gamepad.index === this.gamepadIndex) this.gamepadIndex = -1
   }
 
-  private rectLeft(): number {
-    return this.canvas.getBoundingClientRect().left
-  }
-
-  private rectTop(): number {
-    return this.canvas.getBoundingClientRect().top
+  /** Re-read the canvas origin (forces layout — call sparingly, never per-move). */
+  private refreshRect = (): void => {
+    const r = this.canvas.getBoundingClientRect()
+    this.rectL = r.left
+    this.rectT = r.top
   }
 }
