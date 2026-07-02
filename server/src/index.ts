@@ -56,6 +56,8 @@ async function submit(req: Request, env: Env): Promise<Response> {
   const day = today()
   const ts = Date.now()
   const seed = clampInt(body.seed, 0xffffffff)
+  const character = idToken(body.character)
+  const arena = idToken(body.arena)
   const ipHash = await sha256(req.headers.get('cf-connecting-ip') ?? '')
 
   // Light rate limit: at most 6 submissions / 30s from one IP.
@@ -65,9 +67,9 @@ async function submit(req: Request, env: Env): Promise<Response> {
   if ((recent?.n ?? 0) >= 6) return json({ error: 'slow down' }, 429)
 
   await env.DB.prepare(
-    'INSERT INTO scores (name, mode, score, time, kills, level, seed, country, continent, day, ts, ip_hash) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+    'INSERT INTO scores (name, mode, score, time, kills, level, seed, character, arena, country, continent, day, ts, ip_hash) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
   )
-    .bind(name, mode, score, time, kills, level, seed, country, continent, day, ts, ipHash)
+    .bind(name, mode, score, time, kills, level, seed, character, arena, country, continent, day, ts, ipHash)
     .run()
 
   const better = await env.DB.prepare('SELECT COUNT(*) AS n FROM scores WHERE mode = ? AND score > ?')
@@ -130,6 +132,19 @@ function sanitizeName(raw: unknown): string {
     if (c >= 0x20 && c !== 0x7f) out += ch // drop control chars
   }
   return out.trim().slice(0, MAX_NAME) || 'ANON'
+}
+
+/** Lowercase [a-z0-9_-] identifier (pilot/arena ids), or null. */
+function idToken(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null
+  const s = raw.toLowerCase().slice(0, 24)
+  let out = ''
+  for (const ch of s) {
+    const c = ch.codePointAt(0) ?? 0
+    const ok = (c >= 0x61 && c <= 0x7a) || (c >= 0x30 && c <= 0x39) || c === 0x5f || c === 0x2d
+    if (ok) out += ch
+  }
+  return out || null
 }
 
 function today(): string {

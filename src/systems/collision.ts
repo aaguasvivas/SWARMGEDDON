@@ -192,7 +192,7 @@ function killEnemy(world: World, e: Enemy): void {
   const def = e.def
 
   world.ichor.queueStamp(e.x, e.y, world.rng)
-  spawnGibs(world, e.x, e.y, def.gibCount, def.gibColor)
+  spawnGibs(world, e.x, e.y, def.gibCount, e.gibTint)
   world.audio.play('kill')
 
   // Big-kill juice (hit-stop freeze + heavy shake) only lands when the death is
@@ -209,13 +209,13 @@ function killEnemy(world: World, e: Enemy): void {
   // Death-pop shockwave ring (+ a punchy hit-stop on the big ones). Skip the
   // xp-1 chaff so a swarm wipe stays clean and cheap.
   if (def.boss) {
-    spawnRing(world, e.x, e.y, def.gibColor, 5.5)
+    spawnRing(world, e.x, e.y, e.gibTint, 5.5)
     world.juice.addHitstop(0.12)
   } else if (def.elite) {
-    spawnRing(world, e.x, e.y, def.gibColor, 3)
+    spawnRing(world, e.x, e.y, e.gibTint, 3)
     if (onScreen) world.juice.addHitstop(0.05)
   } else if (def.xp >= 2) {
-    spawnRing(world, e.x, e.y, def.gibColor, 1.4)
+    spawnRing(world, e.x, e.y, e.gibTint, 1.4)
   }
 
   if (world.mods.lifestealPerKill > 0) {

@@ -31,6 +31,9 @@ import { loadSettings, saveSettings, type Settings } from './state/settings.ts'
 import { recordRun, type RunResult } from './state/persistence.ts'
 import { shareRunCard } from './share/shareCard.ts'
 import { setupUpdatePrompt } from './pwa/updatePrompt.ts'
+import { CHARACTERS, DEFAULT_CHARACTER_ID, characterById } from './content/characters.ts'
+import { ARENAS, DEFAULT_ARENA_ID, arenaById } from './content/arenas.ts'
+import { evaluateUnlocks, grant, isUnlocked } from './state/unlocks.ts'
 import { spawnSystem, spawnEnemy, debugFloodSwarmers } from './systems/spawn.ts'
 import { aiSystem, buildEnemyHash } from './systems/ai.ts'
 import { weaponSystem } from './systems/weapons.ts'
@@ -134,8 +137,52 @@ async function boot(): Promise<void> {
   let screen: Screen = 'menu'
   let lastResult: RunResult | null = null
 
+  // --- loadout selection (persisted; locked picks resolve to the default) ---
+  let selCharId = loadJSON('sel:char', DEFAULT_CHARACTER_ID)
+  let selArenaId = loadJSON('sel:arena', DEFAULT_ARENA_ID)
+
+  function refreshLoadoutUI(): void {
+    const c = characterById(selCharId)
+    const a = arenaById(selArenaId)
+    const cOpen = isUnlocked(c.id, c.unlock)
+    const aOpen = isUnlocked(a.id, a.unlock)
+    const cHint = cOpen ? `${c.name}: ${c.passiveDesc}` : `${c.name} locked — ${c.unlock.earnDesc}`
+    const aHint = aOpen ? `vs ${a.broodName}` : `${a.name} locked — ${a.unlock.earnDesc}`
+    mainMenu.setLoadout(
+      cOpen ? `▸ ${c.name}` : `🔒 ${c.name}`,
+      aOpen ? `▸ ${a.name}` : `🔒 ${a.name}`,
+      `${cHint}  ·  ${aHint}`,
+      c.colors.body,
+    )
+  }
+  mainMenu.onCyclePilot = () => {
+    const i = CHARACTERS.findIndex((c) => c.id === selCharId)
+    selCharId = CHARACTERS[(i + 1) % CHARACTERS.length]!.id
+    saveJSON('sel:char', selCharId)
+    refreshLoadoutUI()
+  }
+  mainMenu.onCycleArena = () => {
+    const i = ARENAS.findIndex((a) => a.id === selArenaId)
+    selArenaId = ARENAS[(i + 1) % ARENAS.length]!.id
+    saveJSON('sel:arena', selArenaId)
+    refreshLoadoutUI()
+  }
+  refreshLoadoutUI()
+
+  /** Resolve the effective run loadout: locked picks fall back to the default,
+   *  and the Daily's arena rotates deterministically by date for everyone. */
+  function resolveLoadout(mode: RunMode): { char: (typeof CHARACTERS)[number]; theme: (typeof ARENAS)[number] } {
+    const cSel = characterById(selCharId)
+    const char = isUnlocked(cSel.id, cSel.unlock) ? cSel : characterById(DEFAULT_CHARACTER_ID)
+    let theme = arenaById(selArenaId)
+    if (!isUnlocked(theme.id, theme.unlock)) theme = arenaById(DEFAULT_ARENA_ID)
+    if (mode === 'daily') theme = ARENAS[seedFromString('swarmgeddon:arena:' + todayStr()) % ARENAS.length]!
+    return { char, theme }
+  }
+
   function startRun(mode: RunMode): void {
-    world.beginRun(runSeed(mode), mode)
+    const { char, theme } = resolveLoadout(mode)
+    world.beginRun(runSeed(mode), mode, char, theme)
     applyCamera(player.x, player.y) // seed the camera before the first sim step
     touchMoveUsed = false
     touchAimUsed = false
@@ -157,10 +204,18 @@ async function boot(): Promise<void> {
       score: world.score,
       seed: world.seed,
       date: todayStr(),
+      character: world.character.id,
+      arena: world.arenaTheme.id,
     }
     lastResult = result
     const isHigh = recordRun(result)
     gameOver.show(result, isHigh)
+    // Earned unlocks: banner them and refresh the menu selectors.
+    const fresh = evaluateUnlocks(result)
+    if (fresh.length > 0) {
+      gameOver.setUnlocks(fresh)
+      refreshLoadoutUI()
+    }
     screen = 'gameover'
     input.setEnabled(false)
     buzz(150)
@@ -503,6 +558,13 @@ async function boot(): Promise<void> {
       },
       startRun: (mode: RunMode) => startRun(mode),
       endRun: () => endRun(),
+      setLoadout: (charId: string, arenaId: string) => {
+        grant(charId)
+        grant(arenaId)
+        selCharId = charId
+        selArenaId = arenaId
+        refreshLoadoutUI()
+      },
       step: (n = 60) => {
         for (let i = 0; i < n; i++) stepSim(FIXED_DT)
       },

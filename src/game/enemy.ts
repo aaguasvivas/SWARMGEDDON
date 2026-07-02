@@ -49,6 +49,9 @@ export class Enemy implements Poolable {
   animPhase = 0
   /** Sim time this enemy spawned — drives the cosmetic emerge fade (render-only read). */
   bornAt = 0
+  /** Faction-shifted body/gib colors, resolved at spawn (presentation only). */
+  tint = 0xffffff
+  gibTint = 0xffffff
 
   constructor(readonly sprite: Sprite) {}
 }

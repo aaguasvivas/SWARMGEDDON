@@ -9,6 +9,9 @@ export interface RunResult {
   score: number
   seed: number
   date: string // YYYY-MM-DD when played
+  /** Run identity (pilot + arena theme ids). */
+  character: string
+  arena: string
 }
 
 export interface BestRecord {

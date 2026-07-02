@@ -1,12 +1,12 @@
 import { spawnMuzzle } from '../effects/fx.ts'
-import { DEFAULT_WEAPON_ID } from '../content/weapons.ts'
 import type { InputManager } from '../input/input.ts'
 import type { World } from '../game/world.ts'
 
 /**
  * Player firing. Effective stats = weapon base * perk modifiers. Ammo depletes
- * per shot; an empty finite mag reverts to the infinite Sidearm. Berserker
- * scales fire rate by missing HP. Crit/explosion/chain resolve at hit time.
+ * per shot; an empty finite mag reverts to the pilot's infinite base weapon.
+ * Berserker scales fire rate by missing HP. Crit/explosion/chain resolve at
+ * hit time.
  */
 export function weaponSystem(world: World, dt: number, input: InputManager): void {
   world.fireCooldown -= dt
@@ -32,7 +32,7 @@ export function weaponSystem(world: World, dt: number, input: InputManager): voi
     fire(world, ax, ay)
     if (world.ammo > 0) {
       world.ammo--
-      if (world.ammo <= 0) world.equipWeapon(DEFAULT_WEAPON_ID)
+      if (world.ammo <= 0) world.equipWeapon(world.baseWeaponId)
     }
   }
 }

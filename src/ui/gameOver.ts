@@ -2,6 +2,8 @@ import { Container, Graphics, Text } from 'pixi.js'
 import { GlowFilter } from 'pixi-filters'
 import { COLORS } from '../config.ts'
 import { leaderboardEnabled } from '../net/leaderboard.ts'
+import { characterById } from '../content/characters.ts'
+import { arenaById } from '../content/arenas.ts'
 import type { RunResult } from '../state/persistence.ts'
 import { Button } from './button.ts'
 
@@ -56,9 +58,20 @@ export class GameOver {
     this.view.visible = false
   }
 
+  private hasUnlockBanner = false
+
   /** Show the player's global rank once the async submit comes back. */
   setRank(rank: number): void {
+    if (this.hasUnlockBanner) return // an unlock is the bigger news — keep it
     this.rank.text = `◆  GLOBAL RANK #${rank}  ◆`
+  }
+
+  /** Banner anything the run just unlocked (owns the rank line's slot). */
+  setUnlocks(names: string[]): void {
+    if (names.length === 0) return
+    this.hasUnlockBanner = true
+    this.rank.text = `★ UNLOCKED: ${names.join(' + ')} ★`
+    this.rank.style.fill = 0xffe066
   }
 
   layout(w: number, h: number): void {
@@ -98,8 +111,11 @@ export class GameOver {
   show(result: RunResult, isHigh: boolean): void {
     this.best.text = isHigh ? '★ NEW BEST ★' : ''
     this.rank.text = '' // filled in async by setRank() once the submit returns
+    this.hasUnlockBanner = false
+    this.rank.style.fill = 0x57c8ff
     this.stats.text =
       `${result.mode === 'daily' ? 'DAILY CHALLENGE' : 'ENDLESS'}\n` +
+      `${characterById(result.character).name} · ${arenaById(result.arena).name}\n` +
       `survived  ${fmtTime(result.time)}\n` +
       `kills  ${result.kills}     level  ${result.level}\n` +
       `score  ${result.score}`

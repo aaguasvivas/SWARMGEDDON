@@ -37,7 +37,7 @@ export function renderEntities(world: World, alpha: number): void {
     const base = e.def.scale * (e.buffed > 0 ? 1.08 : 1) * (0.55 + 0.45 * emerge)
     const wob = Math.sin(t * 14 + e.animPhase)
     s.scale.set(base * (1 + wob * 0.1), base * (1 - wob * 0.1))
-    s.tint = e.flash > 0 ? COLORS.swarmerHurt : e.slow > 0 ? 0x7fd8ff : e.def.tint
+    s.tint = e.flash > 0 ? COLORS.swarmerHurt : e.slow > 0 ? 0x7fd8ff : e.tint
   }
 
   renderProjectiles(world, alpha)

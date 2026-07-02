@@ -96,7 +96,22 @@ export const WEAPONS: Record<string, WeaponDef> = {
     spread: 0.22, projectilesPerShot: 3, pierce: 1, knockback: 50, projectileLife: 0.5,
     projectileRadius: 3, tint: 0x86f7ff, ammo: 360, shake: 0.04, sfx: 'smg',
   },
+
+  // --- pilot base weapons (infinite ammo, never drop) -------------------------
+  // Sidegrades of the Sidearm (~equal single-target DPS, different shapes) so
+  // no pilot strictly outguns another from the start.
+  scorcher: {
+    id: 'scorcher', name: 'Scorcher', fireRate: 3.4, damage: 26, projectileSpeed: 760,
+    spread: 0.03, projectilesPerShot: 1, pierce: 0, knockback: 210, projectileLife: 0.75,
+    projectileRadius: 5, tint: 0xffb066, ammo: -1, shake: 0.07, sfx: 'heavy',
+  },
+  stiletto: {
+    id: 'stiletto', name: 'Stiletto', fireRate: 7.5, damage: 11, projectileSpeed: 900,
+    spread: 0.015, projectilesPerShot: 1, pierce: 1, knockback: 70, projectileLife: 0.7,
+    projectileRadius: 3.5, tint: 0xc9a0ff, ammo: -1, shake: 0.04, sfx: 'beam',
+  },
 }
 
-/** Weapon ids that can drop as field pickups (everything but the default). */
-export const PICKUP_WEAPON_IDS = Object.keys(WEAPONS).filter((id) => id !== DEFAULT_WEAPON_ID)
+/** Weapon ids that can drop as field pickups. Infinite-ammo weapons are the
+ *  pilots' base weapons — they never drop (finite mags revert to the pilot's). */
+export const PICKUP_WEAPON_IDS = Object.keys(WEAPONS).filter((id) => WEAPONS[id]!.ammo !== -1)

@@ -1,6 +1,7 @@
 import { Container, Graphics } from 'pixi.js'
 import { COLORS, PLAYER_MAX_HP, PLAYER_RADIUS, PLAYER_SPEED } from '../config.ts'
 import { clamp, lerp, type Vec2 } from '../core/vec.ts'
+import type { CharacterDef } from '../content/characters.ts'
 import type { Bounds } from './arena.ts'
 
 /**
@@ -22,21 +23,30 @@ export class Player {
   private prevY = 0
 
   readonly radius = PLAYER_RADIUS
-  readonly speed = PLAYER_SPEED
+  /** Base move speed — set per pilot at run start. */
+  speed = PLAYER_SPEED
   hp = PLAYER_MAX_HP
   maxHp = PLAYER_MAX_HP
 
+  private g = new Graphics()
+
   constructor() {
-    const g = new Graphics()
+    this.view.addChild(this.g)
+    this.paint({ body: COLORS.player, outline: COLORS.playerOutline, visor: COLORS.playerVisor, barrel: COLORS.playerBarrel })
+  }
+
+  /** Repaint the ship in a pilot's colors (presentation only). */
+  paint(colors: CharacterDef['colors']): void {
+    const g = this.g
     const r = PLAYER_RADIUS
+    g.clear()
     // Barrel stub (drawn first so the body overlaps its root).
-    g.rect(r * 0.5, -3.5, r * 1.0, 7).fill(COLORS.playerBarrel)
+    g.rect(r * 0.5, -3.5, r * 1.0, 7).fill(colors.barrel)
     // Body.
-    g.circle(0, 0, r).fill(COLORS.player)
-    g.circle(0, 0, r).stroke({ width: 3, color: COLORS.playerOutline })
+    g.circle(0, 0, r).fill(colors.body)
+    g.circle(0, 0, r).stroke({ width: 3, color: colors.outline })
     // Visor toward the front (+x), so orientation is obvious.
-    g.circle(r * 0.34, 0, r * 0.42).fill(COLORS.playerVisor)
-    this.view.addChild(g)
+    g.circle(r * 0.34, 0, r * 0.42).fill(colors.visor)
   }
 
   /** Place the player and zero the interpolation history. */

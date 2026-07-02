@@ -158,6 +158,10 @@ export function spawnEnemy(world: World, defId: string, x: number, y: number): E
   e.stateTimer = 0
   e.animPhase = rng.angle()
   e.bornAt = world.time
+  // Faction skin: the arena's paired brood hue-shifts every enemy's palette.
+  // Pure presentation (no RNG, cached per color) — the sim never reads tints.
+  e.tint = world.broodTint(def.tint)
+  e.gibTint = world.broodTint(def.gibColor)
 
   // Behavior-specific init.
   if (def.behavior === 'burrower' && def.burrow) {

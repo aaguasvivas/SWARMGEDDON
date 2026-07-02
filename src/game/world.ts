@@ -1,11 +1,14 @@
 import type { Texture } from 'pixi.js'
-import { HASH_CELL, PLAYER_MAX_HP, SHAKE_DECAY, SHAKE_MAX_OFFSET } from '../config.ts'
+import { HASH_CELL, SHAKE_DECAY, SHAKE_MAX_OFFSET } from '../config.ts'
 import { Pool } from '../core/pool.ts'
 import { Rng } from '../core/rng.ts'
+import { hueShiftHex } from '../core/color.ts'
 import { SpatialHash } from '../core/spatialHash.ts'
 import { DEFAULT_WEAPON_ID, WEAPONS, type WeaponDef } from '../content/weapons.ts'
 import { BOSS_FIRST } from '../content/waveDirector.ts'
 import { PERKS, baseModifiers, perkById, type Modifiers, type PerkDef } from '../content/perks.ts'
+import { CHARACTERS, type CharacterDef } from '../content/characters.ts'
+import { ARENAS, type ArenaTheme } from '../content/arenas.ts'
 import type { AudioEngine } from '../audio/audio.ts'
 import { loadJSON } from '../platform/storage.ts'
 import { Juice } from '../effects/juice.ts'
@@ -49,8 +52,15 @@ export class World {
 
   weapon: WeaponDef = WEAPONS[DEFAULT_WEAPON_ID]!
   ammo = -1
+  /** The pilot's infinite base weapon — empty finite mags revert to this. */
+  baseWeaponId = DEFAULT_WEAPON_ID
   readonly mods: Modifiers = baseModifiers()
   readonly perkStacks = new Map<string, number>()
+
+  /** Run identity: pilot (feeds the sim) + arena theme (presentation + brood). */
+  character: CharacterDef = CHARACTERS[0]!
+  arenaTheme: ArenaTheme = ARENAS[0]!
+  private readonly tintCache = new Map<number, number>()
 
   mode: RunMode = 'endless'
   seed = 0
@@ -137,15 +147,22 @@ export class World {
 
   // --- run lifecycle ---------------------------------------------------------
 
-  /** Reseed + reset for a fresh run of `mode`. Leak-free. */
-  beginRun(seed: number, mode: RunMode): void {
+  /** Reseed + reset for a fresh run of `mode` as `character` in `theme`. Leak-free. */
+  beginRun(seed: number, mode: RunMode, character?: CharacterDef, theme?: ArenaTheme): void {
     this.clearAll()
     this.rng.reseed(seed)
     this.seed = seed
     this.mode = mode
+    if (character) this.character = character
+    if (theme) this.arenaTheme = theme
+    this.tintCache.clear()
+    this.arena.setTheme(this.arenaTheme)
+    this.player.paint(this.character.colors)
+    this.player.speed = this.character.speed
+    this.baseWeaponId = this.character.startWeapon
     this.perkStacks.clear()
     this.recomputeModifiers()
-    this.equipWeapon(DEFAULT_WEAPON_ID)
+    this.equipWeapon(this.baseWeaponId)
     this.time = 0
     this.kills = 0
     this.level = 1
@@ -210,13 +227,26 @@ export class World {
     this.recomputeModifiers()
   }
 
+  /** Faction-shift a base color through the arena's paired brood hue (cached). */
+  broodTint(color: number): number {
+    const shift = this.arenaTheme.broodHueShift
+    if (shift === 0) return color
+    let out = this.tintCache.get(color)
+    if (out === undefined) {
+      out = hueShiftHex(color, shift)
+      this.tintCache.set(color, out)
+    }
+    return out
+  }
+
   recomputeModifiers(): void {
     const m = this.mods
     Object.assign(m, baseModifiers())
+    this.character.applyPassive(m) // pilot signature passive, then perks stack on top
     for (const [id, stacks] of this.perkStacks) perkById(id).apply(m, stacks)
 
     const prevMax = this.player.maxHp
-    this.player.maxHp = Math.max(10, Math.round(PLAYER_MAX_HP * m.hpMul + m.bonusHp))
+    this.player.maxHp = Math.max(10, Math.round(this.character.maxHp * m.hpMul + m.bonusHp))
     const dMax = this.player.maxHp - prevMax
     if (dMax > 0) this.player.hp = Math.min(this.player.maxHp, this.player.hp + dMax)
     else this.player.hp = Math.min(this.player.hp, this.player.maxHp)

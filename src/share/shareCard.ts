@@ -1,4 +1,6 @@
 import type { RunResult } from '../state/persistence.ts'
+import { characterById } from '../content/characters.ts'
+import { arenaById } from '../content/arenas.ts'
 
 function fmtTime(s: number): string {
   const m = Math.floor(s / 60)
@@ -78,6 +80,9 @@ function renderCard(result: RunResult): Promise<Blob | null> {
   ctx.fillStyle = '#7dffd6'
   ctx.font = '30px ui-monospace, Menlo, monospace'
   ctx.fillText(`${result.mode === 'daily' ? 'DAILY CHALLENGE' : 'ENDLESS'}  ·  ${result.date}`, S / 2, 226)
+  ctx.fillStyle = '#5f8f83'
+  ctx.font = '24px ui-monospace, Menlo, monospace'
+  ctx.fillText(`${characterById(result.character).name}  ·  ${arenaById(result.arena).name}`, S / 2, 262)
 
   // Survivor glyph.
   ctx.fillStyle = '#1ce8b5'

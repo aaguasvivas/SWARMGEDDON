@@ -54,6 +54,8 @@ export async function submitScore(r: RunResult): Promise<{ score: number; rank: 
         kills: r.kills,
         level: r.level,
         seed: r.seed,
+        character: r.character,
+        arena: r.arena,
       }),
     })
     if (!res.ok) return null

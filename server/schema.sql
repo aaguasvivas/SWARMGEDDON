@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS scores (
   kills     INTEGER NOT NULL,
   level     INTEGER NOT NULL,
   seed      INTEGER,
+  character TEXT,                      -- pilot id the run was played as
+  arena     TEXT,                      -- arena theme id
   country   TEXT,                      -- ISO-2, from request.cf.country
   continent TEXT,                      -- e.g. NA/EU/AS, from request.cf.continent
   day       TEXT    NOT NULL,          -- YYYY-MM-DD (UTC) the run was submitted

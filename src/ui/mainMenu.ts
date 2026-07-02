@@ -19,16 +19,22 @@ export class MainMenu {
   onPlay: (mode: RunMode) => void = () => {}
   onSettings: () => void = () => {}
   onLeaderboard: () => void = () => {}
+  onCyclePilot: () => void = () => {}
+  onCycleArena: () => void = () => {}
 
   private backdrop = new Graphics()
   private title: Text
   private tagline: Text
   private info: Text
+  private loadoutHint: Text
   private controlsHint: Text
   private endless: Button
   private daily: Button
   private settings: Button
   private leaderboard: Button
+  private pilot: Button
+  private arena: Button
+  private pilotSwatch = new Graphics()
 
   constructor() {
     this.title = new Text({ text: 'SWARMGEDDON', style: { fontFamily: MONO, fontSize: 46, fontWeight: 'bold', fill: COLORS.player, letterSpacing: 2 } })
@@ -45,16 +51,39 @@ export class MainMenu {
     })
     this.controlsHint.anchor.set(0.5)
 
+    this.loadoutHint = new Text({ text: '', style: { fontFamily: MONO, fontSize: 11, fill: COLORS.hudDim, align: 'center', wordWrap: true, wordWrapWidth: 500, lineHeight: 15 } })
+    this.loadoutHint.anchor.set(0.5)
+
     this.endless = new Button('ENDLESS', 280, 58, COLORS.player)
     this.daily = new Button('DAILY CHALLENGE', 280, 58, 0xffc24a)
     this.settings = new Button('SETTINGS', 136, 46, COLORS.hudDim, 14)
     this.leaderboard = new Button('LEADERS', 136, 46, 0x57c8ff, 14)
+    // Loadout selectors — tap to cycle pilot / arena (labels set via setLoadout).
+    this.pilot = new Button('', 136, 40, COLORS.player, 13)
+    this.arena = new Button('', 136, 40, 0xffc24a, 13)
     this.endless.onClick = () => this.onPlay('endless')
     this.daily.onClick = () => this.onPlay('daily')
     this.settings.onClick = () => this.onSettings()
     this.leaderboard.onClick = () => this.onLeaderboard()
+    this.pilot.onClick = () => this.onCyclePilot()
+    this.arena.onClick = () => this.onCycleArena()
 
-    this.view.addChild(this.backdrop, this.title, this.tagline, this.endless.view, this.daily.view, this.settings.view, this.leaderboard.view, this.info, this.controlsHint)
+    this.view.addChild(
+      this.backdrop, this.title, this.tagline, this.endless.view, this.daily.view,
+      this.settings.view, this.leaderboard.view, this.pilot.view, this.arena.view,
+      this.pilotSwatch, this.loadoutHint, this.info, this.controlsHint,
+    )
+  }
+
+  /** Update the selector labels + the one-line hint under them. `swatch` paints
+   *  the little pilot color chip; pass the pilot's body color. */
+  setLoadout(pilotLabel: string, arenaLabel: string, hint: string, swatch: number): void {
+    this.pilot.setText(pilotLabel)
+    this.arena.setText(arenaLabel)
+    this.loadoutHint.text = hint
+    this.pilotSwatch.clear()
+    this.pilotSwatch.circle(0, 0, 6).fill(swatch)
+    this.pilotSwatch.circle(0, 0, 6).stroke({ width: 1.5, color: 0x05070d })
   }
 
   layout(w: number, h: number): void {
@@ -66,15 +95,22 @@ export class MainMenu {
     this.title.scale.set(Math.min(1, (w - 40) / 360))
     this.controlsHint.style.wordWrapWidth = Math.min(w - 32, 460)
     this.controlsHint.style.fontSize = w < 520 ? 11 : 12
-    let y = h * 0.5 - 150
+    this.loadoutHint.style.wordWrapWidth = Math.min(w - 24, 500)
+    // Short screens (phone landscape): drop the tagline so the added loadout
+    // row doesn't push the menu off the bottom.
+    const short = h < 560
+    this.tagline.visible = !short
+    let y = h * 0.5 - (short ? 168 : 174)
     this.title.position.set(cx, y)
-    y += 44
-    this.tagline.position.set(cx, y)
-    y += 46
+    y += short ? 34 : 44
+    if (!short) {
+      this.tagline.position.set(cx, y)
+      y += 42
+    }
     this.endless.position(cx - 140, y)
-    y += 70
+    y += 68
     this.daily.position(cx - 140, y)
-    y += 70
+    y += 68
     // SETTINGS + LEADERS share a row (keeps the menu short on phone-landscape).
     // When no leaderboard backend is configured, center SETTINGS alone.
     const showBoard = leaderboardEnabled()
@@ -85,9 +121,16 @@ export class MainMenu {
     } else {
       this.settings.position(cx - 68, y)
     }
-    y += 64
-    this.info.position.set(cx, y + 8)
-    this.controlsHint.position.set(cx, y + 48)
+    y += 54
+    // Loadout row: PILOT + ARENA cyclers with a one-line hint beneath.
+    this.pilot.position(cx - 140, y)
+    this.arena.position(cx + 4, y)
+    this.pilotSwatch.position.set(cx - 140 + 14, y + 20)
+    y += 48
+    this.loadoutHint.position.set(cx, y + 2)
+    y += 18
+    this.info.position.set(cx, y + 12)
+    this.controlsHint.position.set(cx, y + 50)
   }
 
   refresh(today: string): void {
