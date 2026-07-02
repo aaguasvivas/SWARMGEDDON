@@ -39,23 +39,38 @@ export function spawnSystem(world: World, dt: number): void {
 
   // Elites: one hive-guardian per cadence, intentionally stepping up to a small
   // pack deep into a run (+1 every 140s) as a late-game pressure ramp.
+  // At the enemy cap (the NORMAL late-game state), don't burn the cadence —
+  // retry shortly, once kills open room. Capacity is checked BEFORE any RNG
+  // draw so the failed path stays deterministic and draw-free.
   if (t >= ELITE_FIRST) {
     world.eliteTimer -= dt
     if (world.eliteTimer <= 0) {
-      world.eliteTimer = ELITE_INTERVAL
-      const n = 1 + Math.floor((t - ELITE_FIRST) / 140)
-      for (let i = 0; i < n; i++) spawnFromEdge(world, 'guardian')
-      world.juice.addTrauma(0.3)
+      if (world.enemies.size >= MAX_ENEMIES) {
+        world.eliteTimer = RETRY_AT_CAP
+      } else {
+        world.eliteTimer = ELITE_INTERVAL
+        const n = 1 + Math.floor((t - ELITE_FIRST) / 140)
+        for (let i = 0; i < n; i++) spawnFromEdge(world, 'guardian')
+        world.juice.addTrauma(0.3)
+      }
     }
   }
 
-  // Boss.
+  // Boss — same retry-at-cap rule: the queen must never be silently skipped
+  // for a whole 165s interval just because the pool was momentarily full.
   world.bossTimer -= dt
   if (world.bossTimer <= 0 && !world.bossAlive) {
-    world.bossTimer = BOSS_INTERVAL
-    spawnBoss(world)
+    if (world.enemies.size >= MAX_ENEMIES) {
+      world.bossTimer = RETRY_AT_CAP
+    } else {
+      world.bossTimer = BOSS_INTERVAL
+      spawnBoss(world)
+    }
   }
 }
+
+/** Seconds before re-attempting an elite/boss spawn that hit the enemy cap. */
+const RETRY_AT_CAP = 2
 
 // FIXED spawn extents (NOT the actual viewport) — constant so the Daily
 // Challenge is truly device-independent (spawn positions never depend on screen

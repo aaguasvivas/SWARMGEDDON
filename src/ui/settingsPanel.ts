@@ -32,6 +32,10 @@ export class SettingsPanel {
 
   constructor() {
     this.view.addChild(this.backdrop) // index 0 (drawn each relayout)
+    // The backdrop must SWALLOW pointer events — without this, taps in the
+    // panel's dead zones fall through to the still-visible main-menu buttons
+    // underneath (same trick as the level-up modal).
+    this.backdrop.eventMode = 'static'
     this.title = new Text({ text: 'SETTINGS', style: { fontFamily: MONO, fontSize: 30, fontWeight: 'bold', fill: COLORS.player, letterSpacing: 2 } })
     this.title.anchor.set(0.5)
 
@@ -89,6 +93,10 @@ export class SettingsPanel {
 
   hide(): void {
     this.view.visible = false
+  }
+
+  isOpen(): boolean {
+    return this.view.visible
   }
 
   layout(w: number, h: number): void {

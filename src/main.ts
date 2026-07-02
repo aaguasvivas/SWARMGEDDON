@@ -24,13 +24,14 @@ import { MainMenu } from './ui/mainMenu.ts'
 import { GameOver } from './ui/gameOver.ts'
 import { SettingsPanel } from './ui/settingsPanel.ts'
 import { Leaderboard } from './ui/leaderboard.ts'
+import { dismissNamePrompt } from './ui/namePrompt.ts'
 import { submitScore } from './net/leaderboard.ts'
 import { TouchHint } from './ui/touchHint.ts'
 import { loadJSON, saveJSON } from './platform/storage.ts'
 import { loadSettings, saveSettings, type Settings } from './state/settings.ts'
 import { recordRun, type RunResult } from './state/persistence.ts'
 import { shareRunCard } from './share/shareCard.ts'
-import { setupUpdatePrompt } from './pwa/updatePrompt.ts'
+import { flushUpdatePrompt, setupUpdatePrompt } from './pwa/updatePrompt.ts'
 import { CHARACTERS, DEFAULT_CHARACTER_ID, characterById } from './content/characters.ts'
 import { ARENAS, DEFAULT_ARENA_ID, arenaById } from './content/arenas.ts'
 import { evaluateUnlocks, grant, isUnlocked } from './state/unlocks.ts'
@@ -52,7 +53,6 @@ type Screen = 'menu' | 'playing' | 'gameover' | 'leaderboard'
  */
 async function boot(): Promise<void> {
   initSafeArea()
-  setupUpdatePrompt() // register the SW + show a toast when a new build is live
   const mount = document.getElementById('app')
   if (!mount) throw new Error('#app mount not found')
 
@@ -136,6 +136,12 @@ async function boot(): Promise<void> {
   // --- state machine ---
   let screen: Screen = 'menu'
   let lastResult: RunResult | null = null
+  let submitToken = 0
+
+  // Register the SW + "new version" toast — but never mid-run ("Update"
+  // reloads the page, which would destroy an active run). Parked toasts are
+  // released by flushUpdatePrompt() on the menu/game-over transitions.
+  setupUpdatePrompt(() => screen !== 'playing')
 
   // --- loadout selection (persisted; locked picks resolve to the default) ---
   let selCharId = loadJSON('sel:char', DEFAULT_CHARACTER_ID)
@@ -184,6 +190,7 @@ async function boot(): Promise<void> {
     const { char, theme } = resolveLoadout(mode)
     world.beginRun(runSeed(mode), mode, char, theme)
     applyCamera(player.x, player.y) // seed the camera before the first sim step
+    hud.reset() // don't let last run's dying bars sweep across the fresh run
     touchMoveUsed = false
     touchAimUsed = false
     screen = 'playing'
@@ -220,11 +227,16 @@ async function boot(): Promise<void> {
     input.setEnabled(false)
     buzz(150)
     input.rumble(320, 0.9)
-    // Submit to the global leaderboard (no-op if unconfigured); show the rank
-    // back on the game-over screen if the player is still looking at it.
+    // Submit to the global leaderboard (no-op if unconfigured). The token pins
+    // the async response to THIS run — a slow response from run N must never
+    // stamp its rank (or overwrite the rank) on run N+1's death screen.
+    const token = ++submitToken
     void submitScore(result).then((r) => {
-      if (r && screen === 'gameover') gameOver.setRank(r.rank)
+      if (token !== submitToken || screen !== 'gameover') return
+      if (r) gameOver.setRank(r.rank)
+      else gameOver.setSubmitFailed()
     })
+    flushUpdatePrompt() // a parked "new version" toast may show now
   }
 
   function toMenu(): void {
@@ -235,6 +247,7 @@ async function boot(): Promise<void> {
     leaderboard.hide()
     mainMenu.refresh(todayStr())
     mainMenu.show()
+    flushUpdatePrompt()
   }
 
   function toLeaderboard(): void {
@@ -308,6 +321,13 @@ async function boot(): Promise<void> {
   // Native shell glue (no-ops on web).
   void initNative()
   registerBackButton(() => {
+    // Dismiss the topmost overlay first — back must never exit the app while
+    // something closable is open (Android store-review expectation).
+    if (dismissNamePrompt()) return true
+    if (settingsPanel.isOpen()) {
+      settingsPanel.hide()
+      return true
+    }
     if (modal.isOpen()) return true // swallow back while choosing a perk
     if (screen !== 'menu') {
       toMenu()
@@ -335,7 +355,7 @@ async function boot(): Promise<void> {
     } else if (screen === 'gameover') {
       if (e.key === 'Enter') startRun(world.mode)
       else if (e.key === 'Escape') toMenu()
-    } else if (screen === 'menu' && e.key === 'Enter') {
+    } else if (screen === 'menu' && e.key === 'Enter' && !settingsPanel.isOpen()) {
       startRun('endless')
     }
   })
@@ -353,7 +373,9 @@ async function boot(): Promise<void> {
   // One fixed simulation step (extracted so dev tooling can drive it).
   function stepSim(dt: number): void {
     if (screen !== 'playing' || world.paused) return
-    if (world.pendingLevelUps > 0) {
+    // Death outranks a level-up earned on the same tick — otherwise the perk
+    // draft opens over a corpse and the pick is applied posthumously.
+    if (world.pendingLevelUps > 0 && !world.pendingGameOver) {
       world.paused = true
       return
     }
@@ -416,7 +438,7 @@ async function boot(): Promise<void> {
       if (playing) hud.update(world, fd)
 
       // Level-up modal lifecycle.
-      if (playing && world.paused && world.pendingLevelUps > 0 && !modal.isOpen()) {
+      if (playing && world.paused && world.pendingLevelUps > 0 && !world.pendingGameOver && !modal.isOpen()) {
         const draft = world.draftPerks()
         if (draft.length === 0) {
           world.pendingLevelUps = 0
@@ -579,7 +601,9 @@ async function boot(): Promise<void> {
   }
 }
 
-const SEED_OVERRIDE = new URLSearchParams(location.search).get('seed')
+// DEV-only testing affordance. In prod this shipped as a cheat door: ?seed=X
+// applied to DAILY runs too, letting a practiced seed onto the daily board.
+const SEED_OVERRIDE = import.meta.env.DEV ? new URLSearchParams(location.search).get('seed') : null
 function todayStr(): string {
   return new Date().toISOString().slice(0, 10)
 }

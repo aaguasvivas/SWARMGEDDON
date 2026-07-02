@@ -70,34 +70,37 @@ export class TouchControls {
     return c
   }
 
+  /** Live contacts (id -> last position + which half it landed on). Lets us
+   *  tell a GHOST owner (id we no longer track — missed up / browser id reuse)
+   *  from a LIVE one, and fall back to a surviving touch when the owner lifts. */
+  private contacts = new Map<number, { x: number; y: number; left: boolean }>()
+
   onDown(id: number, x: number, y: number, screenW: number): void {
-    // The latest touch on a half (re)claims that half's stick. We deliberately do
-    // NOT bail when the stick is already held: if a previous pointer's up went
-    // missing and left the stick stuck "on", re-basing to the new finger recovers
-    // it instantly (and clears the stale vector so it can't keep firing).
-    if (x < screenW / 2) {
-      this.moveId = id
-      this.moveBaseX = x
-      this.moveBaseY = y
-      this.moveStick.position.set(x, y)
-      this.moveStick.visible = true
-      this.moveKnob.position.set(0, 0)
-      this.move.x = 0
-      this.move.y = 0
+    // A pointerdown means this id begins a NEW contact — if it still "owns" a
+    // stick, that ownership is a stale ghost (pointer-id reuse after a missed
+    // up). Release it before anything else so it can't keep firing/steering.
+    if (id === this.moveId) this.releaseMove()
+    if (id === this.aimId) this.releaseAim()
+
+    const left = x < screenW / 2
+    this.contacts.set(id, { x, y, left })
+
+    // Claim the half's stick only if it's free or its owner is a ghost. A
+    // second LIVE touch on the same half (palm graze beside a held thumb) must
+    // NOT steal the stick — it just becomes the fallback if the owner lifts.
+    if (left) {
+      if (this.moveId === -1 || !this.contacts.has(this.moveId)) this.claimMove(id, x, y)
     } else {
-      this.aimId = id
-      this.aimBaseX = x
-      this.aimBaseY = y
-      this.aimStick.position.set(x, y)
-      this.aimStick.visible = true
-      this.aimKnob.position.set(0, 0)
-      this.aim.x = 0
-      this.aim.y = 0
-      this.aimActive = false
+      if (this.aimId === -1 || !this.contacts.has(this.aimId)) this.claimAim(id, x, y)
     }
   }
 
   onMove(id: number, x: number, y: number): void {
+    const c = this.contacts.get(id)
+    if (c) {
+      c.x = x
+      c.y = y
+    }
     if (id === this.moveId) {
       const { kx, ky } = this.clampKnob(x - this.moveBaseX, y - this.moveBaseY)
       this.moveKnob.position.set(kx, ky)
@@ -126,24 +129,70 @@ export class TouchControls {
   }
 
   onUp(id: number): void {
+    this.contacts.delete(id)
     if (id === this.moveId) {
-      this.moveId = -1
-      this.moveStick.visible = false
-      this.move.x = 0
-      this.move.y = 0
+      this.releaseMove()
+      this.fallbackClaim(true)
     } else if (id === this.aimId) {
-      this.aimId = -1
-      this.aimStick.visible = false
-      this.aim.x = 0
-      this.aim.y = 0
-      this.aimActive = false
+      this.releaseAim()
+      this.fallbackClaim(false)
     }
+  }
+
+  /** Owner lifted: hand the stick to any surviving touch on the same half, so
+   *  a transient graze can never leave the planted thumb without its stick. */
+  private fallbackClaim(left: boolean): void {
+    for (const [id, c] of this.contacts) {
+      if (c.left !== left) continue
+      if (left) this.claimMove(id, c.x, c.y)
+      else this.claimAim(id, c.x, c.y)
+      return
+    }
+  }
+
+  private claimMove(id: number, x: number, y: number): void {
+    this.moveId = id
+    this.moveBaseX = x
+    this.moveBaseY = y
+    this.moveStick.position.set(x, y)
+    this.moveStick.visible = true
+    this.moveKnob.position.set(0, 0)
+    this.move.x = 0
+    this.move.y = 0
+  }
+
+  private releaseMove(): void {
+    this.moveId = -1
+    this.moveStick.visible = false
+    this.move.x = 0
+    this.move.y = 0
+  }
+
+  private claimAim(id: number, x: number, y: number): void {
+    this.aimId = id
+    this.aimBaseX = x
+    this.aimBaseY = y
+    this.aimStick.position.set(x, y)
+    this.aimStick.visible = true
+    this.aimKnob.position.set(0, 0)
+    this.aim.x = 0
+    this.aim.y = 0
+    this.aimActive = false
+  }
+
+  private releaseAim(): void {
+    this.aimId = -1
+    this.aimStick.visible = false
+    this.aim.x = 0
+    this.aim.y = 0
+    this.aimActive = false
   }
 
   /** Drop all touches (call on resize / window blur to avoid stuck sticks). */
   reset(): void {
-    this.onUp(this.moveId)
-    this.onUp(this.aimId)
+    this.contacts.clear()
+    this.releaseMove()
+    this.releaseAim()
   }
 
   /** Clamp a knob offset to the stick's travel radius. */

@@ -25,6 +25,14 @@ export class Hud {
   private hpGhost = 1 // trailing value -> the bright "damage" sliver
   private xpDisplay = 0 // smooth XP fill
   private clock = 0
+
+  /** Fresh-run reset — otherwise a retry starts with last run's dying bars
+   *  visibly sweeping back up from empty. */
+  reset(): void {
+    this.hpDisplay = 1
+    this.hpGhost = 1
+    this.xpDisplay = 0
+  }
   private levelText: Text
   private stats: Text
   private weaponPill = new Graphics()

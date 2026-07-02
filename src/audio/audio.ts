@@ -84,6 +84,11 @@ export class AudioEngine {
 
   play(name: SfxName): void {
     if (!this.unlocked || !this.ctx || !this.sfxBus) return
+    // While suspended/interrupted (iOS call banner, Siri, audio-focus loss) the
+    // audio clock FREEZES: every node scheduled here would stack on one frozen
+    // timestamp and all detonate together when updateMusic() resumes the
+    // context. Drop SFX until it's running again (updateMusic self-heals it).
+    if (this.ctx.state !== 'running') return
     // Throttle the spammy ones so a 500-enemy wipe doesn't create a node storm.
     const now = this.ctx.currentTime
     const minGap = name === 'hit' ? 0.03 : name === 'kill' ? 0.04 : name === 'pickup' ? 0.06 : 0

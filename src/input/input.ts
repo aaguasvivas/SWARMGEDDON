@@ -208,7 +208,9 @@ export class InputManager {
 
     const trigger = pad.buttons[7]?.value ?? 0
     const fireBtn = pad.buttons[5]?.pressed || pad.buttons[0]?.pressed
-    g.fire = trigger > 0.4 || !!fireBtn || g.aimActive
+    // fire = explicit inputs only. Aim-to-fire is added by update() when the
+    // AUTO-FIRE setting is on — baking aimActive in here made the setting a no-op.
+    g.fire = trigger > 0.4 || !!fireBtn
 
     let anyButton = false
     for (const b of pad.buttons) {
@@ -234,6 +236,10 @@ export class InputManager {
   private onPointerDown = (e: PointerEvent): void => {
     this.refreshRect() // once per gesture start — cheap, keeps the cache honest
     if (e.pointerType === 'touch') {
+      // Touch takes over: forget the mouse cursor, or on hybrid devices (touch
+      // laptops, iPad+trackpad) the kbm fallback aims/fires at a stale position
+      // every time both thumbs lift.
+      this.hasPointer = false
       if (!this.enabled) return // let menu buttons handle the tap
       // Capture this pointer to the canvas so its move/up/cancel are guaranteed to
       // reach us even if the finger leaves the element — the fix for sticks that
@@ -268,7 +274,9 @@ export class InputManager {
   private onPointerUp = (e: PointerEvent): void => {
     if (e.pointerType === 'touch') {
       this.touch.onUp(e.pointerId)
-    } else if (e.button === 0) {
+    } else if (e.button === 0 || e.button === -1) {
+      // button is -1 on pointercancel (pen leaving range, palm rejection) —
+      // without this the weapon kept firing with nothing held.
       this.mouseFiring = false
     }
   }
@@ -277,6 +285,7 @@ export class InputManager {
     // Window lost focus: drop all held inputs so nothing sticks "on".
     this.keys.clear()
     this.mouseFiring = false
+    this.hasPointer = false
     this.touch.reset()
   }
 

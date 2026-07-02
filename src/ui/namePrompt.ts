@@ -5,6 +5,15 @@ import { MAX_NAME } from '../net/leaderboard.ts'
  * because it needs a real text <input> for the native keyboard / autofill.
  * Resolves with the trimmed name, or null if cancelled.
  */
+let activeClose: (() => void) | null = null
+
+/** Dismiss an open prompt (Android back button). True if one was open. */
+export function dismissNamePrompt(): boolean {
+  if (!activeClose) return false
+  activeClose()
+  return true
+}
+
 export function promptName(current: string): Promise<string | null> {
   return new Promise((resolve) => {
     const backdrop = document.createElement('div')
@@ -65,10 +74,12 @@ export function promptName(current: string): Promise<string | null> {
     const save = mkButton('Save', { background: '#1ce8b5', color: '#04231b' })
 
     const close = (value: string | null): void => {
+      activeClose = null
       backdrop.remove()
       window.removeEventListener('keydown', onKey)
       resolve(value)
     }
+    activeClose = () => close(null)
     const commit = (): void => close(input.value.trim() || null)
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Enter') commit()

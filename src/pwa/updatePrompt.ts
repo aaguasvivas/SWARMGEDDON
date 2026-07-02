@@ -8,14 +8,34 @@ import { registerSW } from 'virtual:pwa-register'
  * Tapping "Update" calls updateSW(true): the waiting worker skips waiting, takes
  * control, and the page reloads onto the new build. No-op in the Capacitor build
  * (the PWA plugin is disabled there, so this resolves to a stub).
+ *
+ * The toast NEVER appears mid-run: "Update" hard-reloads the page, which would
+ * destroy an active run (and the toast itself sits in the thumb arc over the
+ * touch controls). When `canShow()` is false the toast is parked; the game
+ * calls `flushUpdatePrompt()` on menu/game-over transitions to release it.
  */
-export function setupUpdatePrompt(): void {
+let parked: (() => void) | null = null
+let allowed: () => boolean = () => true
+
+export function setupUpdatePrompt(canShow?: () => boolean): void {
+  if (canShow) allowed = canShow
   const updateSW = registerSW({
     immediate: true,
     onNeedRefresh() {
-      showToast(() => void updateSW(true))
+      const show = (): void => showToast(() => void updateSW(true))
+      if (allowed()) show()
+      else parked = show
     },
   })
+}
+
+/** Show a parked update toast if we're now on a safe screen (menu/game-over). */
+export function flushUpdatePrompt(): void {
+  if (parked && allowed()) {
+    const show = parked
+    parked = null
+    show()
+  }
 }
 
 function showToast(onUpdate: () => void): void {
