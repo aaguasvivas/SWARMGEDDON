@@ -40,8 +40,10 @@ export class GameOver {
     this.title.filters = [new GlowFilter({ color: COLORS.hurtFlash, distance: 14, outerStrength: 2, innerStrength: 0, quality: 0.3 })]
     this.best = new Text({ text: '', style: { fontFamily: MONO, fontSize: 15, fontWeight: 'bold', fill: 0xffe066 } })
     this.best.anchor.set(0.5)
-    this.rank = new Text({ text: '', style: { fontFamily: MONO, fontSize: 14, fontWeight: 'bold', fill: 0x57c8ff } })
-    this.rank.anchor.set(0.5)
+    this.rank = new Text({ text: '', style: { fontFamily: MONO, fontSize: 14, fontWeight: 'bold', fill: 0x57c8ff, align: 'center', wordWrap: true, wordWrapWidth: 500, lineHeight: 19 } })
+    // Top-anchored: a long unlock banner (multiple items) wraps DOWNWARD into
+    // space the layout reserves for it, never up into the title.
+    this.rank.anchor.set(0.5, 0)
     this.stats = new Text({ text: '', style: { fontFamily: MONO, fontSize: 16, fill: COLORS.hudText, align: 'center', lineHeight: 24 } })
     this.stats.anchor.set(0.5)
 
@@ -64,6 +66,7 @@ export class GameOver {
   setRank(rank: number): void {
     if (this.hasUnlockBanner) return // an unlock is the bigger news — keep it
     this.rank.text = `◆  GLOBAL RANK #${rank}  ◆`
+    this.relayout() // the banner slot is sized to its content
   }
 
   /** Banner anything the run just unlocked (owns the rank line's slot). */
@@ -72,6 +75,7 @@ export class GameOver {
     this.hasUnlockBanner = true
     this.rank.text = `★ UNLOCKED: ${names.join(' + ')} ★`
     this.rank.style.fill = 0xffe066
+    this.relayout()
   }
 
   /** The score never reached the leaderboard — say so instead of silence. */
@@ -79,6 +83,7 @@ export class GameOver {
     if (this.hasUnlockBanner || !leaderboardEnabled()) return
     this.rank.text = 'score not submitted — check your connection'
     this.rank.style.fill = 0x5f8f83
+    this.relayout()
   }
 
   layout(w: number, h: number): void {
@@ -92,15 +97,20 @@ export class GameOver {
     this.backdrop.clear()
     this.backdrop.rect(0, 0, w, h).fill({ color: 0x05070d, alpha: 0.74 })
     const cx = w / 2
-    let y = h * 0.5 - 156
+    this.rank.style.wordWrapWidth = Math.min(w - 32, 500)
+    // Flow by REAL text heights: the stats block is 5 lines since the loadout
+    // line was added, and the rank slot doubles as the unlock banner (which can
+    // wrap) — fixed offsets let them print over each other (owner playtest bug).
+    const short = h < 560
+    let y = h * 0.5 - (short ? 170 : 156)
     this.title.position.set(cx, y)
     y += 34
     this.best.position.set(cx, y)
     y += 22
     this.rank.position.set(cx, y)
-    y += 20
-    this.stats.position.set(cx, y + 24)
-    y += 118
+    y += Math.max(22, this.rank.height + 6)
+    this.stats.position.set(cx, y + this.stats.height / 2)
+    y += this.stats.height + 22
     this.retry.position(cx - 188, y)
     this.menu.position(cx + 8, y)
     y += 64
