@@ -218,11 +218,14 @@ export function spawnChainArc(world: World, x1: number, y1: number, x2: number, 
 /** Floating damage number (capped). Crits are larger and gold. */
 export function spawnDamageNumber(world: World, x: number, y: number, dmg: number, crit: boolean): void {
   if (world.floaters.size >= MAX_FLOATERS) return
-  const rng = world.rng
   const f = world.floaters.acquire()
-  f.x = x + rng.range(-6, 6)
+  // Purely-visual jitter must NOT come from the sim RNG: these draws sit behind
+  // the floater-cap early-return, and the cap's population can differ per device
+  // (the one-time gem hint is gated on local storage) — which would fork the
+  // Daily Challenge sim stream. Math.random, same as screen shake (juice.ts).
+  f.x = x + (Math.random() * 12 - 6)
   f.y = f.prevY = y - 8
-  f.vy = -rng.range(46, 74)
+  f.vy = -(46 + Math.random() * 28)
   f.life = f.maxLife = crit ? 0.7 : 0.5
   f.text.text = crit ? `${Math.round(dmg)}!` : String(Math.round(dmg))
   f.text.style.fontSize = crit ? 20 : 14
