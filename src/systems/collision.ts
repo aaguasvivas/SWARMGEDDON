@@ -193,8 +193,18 @@ function killEnemy(world: World, e: Enemy): void {
 
   world.ichor.queueStamp(e.x, e.y, world.rng)
   spawnGibs(world, e.x, e.y, def.gibCount, def.gibColor)
-  world.juice.addTrauma(def.boss ? 0.6 : def.elite ? 0.2 : 0.05)
   world.audio.play('kill')
+
+  // Big-kill juice (hit-stop freeze + heavy shake) only lands when the death is
+  // actually VISIBLE. An elite dying off-screen (ricochets, explosions, the wide
+  // spawn ring) used to freeze the sim for 3 frames with no visible cause —
+  // which players feel as an unexplained movement stutter, not as impact.
+  // camX/viewW are render state, but they only gate cosmetic time/shake here —
+  // never sim content or the sim RNG stream.
+  const onScreen =
+    e.x > world.camX - 90 && e.x < world.camX + world.viewW + 90 &&
+    e.y > world.camY - 90 && e.y < world.camY + world.viewH + 90
+  world.juice.addTrauma(def.boss ? 0.6 : def.elite && onScreen ? 0.2 : 0.05)
 
   // Death-pop shockwave ring (+ a punchy hit-stop on the big ones). Skip the
   // xp-1 chaff so a swarm wipe stays clean and cheap.
@@ -203,7 +213,7 @@ function killEnemy(world: World, e: Enemy): void {
     world.juice.addHitstop(0.12)
   } else if (def.elite) {
     spawnRing(world, e.x, e.y, def.gibColor, 3)
-    world.juice.addHitstop(0.05)
+    if (onScreen) world.juice.addHitstop(0.05)
   } else if (def.xp >= 2) {
     spawnRing(world, e.x, e.y, def.gibColor, 1.4)
   }
