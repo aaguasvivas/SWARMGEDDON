@@ -2,6 +2,9 @@ import { COLORS, FIXED_DT } from '../config.ts'
 import { lerp, lerpAngle } from '../core/vec.ts'
 import type { World } from '../game/world.ts'
 
+/** Seconds an enemy takes to fade/scale in after spawning (cosmetic only). */
+const EMERGE_TIME = 0.45
+
 /**
  * Pushes simulation state onto Pixi sprites each rendered frame: interpolation
  * (prev -> current by alpha), rotate-to-face, procedural squash/wobble (so one
@@ -25,8 +28,13 @@ export function renderEntities(world: World, alpha: number): void {
       s.tint = 0x2a1d10
       continue
     }
-    s.alpha = 1
-    const base = e.def.scale * (e.buffed > 0 ? 1.08 : 1)
+    // Emerge: fade/scale in over the first beat after spawn so enemies never
+    // pop into existence — matters on huge viewports where the fixed spawn ring
+    // can sit in view, and for splitter offspring / queen broods which spawn
+    // mid-screen by design. Pure presentation (reads sim time, mutates nothing).
+    const emerge = Math.min(1, Math.max(0, (t - e.bornAt) / EMERGE_TIME))
+    s.alpha = emerge
+    const base = e.def.scale * (e.buffed > 0 ? 1.08 : 1) * (0.55 + 0.45 * emerge)
     const wob = Math.sin(t * 14 + e.animPhase)
     s.scale.set(base * (1 + wob * 0.1), base * (1 - wob * 0.1))
     s.tint = e.flash > 0 ? COLORS.swarmerHurt : e.slow > 0 ? 0x7fd8ff : e.def.tint

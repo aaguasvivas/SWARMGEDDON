@@ -57,11 +57,14 @@ export function spawnSystem(world: World, dt: number): void {
   }
 }
 
-// FIXED spawn extents (NOT the actual viewport) — big enough to sit off-screen
-// for any reasonable viewport, and constant so the Daily Challenge is truly
-// device-independent (spawn positions never depend on screen size).
-const SPAWN_HALF_W = 820
-const SPAWN_HALF_H = 580
+// FIXED spawn extents (NOT the actual viewport) — constant so the Daily
+// Challenge is truly device-independent (spawn positions never depend on screen
+// size). Sized to clear the visible half-extents of a maximized 1440p window
+// (half 1280x720); on rarer, even larger viewports (4K/ultrawide, where the
+// whole 2800x1900 arena fits on screen anyway) spawns can land in view — the
+// cosmetic emerge fade in entityRenderer makes those read as intentional.
+const SPAWN_HALF_W = 1300
+const SPAWN_HALF_H = 760
 
 /**
  * A point just outside the visible window, around the player, so enemies stream
@@ -154,6 +157,7 @@ export function spawnEnemy(world: World, defId: string, x: number, y: number): E
   e.submerged = false
   e.stateTimer = 0
   e.animPhase = rng.angle()
+  e.bornAt = world.time
 
   // Behavior-specific init.
   if (def.behavior === 'burrower' && def.burrow) {

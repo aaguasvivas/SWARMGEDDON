@@ -47,6 +47,8 @@ export class Enemy implements Poolable {
   enraged = false
   /** Per-enemy phase offset so the swarm doesn't wobble in lockstep. */
   animPhase = 0
+  /** Sim time this enemy spawned — drives the cosmetic emerge fade (render-only read). */
+  bornAt = 0
 
   constructor(readonly sprite: Sprite) {}
 }
