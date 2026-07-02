@@ -5,6 +5,11 @@ import type { Insets } from '../platform/safeArea.ts'
 export interface DebugInfo {
   fps: number
   frameMs: number
+  p95: number
+  maxMs: number
+  longFrames: number
+  badFrames: number
+  totalFrames: number
   steps: number
   enemies: number
   projectiles: number
@@ -59,6 +64,7 @@ export class DebugOverlay {
       `SWARMGEDDON · phase 3\n` +
       `fps   ${info.fps.toFixed(0).padStart(3)}${low}\n` +
       `frame ${info.frameMs.toFixed(1)}ms · steps ${info.steps}\n` +
+      `p95   ${info.p95.toFixed(1)}ms · max ${info.maxMs.toFixed(0)} · long ${info.longFrames}/${info.totalFrames}${info.badFrames > 0 ? ` · BAD ${info.badFrames}` : ''}\n` +
       `ents  ${ents}  (e${info.enemies} p${info.projectiles} fx${info.particles})\n` +
       `input ${info.inputType}${info.firing ? ' · FIRE' : ''}\n` +
       `view  ${info.width}×${info.height} @${info.dpr.toFixed(2)}x\n` +

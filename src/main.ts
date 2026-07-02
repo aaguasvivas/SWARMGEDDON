@@ -1,4 +1,4 @@
-import { Container, Graphics, Rectangle } from 'pixi.js'
+import { Container, Graphics, Rectangle, Text } from 'pixi.js'
 import { COLORS, DEFAULT_SEED, FIXED_DT, MAX_FRAME_TIME } from './config.ts'
 import { clamp } from './core/vec.ts'
 import { GameLoop } from './core/time.ts'
@@ -438,6 +438,11 @@ async function boot(): Promise<void> {
         debug.update({
           fps: loop.fps,
           frameMs: loop.frameMs,
+          p95: loop.p95(),
+          maxMs: loop.maxMs,
+          longFrames: loop.longFrames,
+          badFrames: loop.badFrames,
+          totalFrames: loop.totalFrames,
           steps: loop.steps,
           enemies: world.enemies.size,
           projectiles: world.projectiles.size + world.enemyProjectiles.size,
@@ -454,6 +459,30 @@ async function boot(): Promise<void> {
       app.render()
     },
   )
+
+  // Warm the GPU paths Pixi otherwise builds on FIRST use mid-combat — the
+  // additive-blend batch pipeline (first spark/muzzle flash) and the Text
+  // rasterizer (first damage number) — so they never land as an in-run hitch.
+  // Sprite textures themselves are already GPU-resident (baked at boot).
+  {
+    const warm = new Container()
+    warm.position.set(-4000, -4000)
+    warm.alpha = 0.001
+    const plain = texReg.makeSprite('swarmer')
+    plain.visible = true
+    const additive = texReg.makeSprite('particle')
+    additive.visible = true
+    additive.blendMode = 'add'
+    additive.x = 24
+    const text = new Text({ text: '0123456789!', style: { fontFamily: 'ui-monospace, Menlo, Consolas, monospace', fontSize: 14 } })
+    text.y = 24
+    warm.addChild(plain, additive, text)
+    app.stage.addChild(warm)
+    app.render()
+    app.stage.removeChild(warm)
+    warm.destroy({ children: true })
+  }
+
   loop.start()
 
   if (import.meta.env.DEV) {
@@ -463,6 +492,8 @@ async function boot(): Promise<void> {
       audio,
       input,
       hud,
+      loop,
+      perfReset: () => loop.resetStats(),
       leaderboard,
       toLeaderboard: () => toLeaderboard(),
       touchHint,
