@@ -97,12 +97,15 @@ async function boot(): Promise<void> {
   const settingsPanel = new SettingsPanel()
   const leaderboard = new Leaderboard()
   const touchHint = new TouchHint()
-  const debug = new DebugOverlay()
+  // Dev instrument only — null in prod so the class, its per-frame update, and
+  // the backtick toggle are all tree-shaken from the shipped bundle.
+  const debug = import.meta.env.DEV ? new DebugOverlay() : null
   // vignette sits at the bottom of the UI (above the world, below the HUD).
   layers.ui.addChild(
     vignette.view, hud.view, input.touch.view, hurtOverlay, flashOverlay, crosshair,
-    touchHint.view, modal.view, mainMenu.view, gameOver.view, settingsPanel.view, leaderboard.view, debug.view,
+    touchHint.view, modal.view, mainMenu.view, gameOver.view, settingsPanel.view, leaderboard.view,
   )
+  if (debug) layers.ui.addChild(debug.view)
 
   // Touch onboarding state: show the dual-stick guide on touch devices until the
   // player has used both sticks once (persisted), fading each side as it's used.
@@ -222,7 +225,7 @@ async function boot(): Promise<void> {
     world.viewW = w
     world.viewH = h
     hud.layout(w, h, insets)
-    debug.layout(insets)
+    debug?.layout(insets)
     touchHint.layout(w, h, insets)
     vignette.resize(w, h)
     modal.setScreen(w, h)
@@ -259,13 +262,17 @@ async function boot(): Promise<void> {
   })
 
   window.addEventListener('keydown', (e) => {
+    // Typing in a real text field (the leaderboard name prompt) must never be
+    // read as game input — 'r' would restart, Enter would start a run.
+    const tgt = e.target as HTMLElement | null
+    if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)) return
     if (modal.isOpen()) {
       if (e.key === '1') modal.pickByIndex(0)
       else if (e.key === '2') modal.pickByIndex(1)
       else if (e.key === '3') modal.pickByIndex(2)
       return
     }
-    if (e.key === '`') {
+    if (debug && e.key === '`') {
       debug.toggle()
     } else if (screen === 'playing') {
       if (e.key === 'Escape') toMenu()
@@ -427,20 +434,22 @@ async function boot(): Promise<void> {
       audio.intensity = playing ? Math.min(1, world.enemies.size / 120 + (world.bossAlive ? 0.4 : 0)) : 0.12
       audio.updateMusic()
 
-      debug.update({
-        fps: loop.fps,
-        frameMs: loop.frameMs,
-        steps: loop.steps,
-        enemies: world.enemies.size,
-        projectiles: world.projectiles.size + world.enemyProjectiles.size,
-        particles: world.particles.size + world.floaters.size + world.pickups.size + world.acid.size,
-        inputType: input.lastType,
-        firing: input.firing,
-        width: Math.round(app.screen.width),
-        height: Math.round(app.screen.height),
-        dpr: app.renderer.resolution,
-        seed: world.seed,
-      })
+      if (debug) {
+        debug.update({
+          fps: loop.fps,
+          frameMs: loop.frameMs,
+          steps: loop.steps,
+          enemies: world.enemies.size,
+          projectiles: world.projectiles.size + world.enemyProjectiles.size,
+          particles: world.particles.size + world.floaters.size + world.pickups.size + world.acid.size,
+          inputType: input.lastType,
+          firing: input.firing,
+          width: Math.round(app.screen.width),
+          height: Math.round(app.screen.height),
+          dpr: app.renderer.resolution,
+          seed: world.seed,
+        })
+      }
 
       app.render()
     },
