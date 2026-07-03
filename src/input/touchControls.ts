@@ -73,7 +73,7 @@ export class TouchControls {
   /** Live contacts (id -> last position + which half it landed on). Lets us
    *  tell a GHOST owner (id we no longer track — missed up / browser id reuse)
    *  from a LIVE one, and fall back to a surviving touch when the owner lifts. */
-  private contacts = new Map<number, { x: number; y: number; left: boolean }>()
+  private contacts = new Map<number, { x: number; y: number; left: boolean; seen: number }>()
 
   onDown(id: number, x: number, y: number, screenW: number): void {
     // A pointerdown means this id begins a NEW contact — if it still "owns" a
@@ -83,7 +83,7 @@ export class TouchControls {
     if (id === this.aimId) this.releaseAim()
 
     const left = x < screenW / 2
-    this.contacts.set(id, { x, y, left })
+    this.contacts.set(id, { x, y, left, seen: performance.now() })
 
     // Claim the half's stick only if it's free or its owner is a ghost. A
     // second LIVE touch on the same half (palm graze beside a held thumb) must
@@ -100,6 +100,7 @@ export class TouchControls {
     if (c) {
       c.x = x
       c.y = y
+      c.seen = performance.now()
     }
     if (id === this.moveId) {
       const { kx, ky } = this.clampKnob(x - this.moveBaseX, y - this.moveBaseY)
@@ -136,6 +137,35 @@ export class TouchControls {
     } else if (id === this.aimId) {
       this.releaseAim()
       this.fallbackClaim(false)
+    }
+  }
+
+  /**
+   * Reconcile our tracked contacts against the browser's REAL finger count
+   * (TouchEvent.touches.length — ground truth). iOS Safari sometimes never
+   * delivers pointerup/pointercancel when a system gesture interrupts (banner,
+   * Dynamic Island, edge swipe), leaving a ZOMBIE contact that owns a stick
+   * forever — stuck aiming/firing, and (because it looks "live") immune to the
+   * anti-graze takeover rules. Called from native touchstart/end/cancel.
+   */
+  reconcile(realCount: number): void {
+    if (realCount === 0) {
+      // No fingers on the glass: everything we still track is a zombie.
+      if (this.contacts.size > 0 || this.moveId !== -1 || this.aimId !== -1) this.reset()
+      return
+    }
+    // More tracked contacts than real fingers -> evict the stalest extras.
+    while (this.contacts.size > realCount) {
+      let oldest = -1
+      let oldestSeen = Infinity
+      for (const [id, c] of this.contacts) {
+        if (c.seen < oldestSeen) {
+          oldestSeen = c.seen
+          oldest = id
+        }
+      }
+      if (oldest === -1) return
+      this.onUp(oldest) // releases + falls back to a real surviving finger
     }
   }
 

@@ -69,6 +69,15 @@ export class InputManager {
     // If the browser yanks pointer capture (e.g. it decides a drag is a native
     // gesture), release that stick so it can't latch "on".
     canvas.addEventListener('lostpointercapture', this.onPointerUp)
+    // Ground truth: native TouchEvents always report how many fingers are REALLY
+    // on the glass — even when iOS drops a pointerup during a system gesture
+    // (banner, Dynamic Island, edge swipe) and would otherwise leave a stick
+    // stuck aiming/firing for the rest of the run. Reconcile on every change;
+    // with zero real fingers, everything tracked is a zombie and hard-resets.
+    const reconcile = (e: TouchEvent): void => this.touch.reconcile(e.touches.length)
+    window.addEventListener('touchstart', reconcile, { passive: true })
+    window.addEventListener('touchend', reconcile, { passive: true })
+    window.addEventListener('touchcancel', reconcile, { passive: true })
     window.addEventListener('blur', this.onBlur)
     canvas.addEventListener('contextmenu', this.onContextMenu)
 
