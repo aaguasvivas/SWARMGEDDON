@@ -249,6 +249,15 @@ async function boot(): Promise<void> {
     leaderboard.hide()
     mainMenu.refresh(todayStr())
     mainMenu.show()
+    // Reset the whole presentation to the hive home base — the menu idles a live
+    // arena behind it (see the player.spawn at world center), so music, floor
+    // theme, and ichor tints must AGREE, not show the last world with hive music.
+    const home = arenaById(DEFAULT_ARENA_ID)
+    world.arenaTheme = home
+    arena.setTheme(home)
+    ichor.stampTintA = home.ichorA
+    ichor.stampTintB = home.ichorB
+    audio.setTheme(home.music)
     flushUpdatePrompt()
   }
 

@@ -59,9 +59,26 @@ export function collisionSystem(world: World, dt: number): void {
   const enemies = world.enemies.active
   for (let i = 0; i < enemies.length; i++) {
     const e = enemies[i]!
-    if (e.submerged) continue
+    // Skip enemies already killed by the projectile pass above (the pool isn't
+    // swept until end of tick). Matters most for the charger's FLAT ram — you
+    // shouldn't eat a 26-burst from a charger you killed on the same tick.
+    if (!e.alive || e.submerged) continue
     const rr = e.radius + pl.radius
     if (distSq(e.x, e.y, pl.x, pl.y) < rr * rr) {
+      // Charger windup/dash is NOT a chip: the telegraph (phase 1) is safe to
+      // stand near, and the dash (phase 2) lands ONE solid ram if its locked
+      // line catches you — the payoff for the tell (a fast dt-scaled pass would
+      // otherwise be nearly free). Stalk/recover use normal contact.
+      if (e.def.behavior === 'charger' && (e.phase === 1 || e.phase === 2)) {
+        if (e.phase === 2 && !e.dashHit) {
+          e.dashHit = true
+          pl.hp -= e.damage * (1 - m.damageReduction)
+          world.hurtFlash = Math.min(0.85, world.hurtFlash + 0.28)
+          world.juice.addTrauma(0.2)
+          if (m.thorns > 0) dealDamage(world, e, m.thorns)
+        }
+        continue
+      }
       pl.hp -= e.damage * dt * (1 - m.damageReduction)
       world.hurtFlash = Math.min(0.7, world.hurtFlash + e.damage * dt * 0.05)
       world.juice.addTrauma(0.02)

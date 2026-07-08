@@ -102,11 +102,15 @@ export function aiSystem(world: World, dt: number): void {
         } else if (e.phase === 1) {
           mx = 0
           my = 0
+          separate = false // coil firmly in place — neighbors can't shove the
+          // telegraph off its locked line (else the sprite faces one way and
+          // slides another, and the dash launches from a drifted origin).
           facingOverride = e.phaseDir
           e.stateTimer -= dt
           if (e.stateTimer <= 0) {
             e.phase = 2
             e.stateTimer = ch.dashTime
+            e.dashHit = false // fresh dash -> one ram available
           }
         } else if (e.phase === 2) {
           mx = Math.cos(e.phaseDir)

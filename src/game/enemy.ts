@@ -44,6 +44,8 @@ export class Enemy implements Poolable {
   phase = 0
   /** Locked heading for phase-driven moves (radians; charger dash line). */
   phaseDir = 0
+  /** Charger: whether the current dash has already landed its one ram hit. */
+  dashHit = false
   /** Cryo slow remaining (seconds) + its strength (0..1). */
   slow = 0
   slowFactor = 0
