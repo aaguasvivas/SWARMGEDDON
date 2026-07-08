@@ -1,4 +1,4 @@
-import { COLORS, MAX_ACID } from '../config.ts'
+import { MAX_ACID } from '../config.ts'
 import { distSq } from '../core/vec.ts'
 import { spawnAcidSplash } from '../effects/fx.ts'
 import type { World } from '../game/world.ts'
@@ -20,7 +20,7 @@ export function spawnAcidPool(world: World, x: number, y: number): void {
 
   const s = ap.sprite
   s.visible = true
-  s.tint = COLORS.acid
+  s.tint = world.arenaTheme.hazardTint // acid green / magma orange per world
   s.x = x
   s.y = y
   s.scale.set(ap.radius / 14)

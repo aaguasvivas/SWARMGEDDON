@@ -1,4 +1,4 @@
-import { COLORS, MAX_ENEMY_PROJECTILES } from '../config.ts'
+import { MAX_ENEMY_PROJECTILES } from '../config.ts'
 import { clamp } from '../core/vec.ts'
 import { spawnPoof } from '../effects/fx.ts'
 import { spawnEnemy } from './spawn.ts'
@@ -6,7 +6,9 @@ import type { Enemy } from '../game/enemy.ts'
 import type { World } from '../game/world.ts'
 
 const SEPARATION = 0.9
-const AURA_SPEED_MUL = 1.35
+/** Total gravity-well drag on the player, units/sec — hard-capped well below
+ *  the slowest pilot's speed so the move stick always wins (phone fairness). */
+const MAX_WELL_PULL = 140
 
 /** Rebuild the enemy spatial hash from current positions. */
 export function buildEnemyHash(world: World): void {
@@ -30,13 +32,35 @@ export function aiSystem(world: World, dt: number): void {
   const py = world.player.y
   const buf = world.queryBuf
 
-  // Aura + warper pass.
+  // Aura + warper + gravity-well pass. Well pull is a pure function of
+  // positions (zero RNG) accumulated here and applied by player.update.
   let warperActive = false
+  let pullX = 0
+  let pullY = 0
   for (let i = 0; i < a.length; i++) {
     const e = a[i]!
     if (e.def.aura && !e.submerged) applyAura(world, e, buf)
     if (e.def.warps && !e.submerged) warperActive = true
+    const well = e.def.wellPull
+    if (well && !e.submerged) {
+      const wx = e.x - px
+      const wy = e.y - py
+      const wd = Math.hypot(wx, wy)
+      if (wd > 1 && wd < well.radius) {
+        const k = (well.strength * (1 - wd / well.radius)) / wd
+        pullX += wx * k
+        pullY += wy * k
+      }
+    }
   }
+  const pullMag = Math.hypot(pullX, pullY)
+  if (pullMag > MAX_WELL_PULL) {
+    const s = MAX_WELL_PULL / pullMag
+    pullX *= s
+    pullY *= s
+  }
+  world.pullX = pullX
+  world.pullY = pullY
   world.warperActive = warperActive
 
   for (let i = 0; i < a.length; i++) {
@@ -59,8 +83,50 @@ export function aiSystem(world: World, dt: number): void {
     let my = uy
     let faceTarget = false
     let separate = true
+    let facingOverride = Number.NaN // set by phase-driven behaviors (charger)
+    let speedOverride = Number.NaN
 
     switch (def.behavior) {
+      case 'charger': {
+        // Telegraphed line-dash: heading LOCKS at windup start (aims at the
+        // player's exact position — zero RNG), so a perpendicular sidestep
+        // always dodges; the slow recover is the punish window.
+        const ch = def.charge!
+        if (e.phase === 0) {
+          // stalk: normal seek until in range
+          if (d <= ch.triggerRange) {
+            e.phase = 1
+            e.stateTimer = ch.windup
+            e.phaseDir = Math.atan2(uy, ux)
+          }
+        } else if (e.phase === 1) {
+          mx = 0
+          my = 0
+          facingOverride = e.phaseDir
+          e.stateTimer -= dt
+          if (e.stateTimer <= 0) {
+            e.phase = 2
+            e.stateTimer = ch.dashTime
+          }
+        } else if (e.phase === 2) {
+          mx = Math.cos(e.phaseDir)
+          my = Math.sin(e.phaseDir)
+          facingOverride = e.phaseDir
+          speedOverride = ch.dashSpeed
+          separate = false // a dash is a committed line
+          e.stateTimer -= dt
+          if (e.stateTimer <= 0) {
+            e.phase = 3
+            e.stateTimer = ch.recover
+          }
+        } else {
+          speedOverride = e.speed * 0.3 // sluggish recover drift
+          e.stateTimer -= dt
+          if (e.stateTimer <= 0) e.phase = 0
+        }
+        break
+      }
+
       case 'flyer':
         separate = false
         break
@@ -147,10 +213,12 @@ export function aiSystem(world: World, dt: number): void {
       // 'chaser' and 'splitter' use the default seek + separation.
     }
 
-    // Effective speed with slow / buff / burrow / enrage modifiers.
-    let spd = e.speed
+    // Effective speed with slow / buff / burrow / enrage modifiers. A phase
+    // override (charger dash/recover) replaces the base but keeps modifiers,
+    // so cryo slow still bites a dash.
+    let spd = Number.isNaN(speedOverride) ? e.speed : speedOverride
     if (e.slow > 0) spd *= 1 - e.slowFactor
-    if (e.buffed > 0) spd *= AURA_SPEED_MUL
+    if (e.buffed > 0) spd *= e.buffedMul
     if (def.behavior === 'burrower' && e.submerged && def.burrow) spd *= def.burrow.underSpeedMul
     if (def.behavior === 'queen' && e.enraged) spd *= 1.4
 
@@ -176,20 +244,30 @@ export function aiSystem(world: World, dt: number): void {
     e.vy = (my / ml) * spd
     e.x += e.vx * dt
     e.y += e.vy * dt
-    e.facing = faceTarget ? Math.atan2(uy, ux) : Math.atan2(e.vy, e.vx)
+    e.facing = Number.isNaN(facingOverride)
+      ? faceTarget
+        ? Math.atan2(uy, ux)
+        : Math.atan2(e.vy, e.vx)
+      : facingOverride
   }
 }
 
-/** Hive mind: refresh a short buff on all enemies within its aura radius. */
+/** Aura source: refresh a short buff on all enemies within its radius, stamping
+ *  its OWN speed multiplier (per-def — hivemind 1.35, deep caller 1.55). When
+ *  auras overlap within a frame, the stronger multiplier wins. */
 function applyAura(world: World, src: Enemy, buf: Enemy[]): void {
   const radius = src.def.aura!.radius
+  const mul = src.def.aura!.speedMul
   const n = world.hash.query(src.x, src.y, radius, buf)
   for (let j = 0; j < n; j++) {
     const o = buf[j]!
     if (o === src) continue
     const dx = o.x - src.x
     const dy = o.y - src.y
-    if (dx * dx + dy * dy <= radius * radius) o.buffed = Math.max(o.buffed, 0.3)
+    if (dx * dx + dy * dy <= radius * radius) {
+      o.buffedMul = o.buffed > 0 ? Math.max(o.buffedMul, mul) : mul
+      o.buffed = Math.max(o.buffed, 0.3)
+    }
   }
 }
 
@@ -235,6 +313,8 @@ function fireEnemyShot(world: World, e: Enemy, ux: number, uy: number): void {
   const s = p.sprite
   s.visible = true
   s.alpha = 1
-  s.tint = def.leavesAcid ? COLORS.acid : def.tint
+  // Hazard projectiles wear the ARENA's hazard color (acid green / magma
+  // orange); others keep their body tint. Presentation only.
+  s.tint = def.leavesAcid ? world.arenaTheme.hazardTint : def.tint
   s.scale.set(1)
 }

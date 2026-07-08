@@ -126,7 +126,7 @@ export function spawnAcidSplash(world: World, x: number, y: number): void {
     p.size = rng.range(0.5, 1.0)
     p.grow = -1
     p.drag = 7
-    p.tint = COLORS.acid
+    p.tint = world.arenaTheme.hazardTint
     p.additive = true
     p.sprite.texture = world.sparkTex
     p.sprite.blendMode = 'add'

@@ -403,7 +403,7 @@ async function boot(): Promise<void> {
     collisionSystem(world, dt)
     acidSystem(world, dt)
     particleSystem(world, dt)
-    player.update(dt, input.move, input.aimDir, arena.bounds, world.mods.moveSpeedMul)
+    player.update(dt, input.move, input.aimDir, arena.bounds, world.mods.moveSpeedMul, world.pullX, world.pullY)
     if (player.hp > 0 && world.mods.regenPerSec > 0) {
       player.hp = Math.min(player.maxHp, player.hp + world.mods.regenPerSec * dt)
     }

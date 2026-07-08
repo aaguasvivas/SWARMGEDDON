@@ -1,29 +1,25 @@
 import { MAX_ENEMIES } from '../config.ts'
 import { clamp } from '../core/vec.ts'
 import { ENEMIES } from '../content/enemies.ts'
-import {
-  BOSS_INTERVAL,
-  ELITE_FIRST,
-  ELITE_INTERVAL,
-  pickEnemy,
-  spawnBatch,
-  spawnInterval,
-} from '../content/waveDirector.ts'
+import { pickEnemy, spawnBatch, spawnInterval } from '../content/waveDirector.ts'
 import { announce } from '../effects/fx.ts'
 import type { Enemy } from '../game/enemy.ts'
 import type { World } from '../game/world.ts'
 
 /**
- * Wave director driver. Streams regular enemies from the edges per the data
- * curves, and layers in hive-guardian elites and the colossal queen boss on
- * their own cadences (one queen at a time).
+ * Wave director driver. Streams the ARENA's roster from the edges per its own
+ * rhythm curves, and layers in the arena's elite and boss on their cadences
+ * (one boss at a time). All config comes from world.waveCfg, resolved once per
+ * run in beginRun — per-world rosters/rhythm are what make each arena play as
+ * a different world (docs/WORLDS-SPEC.md).
  */
 export function spawnSystem(world: World, dt: number): void {
   const t = world.time
+  const cfg = world.waveCfg
 
   world.spawnTimer -= dt
-  const interval = spawnInterval(t)
-  const batch = spawnBatch(t)
+  const interval = spawnInterval(cfg, t)
+  const batch = spawnBatch(cfg, t)
   let guard = 0
   while (world.spawnTimer <= 0 && guard++ < 64) {
     world.spawnTimer += interval
@@ -33,37 +29,36 @@ export function spawnSystem(world: World, dt: number): void {
     }
     for (let i = 0; i < batch; i++) {
       if (world.enemies.size >= MAX_ENEMIES) break
-      spawnFromEdge(world, pickEnemy(world.rng, t))
+      spawnFromEdge(world, pickEnemy(cfg, world.rng, t))
     }
   }
 
-  // Elites: one hive-guardian per cadence, intentionally stepping up to a small
-  // pack deep into a run (+1 every 140s) as a late-game pressure ramp.
-  // At the enemy cap (the NORMAL late-game state), don't burn the cadence —
-  // retry shortly, once kills open room. Capacity is checked BEFORE any RNG
-  // draw so the failed path stays deterministic and draw-free.
-  if (t >= ELITE_FIRST) {
+  // Elites: one per cadence, stepping up to a small pack deep into a run as a
+  // late-game pressure ramp. At the enemy cap (the NORMAL late-game state),
+  // don't burn the cadence — retry shortly, once kills open room. Capacity is
+  // checked BEFORE any RNG draw so the failed path stays deterministic.
+  if (t >= cfg.elite.first) {
     world.eliteTimer -= dt
     if (world.eliteTimer <= 0) {
       if (world.enemies.size >= MAX_ENEMIES) {
         world.eliteTimer = RETRY_AT_CAP
       } else {
-        world.eliteTimer = ELITE_INTERVAL
-        const n = 1 + Math.floor((t - ELITE_FIRST) / 140)
-        for (let i = 0; i < n; i++) spawnFromEdge(world, 'guardian')
+        world.eliteTimer = cfg.elite.interval
+        const n = 1 + Math.floor((t - cfg.elite.first) / cfg.elite.packEvery)
+        for (let i = 0; i < n; i++) spawnFromEdge(world, cfg.elite.id)
         world.juice.addTrauma(0.3)
       }
     }
   }
 
-  // Boss — same retry-at-cap rule: the queen must never be silently skipped
-  // for a whole 165s interval just because the pool was momentarily full.
+  // Boss — same retry-at-cap rule: the boss must never be silently skipped
+  // for a whole interval just because the pool was momentarily full.
   world.bossTimer -= dt
   if (world.bossTimer <= 0 && !world.bossAlive) {
     if (world.enemies.size >= MAX_ENEMIES) {
       world.bossTimer = RETRY_AT_CAP
     } else {
-      world.bossTimer = BOSS_INTERVAL
+      world.bossTimer = cfg.boss.interval
       spawnBoss(world)
     }
   }
@@ -133,14 +128,15 @@ function spawnFromEdge(world: World, defId: string): Enemy | null {
 }
 
 function spawnBoss(world: World): void {
+  const cfg = world.waveCfg
   const p = viewportSpawnPoint(world)
-  const queen = spawnEnemy(world, 'queen', p.x, p.y)
-  if (!queen) return
+  const boss = spawnEnemy(world, cfg.boss.id, p.x, p.y)
+  if (!boss) return
   world.bossAlive = true
-  world.boss = queen
+  world.boss = boss
   world.audio.play('boss')
   world.juice.addTrauma(0.8)
-  announce(world, 'THE QUEEN AWAKENS', world.player.x, world.player.y - 40, 0xff3a8a)
+  announce(world, cfg.boss.announce, world.player.x, world.player.y - 40, world.broodTint(boss.def.tint))
 }
 
 /**
@@ -173,6 +169,9 @@ export function spawnEnemy(world: World, defId: string, x: number, y: number): E
   e.stateTimer = 0
   e.animPhase = rng.angle()
   e.bornAt = world.time
+  e.phase = 0
+  e.phaseDir = 0
+  e.buffedMul = 1
   // Faction skin: the arena's paired brood hue-shifts every enemy's palette.
   // Pure presentation (no RNG, cached per color) — the sim never reads tints.
   e.tint = world.broodTint(def.tint)

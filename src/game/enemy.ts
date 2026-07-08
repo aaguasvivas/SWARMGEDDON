@@ -38,6 +38,12 @@ export class Enemy implements Poolable {
   flash = 0
   /** Aura buff remaining (seconds); set by nearby hive minds. */
   buffed = 0
+  /** Strength of the active aura buff (stamped by the aura source's def). */
+  buffedMul = 1
+  /** Generic state-machine phase (charger: 0 stalk, 1 windup, 2 dash, 3 recover). */
+  phase = 0
+  /** Locked heading for phase-driven moves (radians; charger dash line). */
+  phaseDir = 0
   /** Cryo slow remaining (seconds) + its strength (0..1). */
   slow = 0
   slowFactor = 0

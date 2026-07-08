@@ -67,10 +67,37 @@ export class Arena {
     this.floor.clear()
     this.floor.rect(x, y, w, h).fill(t.floor)
 
-    // Deterministic spore specks (seeded). Drawn beneath the grid.
+    // Deterministic decor specks (seeded), rendered in the theme's silhouette
+    // language — pods / trench rings / cracked plates. Drawn ONCE at build.
     this.decorG.clear()
+    const g = this.decorG
     for (const s of this.decor) {
-      this.decorG.circle(x + s.nx * w, y + s.ny * h, s.r).fill({ color: t.decorColor, alpha: s.alpha })
+      const cx = x + s.nx * w
+      const cy = y + s.ny * h
+      // Deterministic per-speck variation without an RNG (cosmetic only).
+      const v = (s.nx * 7919 + s.ny * 104729) % 1
+      switch (t.decorStyle) {
+        case 'trench': {
+          // Sonar-like ring + a small elongated glow mote.
+          g.circle(cx, cy, s.r * 2.4).stroke({ width: 1.2, color: t.decorColor, alpha: s.alpha * 0.7 })
+          g.ellipse(cx + s.r, cy - s.r, s.r * 0.9, s.r * 0.35).fill({ color: t.decorColor, alpha: s.alpha })
+          break
+        }
+        case 'plates': {
+          // Cracked plate shard + an ash-drift streak.
+          const r = s.r * 1.6
+          const k = 0.6 + v * 0.5
+          g.poly([cx - r, cy - r * 0.4, cx + r * k, cy - r * 0.9, cx + r, cy + r * 0.5, cx - r * 0.5, cy + r * k]).fill({ color: t.decorColor, alpha: s.alpha * 0.55 })
+          g.moveTo(cx - r * 1.6, cy + r).lineTo(cx + r * 1.4, cy + r * 0.7).stroke({ width: 1, color: t.decorColor, alpha: s.alpha * 0.5 })
+          break
+        }
+        default: {
+          // Pods: the classic spore cluster.
+          g.circle(cx, cy, s.r).fill({ color: t.decorColor, alpha: s.alpha })
+          g.circle(cx + s.r * 1.1, cy + s.r * 0.5, s.r * 0.55).fill({ color: t.decorColor, alpha: s.alpha * 0.8 })
+          g.circle(cx - s.r * 0.7, cy + s.r * 0.9, s.r * 0.4).fill({ color: t.decorColor, alpha: s.alpha * 0.7 })
+        }
+      }
     }
 
     // Grid lines, brighter every 4th cell for a readable motion reference.

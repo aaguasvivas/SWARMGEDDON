@@ -150,7 +150,7 @@ export class Hud {
       this.bossBack.roundRect(bx - 2, by - 2, bw + 4, 14, 5).fill({ color: 0x000000, alpha: 0.4 })
       this.bossBack.roundRect(bx, by, bw, 10, 4).fill(0x2a0d1d)
       if (frac > 0) this.bossFill.roundRect(bx, by, bw * frac, 10, 4).fill(0xff3a8a)
-      this.bossLabel.text = '⬢ THE QUEEN'
+      this.bossLabel.text = '⬢ ' + world.waveCfg.boss.name
       this.bossLabel.position.set(cx, by - 4)
       this.bossLabel.visible = true
     } else {

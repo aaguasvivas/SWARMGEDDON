@@ -5,7 +5,7 @@ import { Rng } from '../core/rng.ts'
 import { hueShiftHex } from '../core/color.ts'
 import { SpatialHash } from '../core/spatialHash.ts'
 import { DEFAULT_WEAPON_ID, WEAPONS, type WeaponDef } from '../content/weapons.ts'
-import { BOSS_FIRST } from '../content/waveDirector.ts'
+import { waveConfigFor, type WaveConfig } from '../content/waveDirector.ts'
 import { PERKS, baseModifiers, perkById, type Modifiers, type PerkDef } from '../content/perks.ts'
 import { CHARACTERS, type CharacterDef } from '../content/characters.ts'
 import { ARENAS, type ArenaTheme } from '../content/arenas.ts'
@@ -60,6 +60,8 @@ export class World {
   /** Run identity: pilot (feeds the sim) + arena theme (presentation + brood). */
   character: CharacterDef = CHARACTERS[0]!
   arenaTheme: ArenaTheme = ARENAS[0]!
+  /** The arena's wave config, resolved once per run — the sim reads only this. */
+  waveCfg: WaveConfig = waveConfigFor(ARENAS[0]!.id)
   private readonly tintCache = new Map<number, number>()
 
   mode: RunMode = 'endless'
@@ -82,6 +84,10 @@ export class World {
   bossAlive = false
   boss: Enemy | null = null
   warperActive = false
+  /** Accumulated gravity-well drag on the player (units/sec, pre-clamped in
+   *  aiSystem). Applied by player.update — a pure function of positions. */
+  pullX = 0
+  pullY = 0
 
   paused = false
   pendingGameOver = false
@@ -156,7 +162,11 @@ export class World {
     if (character) this.character = character
     if (theme) this.arenaTheme = theme
     this.tintCache.clear()
+    this.waveCfg = waveConfigFor(this.arenaTheme.id)
     this.arena.setTheme(this.arenaTheme)
+    this.audio.setTheme(this.arenaTheme.music)
+    this.ichor.stampTintA = this.arenaTheme.ichorA
+    this.ichor.stampTintB = this.arenaTheme.ichorB
     this.player.paint(this.character.colors)
     this.player.speed = this.character.speed
     this.baseWeaponId = this.character.startWeapon
@@ -174,7 +184,9 @@ export class World {
     this.fireCooldown = 0
     this.weaponDropTimer = 7 // first weapon pod comes early so a slow start isn't brutal
     this.eliteTimer = 0
-    this.bossTimer = BOSS_FIRST
+    this.bossTimer = this.waveCfg.boss.first
+    this.pullX = 0
+    this.pullY = 0
     this.hurtFlash = 0
     this.bossAlive = false
     this.boss = null

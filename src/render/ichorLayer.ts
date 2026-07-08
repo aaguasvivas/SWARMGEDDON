@@ -86,6 +86,11 @@ export class IchorLayer {
     if (old) old.destroy(true)
   }
 
+  /** Ichor stamp tint pair — set per arena theme at run start (presentation
+   *  only; the rng draws here are unchanged regardless of color). */
+  stampTintA: number = COLORS.ichorA
+  stampTintB: number = COLORS.ichorB
+
   /** Queue a gore stamp at a WORLD position (converted to texture-local space). */
   queueStamp(worldX: number, worldY: number, rng: Rng): void {
     let req = this.stamps[this.stampCount]
@@ -97,7 +102,7 @@ export class IchorLayer {
     req.y = worldY - this.originY
     req.scale = rng.range(ICHOR_MIN_SCALE, ICHOR_MAX_SCALE)
     req.rot = rng.angle()
-    req.tint = rng.bool(0.85) ? COLORS.ichorA : COLORS.ichorB
+    req.tint = rng.bool(0.85) ? this.stampTintA : this.stampTintB
     req.alpha = ICHOR_INTENSITY * this.intensityMul * rng.range(0.6, 1)
     this.stampCount++
   }

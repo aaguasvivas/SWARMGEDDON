@@ -23,6 +23,34 @@ export type SfxName =
   | 'boss'
   | 'ui'
 
+/** Per-world music identity — pure data over the same look-ahead scheduler. */
+export interface MusicTheme {
+  bassNotes: readonly number[]
+  arpNotes: readonly number[]
+  bassWave: OscillatorType
+  arpWave: OscillatorType
+  bpmBase: number
+  bpmRange: number
+  bassCutoffBase: number
+  bassCutoffRange: number
+  arpCutoffBase: number
+  arpCutoffRange: number
+}
+
+/** The classic hive bed (also the menu theme). */
+export const DEFAULT_MUSIC_THEME: MusicTheme = {
+  bassNotes: [110, 110, 146.83, 110, 130.81, 110, 146.83, 123.47], // A Phrygian-ish
+  arpNotes: [220, 261.63, 329.63, 392, 440, 392, 329.63, 261.63],
+  bassWave: 'sawtooth',
+  arpWave: 'triangle',
+  bpmBase: 96,
+  bpmRange: 48,
+  bassCutoffBase: 300,
+  bassCutoffRange: 400,
+  arpCutoffBase: 1200,
+  arpCutoffRange: 2000,
+}
+
 export class AudioEngine {
   private ctx: AudioContext | null = null
   private master: GainNode | null = null
@@ -36,6 +64,12 @@ export class AudioEngine {
 
   private vol = { master: 0.8, sfx: 0.9, music: 0.55 }
   private throttle = new Map<SfxName, number>()
+  private theme: MusicTheme = DEFAULT_MUSIC_THEME
+
+  /** Swap the music identity (per-world; render-side only, never touches the sim). */
+  setTheme(theme: MusicTheme): void {
+    this.theme = theme
+  }
 
   setVolumes(master: number, sfx: number, music: number): void {
     this.vol = { master, sfx, music }
@@ -224,7 +258,7 @@ export class AudioEngine {
     // Recover from a long stall (a backgrounded tab throttles rAF, so this isn't
     // called while the audio clock keeps running) without scheduling a burst.
     if (this.nextNoteTime < ctx.currentTime - 0.5) this.nextNoteTime = ctx.currentTime
-    const bpm = 96 + this.intensity * 48
+    const bpm = this.theme.bpmBase + this.intensity * this.theme.bpmRange
     const beat = 60 / bpm
     while (this.nextNoteTime < ctx.currentTime + 0.12) {
       this.scheduleStep(this.nextNoteTime, beat)
@@ -233,19 +267,18 @@ export class AudioEngine {
     }
   }
 
-  // Phrygian-ish minor bed in A; bass on the beat, sparse arp that thickens with intensity.
-  private static readonly BASS = [110, 110, 146.83, 110, 130.81, 110, 146.83, 123.47]
-  private static readonly ARP = [220, 261.63, 329.63, 392, 440, 392, 329.63, 261.63]
-
+  // Bass on the beat, sparse arp that thickens with intensity — note tables,
+  // waveforms, tempo, and filter sweeps all come from the active MusicTheme.
   private scheduleStep(t: number, beat: number): void {
+    const th = this.theme
     const i = this.musicStep
     if (i % 2 === 0) {
-      const bass = AudioEngine.BASS[(i / 2) % AudioEngine.BASS.length]!
-      this.note(bass, t, beat * 0.9, 'sawtooth', 0.16, 300 + this.intensity * 400)
+      const bass = th.bassNotes[(i / 2) % th.bassNotes.length]!
+      this.note(bass, t, beat * 0.9, th.bassWave, 0.16, th.bassCutoffBase + this.intensity * th.bassCutoffRange)
     }
     if (this.intensity > 0.25 && (i % 2 === 1 || this.intensity > 0.6)) {
-      const arp = AudioEngine.ARP[i % AudioEngine.ARP.length]!
-      this.note(arp, t, beat * 0.4, 'triangle', 0.05 + this.intensity * 0.06, 1200 + this.intensity * 2000)
+      const arp = th.arpNotes[i % th.arpNotes.length]!
+      this.note(arp, t, beat * 0.4, th.arpWave, 0.05 + this.intensity * 0.06, th.arpCutoffBase + this.intensity * th.arpCutoffRange)
     }
   }
 

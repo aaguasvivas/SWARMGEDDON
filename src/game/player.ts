@@ -62,13 +62,15 @@ export class Player {
    * deadzoned/normalized by the input layer); `aimDir` is a unit facing
    * direction, or (0,0) to leave facing unchanged.
    */
-  update(dt: number, move: Vec2, aimDir: Vec2, bounds: Bounds, speedMul = 1): void {
+  update(dt: number, move: Vec2, aimDir: Vec2, bounds: Bounds, speedMul = 1, pullX = 0, pullY = 0): void {
     this.prevX = this.x
     this.prevY = this.y
 
     const sp = this.speed * speedMul
-    this.x += move.x * sp * dt
-    this.y += move.y * sp * dt
+    // Gravity-well drag adds to (never replaces) stick input; it's pre-clamped
+    // well below any pilot's speed, so the player can always fight out of it.
+    this.x += (move.x * sp + pullX) * dt
+    this.y += (move.y * sp + pullY) * dt
 
     // Clamp inside the arena, accounting for body radius.
     this.x = clamp(this.x, bounds.x + this.radius, bounds.x + bounds.w - this.radius)

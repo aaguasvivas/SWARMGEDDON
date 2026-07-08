@@ -40,58 +40,106 @@ const glInfo = await page.evaluate(() => {
 })
 
 if (MODE === 'shot') {
+  // node scripts/measure.mjs W H shot <charId> <arenaId> <outfile> [simSeconds]
+  // With simSeconds: steps the ORGANIC sim to that time (real roster, real
+  // hazards, boss if due), then fans the live pack around the player so the
+  // world's roster is readable in one frame.
   const [charId, arenaId, outfile] = [process.argv[5], process.argv[6], process.argv[7]]
-  await page.evaluate((c, a) => {
+  const simSeconds = parseInt(process.argv[8] || '0')
+  await page.evaluate((c, a, simS) => {
     const S = window.__SWARM
     S.setLoadout(c, a)
     S.startRun('endless')
     const w = S.world
     w.player.maxHp = 1e9
     w.player.hp = 1e9
-    for (const [id, n] of [['swarmer', 26], ['flyer', 8], ['beetle', 5], ['spitter', 5], ['splitter', 5], ['guardian', 1]]) S.spawn(id, n)
+    if (simS > 0) {
+      // Step in chunks with cap relief: a stationary zero-kill probe pins the
+      // pool at MAX_ENEMIES, which (correctly) makes the boss retry forever —
+      // cull chaff so elites/bosses actually appear in the frame.
+      for (let s = 0; s < simS; s += 5) {
+        S.step(5 * 60)
+        const act = w.enemies.active
+        if (act.length > 520) {
+          let toCull = act.length - 450
+          for (const e of act) {
+            if (toCull <= 0) break
+            if (!e.def.elite && !e.def.boss) { e.alive = false; toCull-- }
+          }
+          S.step(1) // sweep
+        }
+      }
+    } else {
+      for (const [id, n] of [['swarmer', 26], ['flyer', 8], ['beetle', 5], ['spitter', 5], ['splitter', 5], ['guardian', 1]]) S.spawn(id, n)
+    }
     const px = w.player.x, py = w.player.y
     const GOLD = 2.399963
     w.enemies.active.forEach((e, i) => {
-      const r = 130 + (i % 7) * 38
+      const r = 120 + (i % 9) * 34
       e.x = e.prevX = px + Math.cos(i * GOLD) * r
       e.y = e.prevY = py + Math.sin(i * GOLD) * r * 0.62
       e.bornAt = w.time - 1
     })
     S.step(3)
-  }, charId, arenaId)
+    // Freeze for the shot: pause the live loop's sim and clear the hurt
+    // vignette (an invincible probe being chewed saturates it maroon).
+    w.paused = true
+    w.hurtFlash = 0
+  }, charId, arenaId, simSeconds)
   await new Promise((r) => setTimeout(r, 450))
   await page.screenshot({ path: outfile, type: 'jpeg', quality: 62 })
-  console.log(JSON.stringify({ mode: 'shot', charId, arenaId, outfile }))
+  console.log(JSON.stringify({ mode: 'shot', charId, arenaId, simSeconds, outfile }))
 } else if (MODE === 'det') {
+  // Runs the same (seed, pilot, arena) sim TWICE in one page: hash1 must equal
+  // hash2 (catches state leaking across beginRun), and both must match the
+  // other-viewport invocation (device independence).
   const charId = process.argv[5] || 'nova'
   const arenaId = process.argv[6] || 'hive'
-  const hash = await page.evaluate((c, a) => {
+  const steps = parseInt(process.argv[7] || '600')
+  const res = await page.evaluate((c, a, nSteps) => {
+    const S = window.__SWARM
+    const runOnce = () => {
+      S.setLoadout(c, a)
+      S.startRun('endless')
+      S.world.player.maxHp = 1e9
+      S.world.player.hp = 1e9
+      S.flood(200)
+      S.step(nSteps)
+      let h = 0x811c9dc5
+      const mix = (n) => {
+        const v = Math.round(n * 16)
+        h ^= v & 0xff; h = Math.imul(h, 0x01000193)
+        h ^= (v >> 8) & 0xff; h = Math.imul(h, 0x01000193)
+      }
+      const byType = {}
+      for (const e of S.world.enemies.active) {
+        mix(e.x); mix(e.y); mix(e.hp)
+        byType[e.def.id] = (byType[e.def.id] ?? 0) + 1
+      }
+      mix(S.world.player.x); mix(S.world.player.y)
+      mix(S.world.kills); mix(S.world.level)
+      return { hash: (h >>> 0).toString(16), enemies: S.world.enemies.active.length, kills: S.world.kills, time: +S.world.time.toFixed(1), byType }
+    }
+    const r1 = runOnce()
+    const r2 = runOnce()
+    return { r1, r2, rerunMatch: r1.hash === r2.hash }
+  }, charId, arenaId, steps)
+  console.log(JSON.stringify({ mode: 'det', W, H, charId, arenaId, steps, hash: res.r1.hash, rerunMatch: res.rerunMatch, enemies: res.r1.enemies, kills: res.r1.kills, time: res.r1.time, byType: res.r1.byType }))
+} else {
+  // perf [charId] [arenaId] — live combat in any world (default nova/hive).
+  const pChar = process.argv[5] || 'nova'
+  const pArena = process.argv[6] || 'hive'
+  await page.evaluate((c, a) => {
     const S = window.__SWARM
     S.setLoadout(c, a)
-    S.startRun('endless')
-    S.flood(200)
-    S.step(600) // 10 sim-seconds, no wall clock involved
-    let h = 0x811c9dc5
-    const mix = (n) => {
-      const v = Math.round(n * 16)
-      h ^= v & 0xff; h = Math.imul(h, 0x01000193)
-      h ^= (v >> 8) & 0xff; h = Math.imul(h, 0x01000193)
-    }
-    for (const e of S.world.enemies.active) { mix(e.x); mix(e.y); mix(e.hp) }
-    mix(S.world.player.x); mix(S.world.player.y)
-    return { hash: (h >>> 0).toString(16), enemies: S.world.enemies.active.length, time: S.world.time.toFixed(2) }
-  }, charId, arenaId)
-  console.log(JSON.stringify({ mode: 'det', W, H, charId, arenaId, ...hash }))
-} else {
-  await page.evaluate(() => {
-    const S = window.__SWARM
     S.startRun('endless')
     S.world.player.maxHp = 1e9
     S.world.player.hp = 1e9
     S.input.autoFire = true
     S.give('hailstorm')
     S.flood(500)
-  })
+    S.step(90 * 60) // deep into the run: full roster, elites, projectile hail
+  }, pChar, pArena)
   if (MODE === 'thrash') {
     await page.evaluate(() => {
       const canvas = document.querySelector('canvas')

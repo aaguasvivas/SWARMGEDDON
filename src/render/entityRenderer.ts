@@ -36,8 +36,19 @@ export function renderEntities(world: World, alpha: number): void {
     s.alpha = emerge
     const base = e.def.scale * (e.buffed > 0 ? 1.08 : 1) * (0.55 + 0.45 * emerge)
     const wob = Math.sin(t * 14 + e.animPhase)
-    s.scale.set(base * (1 + wob * 0.1), base * (1 - wob * 0.1))
-    s.tint = e.flash > 0 ? COLORS.swarmerHurt : e.slow > 0 ? 0x7fd8ff : e.tint
+    if (e.phase === 1) {
+      // Charger windup telegraph: coil (squash along the locked heading, sprite
+      // rotation IS the heading) + a fast white flicker. Read-only cosmetics.
+      s.scale.set(base * 0.78, base * 1.22)
+      s.tint = Math.sin(t * 42) > 0 ? 0xffffff : e.tint
+    } else if (e.phase === 2) {
+      // Dash: stretch along the line.
+      s.scale.set(base * 1.35, base * 0.72)
+      s.tint = e.flash > 0 ? COLORS.swarmerHurt : e.tint
+    } else {
+      s.scale.set(base * (1 + wob * 0.1), base * (1 - wob * 0.1))
+      s.tint = e.flash > 0 ? COLORS.swarmerHurt : e.slow > 0 ? 0x7fd8ff : e.tint
+    }
   }
 
   renderProjectiles(world, alpha)
