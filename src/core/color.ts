@@ -3,6 +3,17 @@
  * beyond the return value — safe to call from content code at spawn time.
  */
 
+/** Linear blend between two 0xRRGGBB colors; t=0 -> a, t=1 -> b. */
+export function lerpHex(a: number, b: number, t: number): number {
+  const k = t < 0 ? 0 : t > 1 ? 1 : t
+  const ar = (a >> 16) & 0xff, ag = (a >> 8) & 0xff, ab = a & 0xff
+  const br = (b >> 16) & 0xff, bg = (b >> 8) & 0xff, bb = b & 0xff
+  const r = Math.round(ar + (br - ar) * k)
+  const g = Math.round(ag + (bg - ag) * k)
+  const bl = Math.round(ab + (bb - ab) * k)
+  return (r << 16) | (g << 8) | bl
+}
+
 /** Hue-rotate a 0xRRGGBB color by `deg` degrees, keeping saturation/lightness. */
 export function hueShiftHex(hex: number, deg: number): number {
   if (deg === 0) return hex

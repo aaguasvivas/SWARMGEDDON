@@ -12,6 +12,7 @@ import { IchorLayer } from './render/ichorLayer.ts'
 import { renderEntities } from './render/entityRenderer.ts'
 import { PostFX } from './render/postfx.ts'
 import { Vignette } from './render/vignette.ts'
+import { BackdropSystem } from './render/backdrop.ts'
 import { AudioEngine } from './audio/audio.ts'
 import { Arena, type DecorSpeck } from './game/arena.ts'
 import { Player } from './game/player.ts'
@@ -90,6 +91,9 @@ async function boot(): Promise<void> {
   const input = new InputManager(app.canvas)
   input.setEnabled(false)
   const vignette = new Vignette()
+  // Per-world atmosphere: ambient motes (world-space) + screen-space overlay +
+  // the color grade/tinted vignette. Bakes its textures once; only tints per world.
+  const backdrop = new BackdropSystem(layers, postFX, vignette)
   const crosshair = buildCrosshair()
   const hurtOverlay = new Graphics()
   const flashOverlay = new Graphics() // brief white pop on level-up
@@ -128,6 +132,7 @@ async function boot(): Promise<void> {
     ichor.intensityMul = s.ichor
     shakeMul = s.shake
     postFX.setIntensity(s.glow)
+    backdrop.setQuality(s.glow) // lean fallback for the Glow-off tier (next run)
     input.autoFire = s.autoFire
     setHapticsEnabled(s.haptics)
   }
@@ -191,6 +196,7 @@ async function boot(): Promise<void> {
   function startRun(mode: RunMode): void {
     const { char, theme } = resolveLoadout(mode)
     world.beginRun(runSeed(mode), mode, char, theme)
+    backdrop.setTheme(theme) // motes/atmosphere/grade/vignette to match the world
     applyCamera(player.x, player.y) // seed the camera before the first sim step
     hud.reset() // don't let last run's dying bars sweep across the fresh run
     touchMoveUsed = false
@@ -258,6 +264,7 @@ async function boot(): Promise<void> {
     ichor.stampTintA = home.ichorA
     ichor.stampTintB = home.ichorB
     audio.setTheme(home.music)
+    backdrop.setTheme(home)
     flushUpdatePrompt()
   }
 
@@ -307,6 +314,7 @@ async function boot(): Promise<void> {
     debug?.layout(insets)
     touchHint.layout(w, h, insets)
     vignette.resize(w, h)
+    backdrop.layout(w, h)
     modal.setScreen(w, h)
     mainMenu.layout(w, h)
     gameOver.layout(w, h)
@@ -429,6 +437,10 @@ async function boot(): Promise<void> {
   let warpAmt = 0
   let levelFlash = 0
   let prevHurt = 0
+  // Ambient render clock: advanced by the CLAMPED render delta (never lurches
+  // after a backgrounded tab), decoupled from the sim accumulator so backdrop
+  // motion can't judder against the fixed step or feed the sim.
+  let renderClock = 0
   const loop = new GameLoop(
     FIXED_DT,
     MAX_FRAME_TIME,
@@ -436,6 +448,7 @@ async function boot(): Promise<void> {
     (alpha) => {
       const playing = screen === 'playing'
       const fd = loop.frameMs / 1000
+      renderClock += fd
       renderEntities(world, alpha)
       player.render(alpha)
       ichor.flush()
@@ -504,6 +517,10 @@ async function boot(): Promise<void> {
         -world.camX + world.juice.offsetX * shakeMul,
         -world.camY + world.juice.offsetY * shakeMul,
       )
+
+      // Ambient backdrop (motes + atmosphere). AFTER the camera write above, so
+      // camera-bounded mote recycling uses this frame's window (no edge popping).
+      backdrop.update(renderClock, fd, world.camX, world.camY, world.viewW, world.viewH)
 
       // Reality-warp distortion: scale/rotate around the player, inside the
       // bloomed scene (so the filter never sits on a transformed container).

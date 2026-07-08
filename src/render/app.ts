@@ -22,10 +22,12 @@ export interface Layers {
   /** Reality-warp host (scale/rotation around the player) — nested under the
    *  camera, so the filter never sits on a pivoted/translated container. */
   warpHost: Container
-  floor: Container // arena background + grid + border
+  floor: Container // arena background + per-world structure + border
   ichor: Container // persistent ichor render-texture (beneath entities)
+  backdrop: Container // world-space ambient motes (above gore, below the swarm)
   entities: Container // player, enemies, projectiles, pickups
   fx: Container // particles, gibs, floating numbers, screen-space effects
+  atmosphere: Container // screen-space per-world overlay (god-rays/blooms/haze), bloomed
   ui: Container // HUD, debug overlay, virtual sticks, crosshair (does NOT pan)
 }
 
@@ -64,17 +66,23 @@ export async function createRenderer(mount: HTMLElement): Promise<GameRenderer> 
     warpHost: new Container(),
     floor: new Container(),
     ichor: new Container(),
+    backdrop: new Container(),
     entities: new Container(),
     fx: new Container(),
+    atmosphere: new Container(),
     ui: new Container(),
   }
   // scene (bloom, screen-space) -> world (camera/shake) -> warpHost (warp) -> content.
   // The bloom sits ABOVE the camera/shake translate (on `scene`, an identity child
   // of the stage), so its screen-space filterArea is never dragged off-screen by
   // the camera — the world stays fully visible everywhere in the arena.
-  layers.warpHost.addChild(layers.floor, layers.ichor, layers.entities, layers.fx)
+  // `backdrop` (ambient motes) is world-space, above the ichor gore but below the
+  // swarm so a 500-enemy crowd always reads on top. `atmosphere` is screen-space:
+  // a direct child of `scene`, so it is graded + bloomed with the world (god-rays
+  // get their glow for free) but never dragged by the camera.
+  layers.warpHost.addChild(layers.floor, layers.ichor, layers.backdrop, layers.entities, layers.fx)
   layers.world.addChild(layers.warpHost)
-  layers.scene.addChild(layers.world)
+  layers.scene.addChild(layers.world, layers.atmosphere)
   app.stage.addChild(layers.scene, layers.ui)
 
   // Enable Pixi's event system so interactive UI (the level-up cards) gets

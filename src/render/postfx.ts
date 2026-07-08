@@ -1,5 +1,18 @@
 import { ColorMatrixFilter, type Container } from 'pixi.js'
 import { AdvancedBloomFilter } from 'pixi-filters'
+import { lerpHex } from '../core/color.ts'
+
+/** Per-world color grade knobs (added ON TOP of the base saturate/contrast). */
+export interface GradeSpec {
+  tint: number
+  tintStrength: number
+  saturation: number
+  contrast: number
+  brightness: number
+}
+
+const BASE_SATURATE = 0.16
+const BASE_CONTRAST = 0.05
 
 /**
  * Post-processing for the game world: a threshold bloom (so only the bright
@@ -19,8 +32,8 @@ export class PostFX {
 
   constructor(private readonly target: Container) {
     this.grade = new ColorMatrixFilter()
-    this.grade.saturate(0.16, true)
-    this.grade.contrast(0.05, true)
+    this.grade.saturate(BASE_SATURATE, true)
+    this.grade.contrast(BASE_CONTRAST, true)
 
     this.bloom = new AdvancedBloomFilter({
       threshold: 0.42, // only pixels brighter than this bloom
@@ -46,6 +59,21 @@ export class PostFX {
     this.intensity = v
     this.bloom.bloomScale = v
     this.apply()
+  }
+
+  /**
+   * Per-world color grade. Composed ONLY through the accumulating helpers
+   * (`saturate`/`contrast`/`brightness`/`tint` with multiply=true) so each step
+   * multiplies onto the running matrix — assigning `.matrix` directly would
+   * silently discard the saturate/contrast. `tint` is a uniform color multiply,
+   * so partial strength is done by pre-lerping the tint toward white.
+   */
+  setGrade(g: GradeSpec): void {
+    this.grade.reset()
+    this.grade.saturate(BASE_SATURATE + g.saturation, true)
+    this.grade.contrast(BASE_CONTRAST + g.contrast, true)
+    if (g.brightness !== 0) this.grade.brightness(1 + g.brightness, true)
+    if (g.tintStrength > 0) this.grade.tint(lerpHex(0xffffff, g.tint, g.tintStrength), true)
   }
 
   private apply(): void {
