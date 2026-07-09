@@ -23,6 +23,26 @@ export interface BestRecord {
 
 const EMPTY_BEST: BestRecord = { score: 0, time: 0, kills: 0, level: 0 }
 
+/** Per-world personal bests. `time` and `kills` are tracked INDEPENDENTLY —
+ *  each is the max over every run in that world, so a long-survival run and a
+ *  high-kill run can each hold their own record. */
+export interface WorldBest {
+  time: number
+  kills: number
+}
+
+const EMPTY_WORLD_BEST: WorldBest = { time: 0, kills: 0 }
+
+export function loadWorldBest(arenaId: string): WorldBest {
+  return { ...EMPTY_WORLD_BEST, ...loadJSON(`best:world:${arenaId}`, {}) }
+}
+
+/** What a run newly beat in its world (for a game-over callout). */
+export interface WorldBestGains {
+  time: boolean
+  kills: boolean
+}
+
 /** Score formula — rewards survival, kills, and depth roughly equally. */
 export function computeScore(time: number, kills: number, level: number): number {
   return Math.floor(time * 10 + kills * 5 + level * 50)
@@ -50,6 +70,20 @@ export function recordRun(result: RunResult): boolean {
     saveJSON('daily:last', { date: result.date, score: result.score })
   }
   return isHigh
+}
+
+/** Update the per-world bests for the world this run was played in (any mode).
+ *  Returns which records were newly beaten, for a game-over callout. */
+export function recordWorldBest(result: RunResult): WorldBestGains {
+  const wb = loadWorldBest(result.arena)
+  const gains: WorldBestGains = { time: result.time > wb.time, kills: result.kills > wb.kills }
+  if (gains.time || gains.kills) {
+    saveJSON(`best:world:${result.arena}`, {
+      time: Math.max(wb.time, result.time),
+      kills: Math.max(wb.kills, result.kills),
+    })
+  }
+  return gains
 }
 
 export function dailyCompletedToday(today: string): boolean {

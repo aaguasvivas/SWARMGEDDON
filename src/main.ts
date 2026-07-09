@@ -30,7 +30,7 @@ import { submitScore } from './net/leaderboard.ts'
 import { TouchHint } from './ui/touchHint.ts'
 import { loadJSON, saveJSON } from './platform/storage.ts'
 import { loadSettings, saveSettings, type Settings } from './state/settings.ts'
-import { recordRun, type RunResult } from './state/persistence.ts'
+import { recordRun, recordWorldBest, loadWorldBest, type RunResult } from './state/persistence.ts'
 import { shareRunCard } from './share/shareCard.ts'
 import { flushUpdatePrompt, setupUpdatePrompt } from './pwa/updatePrompt.ts'
 import { CHARACTERS, DEFAULT_CHARACTER_ID, characterById } from './content/characters.ts'
@@ -167,6 +167,9 @@ async function boot(): Promise<void> {
       `${cHint}\n${aHint}`,
       c.colors.body,
     )
+    // The selected world's personal best (best time + most kills), shown on the
+    // menu and refreshed each time the arena selector cycles.
+    mainMenu.setWorldBest(a.name, loadWorldBest(a.id))
   }
   mainMenu.onCyclePilot = () => {
     const i = CHARACTERS.findIndex((c) => c.id === selCharId)
@@ -224,7 +227,8 @@ async function boot(): Promise<void> {
     }
     lastResult = result
     const isHigh = recordRun(result)
-    gameOver.show(result, isHigh)
+    const gains = recordWorldBest(result) // per-world best time / most kills
+    gameOver.show(result, isHigh, gains)
     // Earned unlocks: banner them and refresh the menu selectors.
     const fresh = evaluateUnlocks(result)
     if (fresh.length > 0) {
@@ -253,6 +257,7 @@ async function boot(): Promise<void> {
     gameOver.hide()
     settingsPanel.hide()
     leaderboard.hide()
+    refreshLoadoutUI() // re-read the selected world's best (a run may have set one)
     mainMenu.refresh(todayStr())
     mainMenu.show()
     // Reset the whole presentation to the hive home base — the menu idles a live

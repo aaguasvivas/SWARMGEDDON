@@ -4,7 +4,7 @@ import { COLORS } from '../config.ts'
 import { leaderboardEnabled } from '../net/leaderboard.ts'
 import { characterById } from '../content/characters.ts'
 import { arenaById } from '../content/arenas.ts'
-import type { RunResult } from '../state/persistence.ts'
+import type { RunResult, WorldBestGains } from '../state/persistence.ts'
 import { Button } from './button.ts'
 
 const MONO = 'ui-monospace, Menlo, Consolas, monospace'
@@ -125,8 +125,19 @@ export class GameOver {
     }
   }
 
-  show(result: RunResult, isHigh: boolean): void {
-    this.best.text = isHigh ? '★ NEW BEST ★' : ''
+  show(result: RunResult, isHigh: boolean, gains: WorldBestGains): void {
+    // Prefer the per-world record callout (what the player is chasing now); fall
+    // back to the score-based global best.
+    this.best.text =
+      gains.time && gains.kills
+        ? '★ BEST TIME + MOST KILLS ★'
+        : gains.time
+          ? '★ NEW BEST TIME ★'
+          : gains.kills
+            ? '★ MOST KILLS ★'
+            : isHigh
+              ? '★ NEW BEST ★'
+              : ''
     this.rank.text = '' // filled in async by setRank() once the submit returns
     this.hasUnlockBanner = false
     this.rank.style.fill = 0x57c8ff

@@ -2,6 +2,7 @@ import { Container, Graphics, Text } from 'pixi.js'
 import { GlowFilter } from 'pixi-filters'
 import { COLORS } from '../config.ts'
 import { dailyCompletedToday, loadBest } from '../state/persistence.ts'
+import type { WorldBest } from '../state/persistence.ts'
 import { leaderboardEnabled } from '../net/leaderboard.ts'
 import type { RunMode } from '../game/world.ts'
 import { Button } from './button.ts'
@@ -35,6 +36,10 @@ export class MainMenu {
   private pilot: Button
   private arena: Button
   private pilotSwatch = new Graphics()
+  // The info readout is two lines composed from independently-updated sources:
+  // the selected world's personal best (set on arena cycle) and the daily status.
+  private worldBestLine = ''
+  private dailyLine = ''
 
   constructor() {
     this.title = new Text({ text: 'SWARMGEDDON', style: { fontFamily: MONO, fontSize: 46, fontWeight: 'bold', fill: COLORS.player, letterSpacing: 2 } })
@@ -143,13 +148,25 @@ export class MainMenu {
     if (!short) this.controlsHint.position.set(cx, y + 14)
   }
 
+  /** Show the selected world's personal best (best survival time + most kills).
+   *  Updates as the player cycles the arena selector. */
+  setWorldBest(worldName: string, best: WorldBest): void {
+    const played = best.time > 0 || best.kills > 0
+    this.worldBestLine = played
+      ? `${worldName} best — ${fmtTime(best.time)} · ${best.kills} kills`
+      : `${worldName} — no runs yet`
+    this.renderInfo()
+  }
+
   refresh(today: string): void {
-    const be = loadBest('endless')
     const bd = loadBest('daily')
     const done = dailyCompletedToday(today)
-    this.info.text =
-      `best endless — score ${be.score}   time ${fmtTime(be.time)}   lv ${be.level}\n` +
-      `today's daily (${today}) — ${done ? `done · score ${bd.score}` : 'not yet played'}`
+    this.dailyLine = `today's daily (${today}) — ${done ? `done · score ${bd.score}` : 'not yet played'}`
+    this.renderInfo()
+  }
+
+  private renderInfo(): void {
+    this.info.text = `${this.worldBestLine}\n${this.dailyLine}`
   }
 
   show(): void {
