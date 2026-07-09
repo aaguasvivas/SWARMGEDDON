@@ -42,6 +42,7 @@ interface Atm {
   sprite: Sprite
   role: 0 | 1 | 2 // 0 bloom, 1 ray, 2 haze
   fx: number // base x as a fraction of the viewport
+  fy: number // base y as a fraction of the viewport (blooms)
   ph: number
   baseA: number
   swayAmp: number // px
@@ -91,7 +92,7 @@ export class BackdropSystem {
       s.blendMode = 'add'
       s.visible = false
       this.layers.atmosphere.addChild(s)
-      this.atm.push({ sprite: s, role: 0, fx: 0.5, ph: 0, baseA: 0.1, swayAmp: 0, px: 0 })
+      this.atm.push({ sprite: s, role: 0, fx: 0.5, fy: 0.5, ph: 0, baseA: 0.1, swayAmp: 0, px: 0 })
     }
   }
 
@@ -178,9 +179,9 @@ export class BackdropSystem {
     if (at.kind === 'none') return
     const alpha = at.alpha * this.qual
     if (at.kind === 'breathingBlooms') {
-      this.setupAtm(0, { role: 0, tex: this.bloomTex, tint: at.color, fx: 0.28, a: alpha, ph: 0, sway: 0 })
-      this.setupAtm(1, { role: 0, tex: this.bloomTex, tint: at.color2, fx: 0.74, a: alpha, ph: 2.1, sway: 0 })
-      this.setupAtm(2, { role: 0, tex: this.bloomTex, tint: at.color, fx: 0.52, a: alpha * 0.8, ph: 4, sway: 0 })
+      this.setupAtm(0, { role: 0, tex: this.bloomTex, tint: at.color, fx: 0.28, fy: 0.3, a: alpha, ph: 0, sway: 0 })
+      this.setupAtm(1, { role: 0, tex: this.bloomTex, tint: at.color2, fx: 0.74, fy: 0.72, a: alpha, ph: 2.1, sway: 0 })
+      this.setupAtm(2, { role: 0, tex: this.bloomTex, tint: at.color, fx: 0.52, fy: 0.5, a: alpha * 0.8, ph: 4, sway: 0 })
     } else if (at.kind === 'godRays') {
       this.setupAtm(0, { role: 1, tex: this.rampUp, tint: at.color, fx: 0.3, a: alpha, ph: 0, sway: 14 })
       this.setupAtm(1, { role: 1, tex: this.rampUp, tint: at.color, fx: 0.58, a: alpha * 0.9, ph: 1.7, sway: 11 })
@@ -193,7 +194,7 @@ export class BackdropSystem {
 
   private setupAtm(
     i: number,
-    o: { role: 0 | 1 | 2; tex: Texture; tint: number; fx: number; a: number; ph: number; sway: number },
+    o: { role: 0 | 1 | 2; tex: Texture; tint: number; fx: number; fy?: number; a: number; ph: number; sway: number },
   ): void {
     const a = this.atm[i]!
     a.sprite.visible = true
@@ -201,6 +202,7 @@ export class BackdropSystem {
     a.sprite.tint = o.tint
     a.role = o.role
     a.fx = o.fx
+    a.fy = o.fy ?? 0.5
     a.baseA = o.a
     a.ph = o.ph
     a.swayAmp = o.sway
@@ -220,7 +222,7 @@ export class BackdropSystem {
       a.px = a.fx * w
       const s = a.sprite
       if (a.role === 0) {
-        s.position.set(a.px, (a.ph % 2 < 1 ? 0.32 : 0.7) * h)
+        s.position.set(a.px, a.fy * h)
         s.scale.set((h * 1.1) / BLOB)
       } else if (a.role === 1) {
         s.position.set(a.px, -h * 0.05)
