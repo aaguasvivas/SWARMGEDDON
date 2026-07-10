@@ -40,6 +40,11 @@ export class Hud {
   private bossBack = new Graphics()
   private bossFill = new Graphics()
   private bossLabel: Text
+  // World title card: shown for a beat at run start so entering a world feels
+  // like entering a WORLD. Pure presentation, driven by the render clock.
+  private titleText: Text
+  private titleSub: Text
+  private titleT = 0
 
   // Geometry computed in layout(), reused in update() so the two never drift.
   private g = { cx: 0, x: 0, hpY: 0, xpY: 0, barW: 280, hpH: 16, xpH: 6, weaponY: 0, s: 1 }
@@ -58,7 +63,21 @@ export class Hud {
     this.weaponLabel.anchor.set(0.5, 0.5)
     this.bossLabel = new Text({ text: '', style: { fontFamily: MONO, fontSize: 12, fontWeight: 'bold', fill: 0xff6aa8, dropShadow: shadow } })
     this.bossLabel.anchor.set(0.5, 1)
-    this.view.addChild(this.back, this.hpGhostFill, this.hpFill, this.xpFill, this.hpText, this.levelText, this.stats, this.weaponPill, this.weaponLabel, this.bossBack, this.bossFill, this.bossLabel)
+    this.titleText = new Text({ text: '', style: { fontFamily: MONO, fontSize: 34, fontWeight: 'bold', fill: 0xffffff, letterSpacing: 4, dropShadow: shadow } })
+    this.titleText.anchor.set(0.5)
+    this.titleText.alpha = 0
+    this.titleSub = new Text({ text: '', style: { fontFamily: MONO, fontSize: 14, fill: COLORS.hudDim, letterSpacing: 2, dropShadow: shadow } })
+    this.titleSub.anchor.set(0.5)
+    this.titleSub.alpha = 0
+    this.view.addChild(this.back, this.hpGhostFill, this.hpFill, this.xpFill, this.hpText, this.levelText, this.stats, this.weaponPill, this.weaponLabel, this.bossBack, this.bossFill, this.bossLabel, this.titleText, this.titleSub)
+  }
+
+  /** Flash the world's name (in its color) + brood tagline at run start. */
+  announceWorld(name: string, sub: string, color: number): void {
+    this.titleText.text = name
+    this.titleText.style.fill = color
+    this.titleSub.text = sub
+    this.titleT = 3.0
   }
 
   layout(w: number, h: number, insets: Insets): void {
@@ -91,6 +110,10 @@ export class Hud {
     this.levelText.position.set(x - 10, hpY + hpH / 2)
     this.stats.position.set(w - insets.right - 14, insets.top + Math.round(10 * s))
     this.weaponLabel.position.set(cx, weaponY)
+    this.titleText.style.fontSize = Math.round(34 * s)
+    this.titleSub.style.fontSize = Math.round(14 * s)
+    this.titleText.position.set(cx, Math.round(h * 0.3))
+    this.titleSub.position.set(cx, Math.round(h * 0.3) + Math.round(30 * s))
   }
 
   update(world: World, dt = 1 / 60): void {
@@ -130,6 +153,19 @@ export class Hud {
 
     const secs = Math.floor(world.time)
     this.stats.text = `${Math.floor(secs / 60)}:${(secs % 60).toString().padStart(2, '0')}   kills ${world.kills}`
+
+    // World title card envelope: quick fade-in, hold, gentle fade-out + drift.
+    if (this.titleT > 0) {
+      this.titleT = Math.max(0, this.titleT - dt)
+      const shown = 3.0 - this.titleT
+      const a = Math.min(1, shown / 0.35) * Math.min(1, this.titleT / 0.9)
+      this.titleText.alpha = a
+      this.titleSub.alpha = a * 0.85
+      this.titleText.scale.set(1 + Math.min(1, shown / 0.35) * 0.04)
+    } else if (this.titleText.alpha > 0) {
+      this.titleText.alpha = 0
+      this.titleSub.alpha = 0
+    }
 
     // Weapon + ammo on a subtle pill so it reads as one tidy badge.
     const ammo = world.ammo < 0 ? '∞' : String(world.ammo)

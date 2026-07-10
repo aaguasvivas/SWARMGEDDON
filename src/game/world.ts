@@ -167,7 +167,7 @@ export class World {
     this.audio.setTheme(this.arenaTheme.music)
     this.ichor.stampTintA = this.arenaTheme.ichorA
     this.ichor.stampTintB = this.arenaTheme.ichorB
-    this.player.paint(this.character.colors)
+    this.player.paint(this.character.colors, this.character.shape)
     this.player.speed = this.character.speed
     this.baseWeaponId = this.character.startWeapon
     this.perkStacks.clear()

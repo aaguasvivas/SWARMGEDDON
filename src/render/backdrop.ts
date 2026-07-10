@@ -21,6 +21,7 @@ import type { Vignette } from './vignette.ts'
  */
 
 const MAX_MOTES = 128
+const MAX_GLOWS = 12 // breathing ground-glows parked on the arena's glowSpots
 const MARGIN = 80 // world-unit offscreen band for recycling
 const RAND_LEN = 512
 const BLOB = 32 // baked mote/bloom base size in px
@@ -49,9 +50,17 @@ interface Atm {
   px: number // resolved base x (set in layout)
 }
 
+interface GroundGlow {
+  sprite: Sprite
+  ph: number
+  baseA: number
+  baseS: number
+}
+
 export class BackdropSystem {
   private readonly motes: Mote[] = []
   private readonly atm: Atm[] = []
+  private readonly glows: GroundGlow[] = []
   private readonly rand = new Float32Array(RAND_LEN)
   private ri = 0
   private readonly blobTex: Texture
@@ -79,6 +88,15 @@ export class BackdropSystem {
     const rng = new Rng(seedFromString('swarmgeddon:backdrop'))
     for (let i = 0; i < RAND_LEN; i++) this.rand[i] = rng.float()
 
+    // Ground glows FIRST so they draw beneath the drifting motes.
+    for (let i = 0; i < MAX_GLOWS; i++) {
+      const s = new Sprite(this.bloomTex)
+      s.anchor.set(0.5)
+      s.blendMode = 'add'
+      s.visible = false
+      this.layers.backdrop.addChild(s)
+      this.glows.push({ sprite: s, ph: 0, baseA: 0.1, baseS: 1 })
+    }
     for (let i = 0; i < MAX_MOTES; i++) {
       const s = new Sprite(this.blobTex)
       s.anchor.set(0.5)
@@ -101,15 +119,40 @@ export class BackdropSystem {
     this.qual = glow <= 0.02 ? 0.5 : 1
   }
 
-  /** Reconfigure for a world (tints/counts/positions only — no re-bake). */
-  setTheme(theme: ArenaTheme): void {
+  /** Reconfigure for a world (tints/counts/positions only — no re-bake).
+   *  `glowSpots` are the arena's deterministic anchor points for the breathing
+   *  ground-glows (pod clusters / magma hotspots); pass `arena.glowSpots`. */
+  setTheme(theme: ArenaTheme, glowSpots: readonly { x: number; y: number }[] = []): void {
     if (theme.id === this.themeId) return
     this.themeId = theme.id
     this.postFX.setGrade(theme.grade)
     this.vignette.setTheme(theme.vignette.color, theme.vignette.strength)
     this.configMotes(theme)
     this.configAtmosphere(theme)
+    this.configGlows(theme, glowSpots)
     this.layout(this.viewW, this.viewH)
+  }
+
+  /** Breathing ground-glows on the arena's glowSpots (membrane pods / molten
+   *  seams). Tinted with the world's atmosphere color; static positions, only
+   *  alpha + a slight swell animate. Worlds with no spots (depths) show none. */
+  private configGlows(theme: ArenaTheme, spots: readonly { x: number; y: number }[]): void {
+    const n = Math.min(MAX_GLOWS, spots.length)
+    for (let i = 0; i < MAX_GLOWS; i++) {
+      const gl = this.glows[i]!
+      if (i >= n) {
+        gl.sprite.visible = false
+        continue
+      }
+      const r0 = this.rand[(i * 5 + 2) % RAND_LEN]!
+      gl.sprite.visible = true
+      gl.sprite.tint = theme.atmosphere.color
+      gl.sprite.position.set(spots[i]!.x, spots[i]!.y)
+      gl.ph = r0 * 6.2832
+      gl.baseA = (0.09 + r0 * 0.05) * this.qual
+      gl.baseS = ((110 + r0 * 60) * 2) / BLOB
+      gl.sprite.scale.set(gl.baseS)
+    }
   }
 
   private configMotes(theme: ArenaTheme): void {
@@ -271,6 +314,14 @@ export class BackdropSystem {
       const s = mo.sprite
       s.position.set(mo.x, mo.y)
       s.alpha = mo.baseA * (0.6 + 0.4 * Math.sin(clock * 2 + mo.ph))
+    }
+
+    for (let i = 0; i < this.glows.length; i++) {
+      const gl = this.glows[i]!
+      if (!gl.sprite.visible) continue
+      const k = 0.55 + 0.45 * Math.sin(clock * 0.7 + gl.ph)
+      gl.sprite.alpha = gl.baseA * k
+      gl.sprite.scale.set(gl.baseS * (0.94 + 0.08 * k))
     }
 
     for (let i = 0; i < this.atm.length; i++) {

@@ -32,21 +32,61 @@ export class Player {
 
   constructor() {
     this.view.addChild(this.g)
-    this.paint({ body: COLORS.player, outline: COLORS.playerOutline, visor: COLORS.playerVisor, barrel: COLORS.playerBarrel })
+    this.paint({ body: COLORS.player, outline: COLORS.playerOutline, visor: COLORS.playerVisor, barrel: COLORS.playerBarrel }, 'vanguard')
   }
 
-  /** Repaint the ship in a pilot's colors (presentation only). */
-  paint(colors: CharacterDef['colors']): void {
+  /**
+   * Repaint the ship in a pilot's colors + hull silhouette (presentation only —
+   * the hitbox is PLAYER_RADIUS for every shape). Each hull says what the pilot
+   * IS at a glance: vanguard = round + side pods, dart = swept speed wedge,
+   * heavy = wide armored hex. The barrel stub is shared so facing always reads.
+   */
+  paint(colors: CharacterDef['colors'], shape: CharacterDef['shape'] = 'vanguard'): void {
     const g = this.g
     const r = PLAYER_RADIUS
     g.clear()
-    // Barrel stub (drawn first so the body overlaps its root).
+    // Barrel stub (drawn first so the hull overlaps its root).
     g.rect(r * 0.5, -3.5, r * 1.0, 7).fill(colors.barrel)
-    // Body.
-    g.circle(0, 0, r).fill(colors.body)
-    g.circle(0, 0, r).stroke({ width: 3, color: colors.outline })
-    // Visor toward the front (+x), so orientation is obvious.
-    g.circle(r * 0.34, 0, r * 0.42).fill(colors.visor)
+
+    if (shape === 'dart') {
+      // EMBER — a swept wedge with a notched tail and twin exhaust embers.
+      g.poly([r * 1.3, 0, -r * 0.95, -r * 0.8, -r * 0.45, 0, -r * 0.95, r * 0.8])
+        .fill(colors.body)
+        .stroke({ width: 3, color: colors.outline, join: 'round' })
+      // Canopy slit, swept toward the nose.
+      g.ellipse(r * 0.32, 0, r * 0.42, r * 0.26).fill(colors.visor)
+      // Exhaust embers at the tail notches (bright enough to catch the bloom).
+      g.circle(-r * 0.78, -r * 0.44, 2.4).fill(0xffd27a)
+      g.circle(-r * 0.78, r * 0.44, 2.4).fill(0xffd27a)
+    } else if (shape === 'heavy') {
+      // VESPER — a wide armored hex with an inner plate and a scythe visor.
+      const R = r * 1.12
+      const pts: number[] = []
+      for (let i = 0; i < 6; i++) {
+        const a = (Math.PI / 3) * i
+        pts.push(Math.cos(a) * R, Math.sin(a) * R)
+      }
+      g.poly(pts).fill(colors.body).stroke({ width: 3, color: colors.outline, join: 'round' })
+      // Inner armor plate (smaller hex, barrel tone).
+      const inner: number[] = []
+      for (let i = 0; i < 6; i++) {
+        const a = (Math.PI / 3) * i
+        inner.push(Math.cos(a) * R * 0.62, Math.sin(a) * R * 0.62)
+      }
+      g.poly(inner).fill({ color: colors.barrel, alpha: 0.85 })
+      // Scythe visor: a dark disc with a body-colored bite carved out of it.
+      g.circle(r * 0.4, 0, r * 0.44).fill(colors.visor)
+      g.circle(r * 0.12, 0, r * 0.34).fill({ color: colors.barrel, alpha: 0.85 })
+    } else {
+      // NOVA — the classic round hull, plus twin side pods and a faint
+      // magnet-coil ring (her passive made visible).
+      g.circle(0, -r * 0.86, r * 0.34).fill(colors.barrel)
+      g.circle(0, r * 0.86, r * 0.34).fill(colors.barrel)
+      g.circle(0, 0, r).fill(colors.body)
+      g.circle(0, 0, r).stroke({ width: 3, color: colors.outline })
+      g.circle(r * 0.34, 0, r * 0.42).fill(colors.visor)
+      g.circle(0, 0, r * 1.28).stroke({ width: 1.5, color: colors.body, alpha: 0.4 })
+    }
   }
 
   /** Place the player and zero the interpolation history. */

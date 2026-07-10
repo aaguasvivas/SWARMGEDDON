@@ -37,6 +37,10 @@ export class Arena {
   private decor: readonly DecorSpeck[] = []
   private theme: ArenaTheme = ARENAS[0]!
   private built = false
+  /** World-space anchor points where the backdrop parks breathing glows (pod
+   *  clusters / magma hotspots). Deterministic — filled by draw() from the same
+   *  constant-seed structure RNG. Empty for worlds whose identity is darkness. */
+  readonly glowSpots: { x: number; y: number }[] = []
 
   constructor() {
     this.view.addChild(this.floor, this.structure, this.decorG, this.border)
@@ -73,16 +77,17 @@ export class Arena {
     // device-identical and stable across swaps, and spans the whole arena so
     // parallax reads everywhere the player stands.
     this.structure.clear()
+    this.glowSpots.length = 0
     const srng = new Rng(seedFromString('swarmgeddon:structure:' + t.id))
     switch (t.decorStyle) {
       case 'trench':
-        drawContours(this.structure, t, srng, this.bounds)
+        drawContours(this.structure, t, srng, this.bounds) // no glows — the deep stays dark
         break
       case 'plates':
-        drawBasalt(this.structure, t, srng, this.bounds)
+        drawBasalt(this.structure, t, srng, this.bounds, this.glowSpots)
         break
       default:
-        drawMembrane(this.structure, t, srng, this.bounds)
+        drawMembrane(this.structure, t, srng, this.bounds, this.glowSpots)
     }
 
     // Deterministic decor specks (seeded), rendered in the theme's silhouette
@@ -132,7 +137,7 @@ export class Arena {
 // and stay dim/dark so entities + neon bullets keep the foreground.
 
 /** HIVE: a dim honeycomb membrane laced with glowing capillary veins + pods. */
-function drawMembrane(g: Graphics, t: ArenaTheme, rng: Rng, b: Bounds): void {
+function drawMembrane(g: Graphics, t: ArenaTheme, rng: Rng, b: Bounds, glowSpots: { x: number; y: number }[]): void {
   const { x, y, w, h } = b
   const R = 88
   const hx = 1.5 * R
@@ -153,7 +158,7 @@ function drawMembrane(g: Graphics, t: ArenaTheme, rng: Rng, b: Bounds): void {
   }
   g.stroke({ width: 1.1, color: t.gridLine, alpha: 0.5 })
   // Capillary veins wandering across cells (kills the lattice-repeat read).
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 8; i++) {
     let px = x + rng.float() * w
     let py = y + rng.float() * h
     g.moveTo(px, py)
@@ -164,15 +169,17 @@ function drawMembrane(g: Graphics, t: ArenaTheme, rng: Rng, b: Bounds): void {
       px = nx
       py = ny
     }
-    g.stroke({ width: rng.range(1.5, 3.5), color: t.decorColor, alpha: 0.09 })
+    g.stroke({ width: rng.range(1.5, 3.5), color: t.decorColor, alpha: 0.14 })
   }
-  // Pod clusters at random junctions with a bright warm core.
+  // Pod clusters at random junctions with a bright warm core. The first few
+  // double as anchors for the backdrop's breathing membrane glows.
   for (let i = 0; i < 26; i++) {
     const cx = x + rng.float() * w
     const cy = y + rng.float() * h
     const r = rng.range(3, 6)
     g.circle(cx, cy, r).fill({ color: t.decorColor, alpha: 0.12 })
     g.circle(cx, cy, r * 0.4).fill({ color: t.borderGlow, alpha: 0.5 })
+    if (i < 10) glowSpots.push({ x: cx, y: cy })
   }
 }
 
@@ -184,7 +191,7 @@ function drawContours(g: Graphics, t: ArenaTheme, rng: Rng, b: Bounds): void {
     g.circle(x + rng.float() * w, y + rng.float() * h, rng.range(30, 90)).fill({ color: t.gridLineBright, alpha: 0.06 })
   }
   // Concentric contour islands (the grid replacement — organic, never square).
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 9; i++) {
     const cx = x + rng.range(0.1, 0.9) * w
     const cy = y + rng.range(0.1, 0.9) * h
     const loops = 3 + rng.int(0, 3)
@@ -205,7 +212,7 @@ function drawContours(g: Graphics, t: ArenaTheme, rng: Rng, b: Bounds): void {
     }
   }
   // Crevasses: dark ribbons with one rim-lit violet edge (strong motion cue).
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; i < 3; i++) {
     let px = x + rng.range(0.1, 0.5) * w
     let py = y
     const spine: number[][] = [[px, py]]
@@ -221,7 +228,7 @@ function drawContours(g: Graphics, t: ArenaTheme, rng: Rng, b: Bounds): void {
     g.fill({ color: 0x06040e, alpha: 0.85 })
     g.moveTo(spine[0]![0]!, spine[0]![1]!)
     for (let k = 1; k < spine.length; k++) g.lineTo(spine[k]![0]!, spine[k]![1]!)
-    g.stroke({ width: 1.4, color: t.borderGlow, alpha: 0.16 })
+    g.stroke({ width: 1.4, color: t.borderGlow, alpha: 0.22 })
   }
   // Faint micro-specks so open water still scrolls with a reference.
   for (let i = 0; i < 130; i++) {
@@ -230,9 +237,11 @@ function drawContours(g: Graphics, t: ArenaTheme, rng: Rng, b: Bounds): void {
 }
 
 /** WASTES: cracked basalt plates split by a branching delta of molten seams. */
-function drawBasalt(g: Graphics, t: ArenaTheme, rng: Rng, b: Bounds): void {
+function drawBasalt(g: Graphics, t: ArenaTheme, rng: Rng, b: Bounds, glowSpots: { x: number; y: number }[]): void {
   const { x, y, w, h } = b
-  const plate = [0x140b0a, 0x1a0f0c, 0x22120d]
+  // Lifted clearly off the 0x140b0a floor so the shattered crust actually reads
+  // (the original palette's darkest plate was the floor color — invisible).
+  const plate = [0x1c100c, 0x241410, 0x2e1a12]
   // Plate shards (shatters the flat floor; the seams carry the light).
   for (let i = 0; i < 34; i++) {
     const cx = x + rng.float() * w
@@ -246,7 +255,7 @@ function drawBasalt(g: Graphics, t: ArenaTheme, rng: Rng, b: Bounds): void {
       pts.push(cx + Math.cos(a) * pr, cy + Math.sin(a) * pr)
     }
     g.poly(pts).fill({ color: plate[i % 3]!, alpha: 0.9 })
-    g.poly(pts).stroke({ width: 1, color: 0x2a1714, alpha: 0.7 })
+    g.poly(pts).stroke({ width: 1.2, color: 0x3a2018, alpha: 0.8 })
   }
   // Hero magma seams: random-walk polylines with a baked halo/body/core glow.
   const seams: number[][][] = []
@@ -270,9 +279,13 @@ function drawBasalt(g: Graphics, t: ArenaTheme, rng: Rng, b: Bounds): void {
     strokeSeam(p, 7, t.borderGlow, 0.16)
     strokeSeam(p, 3, t.hazardTint, 0.5)
     strokeSeam(p, 1.5, 0xffd27a, 0.95)
+    // Two hotspots per seam anchor the backdrop's molten-breath glows.
+    const a = p[Math.floor(p.length / 3)]!
+    const c = p[Math.floor((2 * p.length) / 3)]!
+    glowSpots.push({ x: a[0]!, y: a[1]! }, { x: c[0]!, y: c[1]! })
   }
   // Faint micro-embers so scorched flats still scroll with a reference.
   for (let i = 0; i < 120; i++) {
-    g.circle(x + rng.float() * w, y + rng.float() * h, rng.range(0.8, 1.6)).fill({ color: t.decorColor, alpha: 0.08 })
+    g.circle(x + rng.float() * w, y + rng.float() * h, rng.range(0.8, 1.6)).fill({ color: t.decorColor, alpha: 0.1 })
   }
 }

@@ -29,6 +29,9 @@ export interface CharacterDef {
   id: string
   name: string
   tagline: string
+  /** Hull silhouette (presentation only — hitbox is PLAYER_RADIUS regardless):
+   *  vanguard = round hull + side pods, dart = swept wedge, heavy = armored hex. */
+  shape: 'vanguard' | 'dart' | 'heavy'
   colors: { body: number; outline: number; visor: number; barrel: number }
   maxHp: number
   speed: number
@@ -45,6 +48,7 @@ export const CHARACTERS: readonly CharacterDef[] = [
     id: 'nova',
     name: 'NOVA',
     tagline: 'the balanced vanguard',
+    shape: 'vanguard',
     colors: { body: 0x1ce8b5, outline: 0x0b3b30, visor: 0x06231d, barrel: 0x0e4d40 },
     maxHp: 100,
     speed: 285,
@@ -58,6 +62,7 @@ export const CHARACTERS: readonly CharacterDef[] = [
     id: 'ember',
     name: 'EMBER',
     tagline: 'fast, fragile, furious',
+    shape: 'dart',
     colors: { body: 0xff9a4a, outline: 0x4a1e08, visor: 0x2b1206, barrel: 0x8a3d12 },
     maxHp: 85,
     speed: 305,
@@ -71,6 +76,7 @@ export const CHARACTERS: readonly CharacterDef[] = [
     id: 'vesper',
     name: 'VESPER',
     tagline: 'slow, heavy, hungry',
+    shape: 'heavy',
     colors: { body: 0xb886ff, outline: 0x2c1450, visor: 0x1a0b33, barrel: 0x5b2ea6 },
     maxHp: 120,
     speed: 265,

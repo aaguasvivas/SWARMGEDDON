@@ -199,9 +199,10 @@ async function boot(): Promise<void> {
   function startRun(mode: RunMode): void {
     const { char, theme } = resolveLoadout(mode)
     world.beginRun(runSeed(mode), mode, char, theme)
-    backdrop.setTheme(theme) // motes/atmosphere/grade/vignette to match the world
+    backdrop.setTheme(theme, arena.glowSpots) // motes/atmosphere/grade/vignette/glows
     applyCamera(player.x, player.y) // seed the camera before the first sim step
     hud.reset() // don't let last run's dying bars sweep across the fresh run
+    hud.announceWorld(theme.name, `vs ${theme.broodName.toUpperCase()}`, theme.borderGlow)
     touchMoveUsed = false
     touchAimUsed = false
     screen = 'playing'
@@ -269,7 +270,7 @@ async function boot(): Promise<void> {
     ichor.stampTintA = home.ichorA
     ichor.stampTintB = home.ichorB
     audio.setTheme(home.music)
-    backdrop.setTheme(home)
+    backdrop.setTheme(home, arena.glowSpots)
     flushUpdatePrompt()
   }
 
