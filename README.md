@@ -1,10 +1,21 @@
 # SWARMGEDDON
 
+![TypeScript strict](https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white)
+![PixiJS 8](https://img.shields.io/badge/PixiJS-8_(WebGL)-e91e63?style=flat-square)
+![PWA](https://img.shields.io/badge/PWA-installable-5A0FC8?style=flat-square&logo=pwa&logoColor=white)
+![Capacitor](https://img.shields.io/badge/Capacitor-iOS_%2F_Android-119EFF?style=flat-square&logo=capacitor&logoColor=white)
+
+**Play now:** [swarmgeddon.adelsonaguasvivas.workers.dev](https://swarmgeddon.adelsonaguasvivas.workers.dev)
+
 A modern, web-first reimagining of *Crimsonland*: a top-down twin-stick alien-hive
 survival shooter. One TypeScript codebase ships to **Web (primary, incl. mobile
-browsers)** and — via Capacitor — **iOS / iPad / Android**.
+browsers)** and, via Capacitor, **iOS / iPad / Android**.
 
-> Status: **Phase 0 complete** — engine scaffolding & core loop. No combat yet.
+> **v1 complete and live.** 10 weapons, 15 enemies, 25 perks, elites and a queen boss,
+> Endless plus a seeded Daily Challenge, synthesized audio, persistent gore terrain,
+> and an installable offline PWA. All on a hand-rolled engine: 60 Hz fixed-timestep
+> simulation decoupled from render, spatial-hash collisions, fully deterministic
+> seeded runs.
 
 ## Stack
 
