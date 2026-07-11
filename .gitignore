@@ -45,3 +45,8 @@ android/local.properties
 
 # regenerable PWA icon output from `npm run assets:generate`
 /icons/
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example

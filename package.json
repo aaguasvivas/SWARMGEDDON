@@ -8,12 +8,13 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "build:cap": "tsc --noEmit && vite build --mode capacitor",
-    "preview": "vite preview",
+    "preview": "npm run build && wrangler dev",
     "typecheck": "tsc --noEmit",
     "cap:sync": "npm run build:cap && cap sync",
     "cap:ios": "npm run build:cap && cap sync ios && cap open ios",
     "cap:android": "npm run build:cap && cap sync android && cap open android",
-    "assets:generate": "capacitor-assets generate --assetPath assets"
+    "assets:generate": "capacitor-assets generate --assetPath assets",
+    "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.1",
@@ -30,8 +31,10 @@
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^6.2.1",
+    "@cloudflare/vite-plugin": "^1.44.0",
     "typescript": "^5.7.2",
     "vite": "^6.0.7",
-    "vite-plugin-pwa": "^0.21.2"
+    "vite-plugin-pwa": "^0.21.2",
+    "wrangler": "^4.110.0"
   }
 }
