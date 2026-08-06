@@ -39,7 +39,7 @@ npm run preview         # serve the production build locally
 npm run typecheck       # tsc --noEmit
 npm run assets:generate # regenerate native icons + splash from assets/*.svg
 
-# native shells (load the same dist/ build — see STORE.md for tooling/signing)
+# native shells (load the same dist/ build, see docs/RELEASE.md for the ship path)
 npm run cap:ios         # build (capacitor mode) + sync + open Xcode
 npm run cap:android     # build (capacitor mode) + sync + open Android Studio
 npm run cap:sync        # build + copy web assets into both native projects
@@ -52,7 +52,7 @@ via **Capacitor**, **iOS / iPad / Android** native shells that load the exact sa
 web build. Platform differences (haptics, safe-area, status bar, splash, Android
 back button) live behind `src/platform/`; everything no-ops on web. Building +
 submitting the native apps is a manual, account-gated process — see
-**[STORE.md](STORE.md)**.
+**[docs/RELEASE.md](docs/RELEASE.md)** (listing copy in [docs/store-listing.md](docs/store-listing.md)).
 
 Web deploys as static files (`dist/`) to any host (Cloudflare Pages / Netlify /
 GitHub Pages); the PWA installs and runs offline after first load.
@@ -120,6 +120,6 @@ all inside a shakeable/warpable `world` container, with `ui` rock-steady on top.
 - **Phase 3** ✅ v1 content (10 weapons · 15 enemies · 25 perks), elites + **queen boss**,
   Endless + Daily Challenge, menu/game-over, persistence, settings, synth audio, share-card.
 - **Phase 4** ✅ Capacitor iOS + Android shells, platform wiring (haptics/safe-area/status
-  bar/splash/back), installable+offline PWA, icon/splash pipeline, `STORE.md`.
+  bar/splash/back), installable+offline PWA, icon/splash pipeline, release runbook in `docs/RELEASE.md`.
 
 **v1 complete.** Reskinning the fiction = swap the sprite atlas + content data, zero engine change.

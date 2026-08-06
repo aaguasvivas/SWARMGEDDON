@@ -1,4 +1,4 @@
-package com.swarmgeddon.app;
+package dev.swarmgeddon.app;
 
 import com.getcapacitor.BridgeActivity;
 

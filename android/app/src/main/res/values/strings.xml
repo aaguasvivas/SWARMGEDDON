@@ -2,6 +2,6 @@
 <resources>
     <string name="app_name">SWARMGEDDON</string>
     <string name="title_activity_main">SWARMGEDDON</string>
-    <string name="package_name">com.swarmgeddon.app</string>
-    <string name="custom_url_scheme">com.swarmgeddon.app</string>
+    <string name="package_name">dev.swarmgeddon.app</string>
+    <string name="custom_url_scheme">dev.swarmgeddon.app</string>
 </resources>

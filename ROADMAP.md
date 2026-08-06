@@ -88,7 +88,7 @@ Agent effort ~1–2 days integration; art itself is the owner's budget call.
 |---|------|-------|--------------|
 | 1 | Apple Developer Program ($99/yr) | Required for TestFlight + App Store (free ID only side-loads for 7 days) | 30m + fee |
 | 2 | TestFlight beta | Agent preps build/archive checklist; owner uploads via Xcode | 1h |
-| 3 | App Store submission | `STORE.md` checklist exists: icons/screenshots (reuse the 9-combo gallery!), privacy "no data collected", age rating | 2h |
+| 3 | App Store submission | `docs/RELEASE.md` runbook exists (Anota/Capi template): icons/screenshots (reuse the 9-combo gallery!), privacy "no data collected", age rating | 2h |
 | 4 | Google Play ($25 once) | After Android device test | 1–2h |
 
 ---
