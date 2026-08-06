@@ -125,7 +125,7 @@ export class Leaderboard {
 
   private refreshName(): void {
     const n = getPlayerName()
-    this.nameLabel.text = n ? `you — ${n}  ✎` : 'tap to set your name  ✎'
+    this.nameLabel.text = n ? `you: ${n}  ✎` : 'tap to set your name  ✎'
   }
 
   private async editName(): Promise<void> {
@@ -172,7 +172,7 @@ export class Leaderboard {
       return
     }
     if (res.entries.length === 0) {
-      this.status.text = cfg.scope === 'region' && res.region ? `no scores in ${res.region} yet — be the first!` : 'no scores yet — be the first!'
+      this.status.text = cfg.scope === 'region' && res.region ? `no scores in ${res.region} yet, be the first!` : 'no scores yet, be the first!'
       return
     }
     this.status.text = ''

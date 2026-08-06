@@ -42,19 +42,23 @@ CLIMB, UNLOCK, PERFECT
   device. Compare fairly.
 
 HONEST BY DESIGN
-- No ads. No account. No purchases. No data collected.
+- No ads. No account. No purchases.
+- Optional global leaderboard: submit a score under a nickname you choose,
+  nothing else leaves your device.
 - Fully playable offline.
 - 60fps arcade action tuned for phones.
 
 The swarm is already coming. Hold the line.
 
 **App Review notes:**
-Single-player offline arcade game. No account, login, or demo credentials
-needed; launch and play. No user-generated content, no chat, no purchases. The
-Daily Challenge is a date-seeded deterministic run computed on device; it makes
-no network calls. This build contains no analytics or tracking SDKs and
-collects no data. Violence is stylized neon splatter against alien creatures;
-no human characters are harmed.
+Single-player arcade game. No account, login, or demo credentials needed;
+launch and play. No user-generated content beyond an optional self-chosen
+leaderboard nickname, no chat, no purchases. The Daily Challenge is a
+date-seeded deterministic run computed on device. The optional global
+leaderboard submits only a nickname and the run's score when the player
+chooses to; everything else is offline and on-device. No analytics or tracking
+SDKs. Violence is stylized neon splatter against alien creatures; no human
+characters are harmed.
 
 ## ES (es-MX localization)
 
@@ -92,7 +96,9 @@ SUBE, DESBLOQUEA, PERFECCIONA
   jugadores en cualquier dispositivo. Compite en igualdad.
 
 HONESTO POR DISENO
-- Sin anuncios. Sin cuenta. Sin compras. No se recopilan datos.
+- Sin anuncios. Sin cuenta. Sin compras.
+- Tabla global opcional: envia tu puntaje con un apodo que tu eliges, nada mas
+  sale de tu dispositivo.
 - Totalmente jugable sin conexion.
 - Accion arcade a 60fps afinada para telefonos.
 
@@ -108,10 +114,11 @@ El enjambre ya viene. Resiste.
 - Devices: iPhone only for v1 (same call as Anota and Capi)
 - Orientation: both supported; the game adapts. Screenshots read best in
   landscape.
-- Privacy: "Data Not Collected" on both stores. True as long as the build was
-  made WITHOUT `VITE_LEADERBOARD_URL` (the leaderboard client is dormant
-  without it). If the leaderboard ships later, switch to the Capi-style
-  labels: nickname + gameplay scores, "Data Not Linked to You", and update
-  Play Data Safety to match.
+- Privacy (v1 ships WITH the leaderboard, owner decision 2026-08-06):
+  Capi-style labels. App Store = "Data Not Linked to You" with Name (nickname)
+  and User Content (gameplay scores). Play Data Safety = collects App activity
+  + Name, not linked to identity, not shared, not sold. NOT "no data": the
+  leaderboard has a server. A build made WITHOUT `VITE_LEADERBOARD_URL` could
+  truthfully declare "Data Not Collected", but that is not the v1 plan.
 - Encryption: `ITSAppUsesNonExemptEncryption` false is set in Info.plist, so no
   export compliance questions per build.

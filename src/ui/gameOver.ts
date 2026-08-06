@@ -81,7 +81,7 @@ export class GameOver {
   /** The score never reached the leaderboard — say so instead of silence. */
   setSubmitFailed(): void {
     if (this.hasUnlockBanner || !leaderboardEnabled()) return
-    this.rank.text = 'score not submitted — check your connection'
+    this.rank.text = 'score not submitted, check your connection'
     this.rank.style.fill = 0x5f8f83
     this.relayout()
   }

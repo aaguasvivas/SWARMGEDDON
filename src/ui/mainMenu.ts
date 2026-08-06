@@ -50,7 +50,7 @@ export class MainMenu {
     this.info = new Text({ text: '', style: { fontFamily: MONO, fontSize: 13, fill: COLORS.hudText, align: 'center', lineHeight: 19 } })
     this.info.anchor.set(0.5)
     this.controlsHint = new Text({
-      text: 'Hold to fire — prefer not to? Turn on Auto-fire in Settings',
+      text: 'Hold to fire. Prefer not to? Turn on Auto-fire in Settings',
       // Wrap instead of running off the edge on a phone; width set in layout().
       style: { fontFamily: MONO, fontSize: 12, fill: COLORS.hudDim, align: 'center', wordWrap: true, wordWrapWidth: 460, lineHeight: 17 },
     })
@@ -153,15 +153,15 @@ export class MainMenu {
   setWorldBest(worldName: string, best: WorldBest): void {
     const played = best.time > 0 || best.kills > 0
     this.worldBestLine = played
-      ? `${worldName} best — ${fmtTime(best.time)} · ${best.kills} kills`
-      : `${worldName} — no runs yet`
+      ? `${worldName} best: ${fmtTime(best.time)} · ${best.kills} kills`
+      : `${worldName}: no runs yet`
     this.renderInfo()
   }
 
   refresh(today: string): void {
     const bd = loadBest('daily')
     const done = dailyCompletedToday(today)
-    this.dailyLine = `today's daily (${today}) — ${done ? `done · score ${bd.score}` : 'not yet played'}`
+    this.dailyLine = `today's daily (${today}): ${done ? `done · score ${bd.score}` : 'not yet played'}`
     this.renderInfo()
   }
 

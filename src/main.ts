@@ -57,7 +57,17 @@ async function boot(): Promise<void> {
   const mount = document.getElementById('app')
   if (!mount) throw new Error('#app mount not found')
 
-  const { app, layers } = await createRenderer(mount)
+  // A cold WKWebView can transiently fail WebGL context creation (seen once on
+  // the iOS simulator under heavy load). One delayed retry recovers it; only a
+  // second failure is a real, reportable error.
+  let renderer
+  try {
+    renderer = await createRenderer(mount)
+  } catch {
+    await new Promise((r) => setTimeout(r, 900))
+    renderer = await createRenderer(mount)
+  }
+  const { app, layers } = renderer
 
   const texReg = new TextureRegistry(app.renderer)
   texReg.bakePlaceholders()
@@ -675,9 +685,19 @@ function buildCrosshair(): Container {
 
 boot().catch((err) => {
   console.error('SWARMGEDDON failed to boot:', err)
+  // Safari stacks omit the message line, so print String(err) FIRST, then the
+  // stack, plus a GPU capability probe: enough to diagnose from a screenshot.
+  let gl = 'gl-probe: '
+  try {
+    const c = document.createElement('canvas')
+    gl += `webgl2=${!!c.getContext('webgl2')} webgl=${!!c.getContext('webgl')} gpu=${'gpu' in navigator}`
+  } catch (e) {
+    gl += 'probe-failed: ' + String(e)
+  }
   document.body.innerHTML =
-    '<pre style="color:#ff6b6b;font:14px monospace;padding:20px;white-space:pre-wrap;">' +
+    '<pre style="color:#ff6b6b;font:13px monospace;padding:44px 20px;white-space:pre-wrap;">' +
     'SWARMGEDDON failed to boot:\n\n' +
-    String(err && (err as Error).stack ? (err as Error).stack : err) +
+    String(err) + '\n\n' + gl + '\n\n' +
+    String(err && (err as Error).stack ? (err as Error).stack : '') +
     '</pre>'
 })

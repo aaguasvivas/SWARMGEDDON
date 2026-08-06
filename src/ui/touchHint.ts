@@ -21,7 +21,7 @@ export class TouchHint {
 
   constructor() {
     this.banner = new Text({
-      text: 'drag to play — left side moves, right side aims & fires',
+      text: 'drag to play: left side moves, right side aims & fires',
       style: { fontFamily: MONO, fontSize: 13, fill: COLORS.hudText, align: 'center', dropShadow: { color: 0x000000, blur: 0, distance: 1, angle: Math.PI / 4, alpha: 0.8 } },
     })
     this.banner.anchor.set(0.5)

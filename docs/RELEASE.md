@@ -28,12 +28,33 @@ Xcode Archive and Android via a signed .aab from Android Studio or Gradle.
   Play. Stage them from the simulator: one per world mid-combat (hive, depths,
   wastes), one boss fight with the boss bar, one perk draft, the menu with a
   per-world record showing. Landscape reads best.
-- Privacy answers: "Data Not Collected" on both stores (no analytics, no ads,
-  no accounts; leaderboard client is dormant without `VITE_LEADERBOARD_URL` at
-  build time). If the leaderboard ships later, flip to Capi-style labels.
+- Privacy answers (v1 ships WITH the leaderboard): "Data Not Linked to You"
+  with Name (nickname) + User Content (gameplay scores) on the App Store; Play
+  Data Safety = App activity + Name, not linked, not shared, not sold. The
+  privacy page must be updated to describe the leaderboard BEFORE the store
+  build is uploaded (see the Leaderboard section).
 - Age rating: answer for stylized, frequent fantasy violence against aliens;
   expect 12+ / E10+. Category: Games > Arcade. Devices: iPhone only.
 - Encryption: `ITSAppUsesNonExemptEncryption` false already in Info.plist.
+
+## Leaderboard (BEFORE the store build; owner decision 2026-08-06)
+The v1 store build ships with the global leaderboard live. Order matters: the
+server must exist and the privacy page must be updated before the app build
+that goes to review is made.
+
+Owner (one-time accounts step, ~10 min):
+```bash
+cd ~/Desktop/personal/SWARMGEDDON/server && npm install
+npx wrangler login
+npx wrangler d1 create swarmgeddon
+```
+Paste the database id it prints into server/wrangler.toml, then tell Claude.
+
+Claude (after the id is in): run migrations, deploy the Worker, set
+`VITE_LEADERBOARD_URL` for the web + capacitor builds, update
+public/privacy.html to describe the leaderboard (nickname + score, deletable
+on request), redeploy the site, verify submit + rank end to end with
+scripts/attack.mjs, and confirm LEADERS appears in the menu.
 
 ## iOS
 ```bash
@@ -91,16 +112,20 @@ Already generated into both native projects from assets/icon.svg and
 assets/splash.svg. Regenerate any time with `npm run assets:generate`.
 
 ## Open items
-1. Screenshots: stage from the simulator per the list above. Claude can
-   produce these.
-2. TestFlight pass on a real phone: only the owner can do this.
-3. Google Play account standing + tester recruitment: only the owner.
-4. First Archive + upload needs the owner logged into Xcode with the Apple ID.
+1. DONE: App Store screenshots live in store-assets/screenshots/ (2796x1290,
+   six shots: three worlds, THE QUEEN boss fight, perk draft, menu with a
+   per-world record). Regenerate any time with scripts/store-shots.mjs (same
+   setup as measure.mjs: puppeteer-core + dev server on 5176).
+2. DONE: native shell smoke test passed on the iOS simulator (boot, menu, run,
+   touch, game over, per-world records). Boot has a one-retry guard for
+   transient WebGL context failures on cold webviews.
+3. Leaderboard accounts step (owner), then Claude wires + reprivacies. See the
+   Leaderboard section above.
+4. TestFlight pass on a real phone: only the owner.
+5. Google Play account standing + tester recruitment: only the owner.
+6. First Archive + upload needs the owner logged into Xcode with the Apple ID.
 
 ## After launch (not now)
-- Leaderboard: deploy server/ (wrangler login, d1 create, db:migrate, deploy),
-  set VITE_LEADERBOARD_URL, THEN update both stores' privacy labels before
-  shipping the build (nickname + scores, Not Linked to You).
 - Ask-for-review prompt after a few finished runs.
 - Cross-promo with Anota and Capi: a quiet link, nothing loud.
 - Cosmetic IAP on the existing unlock metadata (premium skus already modeled).
