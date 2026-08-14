@@ -37,24 +37,17 @@ Xcode Archive and Android via a signed .aab from Android Studio or Gradle.
   expect 12+ / E10+. Category: Games > Arcade. Devices: iPhone only.
 - Encryption: `ITSAppUsesNonExemptEncryption` false already in Info.plist.
 
-## Leaderboard (BEFORE the store build; owner decision 2026-08-06)
-The v1 store build ships with the global leaderboard live. Order matters: the
-server must exist and the privacy page must be updated before the app build
-that goes to review is made.
-
-Owner (one-time accounts step, ~10 min):
-```bash
-cd ~/Desktop/personal/SWARMGEDDON/server && npm install
-npx wrangler login
-npx wrangler d1 create swarmgeddon
-```
-Paste the database id it prints into server/wrangler.toml, then tell Claude.
-
-Claude (after the id is in): run migrations, deploy the Worker, set
-`VITE_LEADERBOARD_URL` for the web + capacitor builds, update
-public/privacy.html to describe the leaderboard (nickname + score, deletable
-on request), redeploy the site, verify submit + rank end to end with
-scripts/attack.mjs, and confirm LEADERS appears in the menu.
+## Leaderboard: DONE (live since 2026-08-14)
+- Worker: https://swarmgeddon-leaderboard.adelsonaguasvivas.workers.dev
+- D1: `swarmgeddon` (id in server/wrangler.toml), schema migrated.
+- Client wiring: `VITE_LEADERBOARD_URL` in the repo-root `.env` (gitignored;
+  recreate from `.env.example` + the Worker URL above if this machine changes).
+  Every `npm run build` / `build:cap` picks it up automatically.
+- privacy page describes the leaderboard (nickname + run results, removal by
+  email). Verified end to end: in-game submit returned a live rank, the LEADERS
+  board renders, test rows wiped after.
+- Store privacy labels MUST be the Not-Linked-to-You set in
+  docs/store-listing.md (the build in review has the leaderboard on).
 
 ## iOS
 ```bash
