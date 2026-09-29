@@ -487,6 +487,12 @@ async function boot(): Promise<void> {
   // after a backgrounded tab), decoupled from the sim accumulator so backdrop
   // motion can't judder against the fixed step or feed the sim.
   let renderClock = 0
+  // True when the previous render left a hit-stop running, so this frame's real
+  // time was withheld from the sim. Only such a frame is charged against the
+  // hit-stop: a freeze raised during this frame's steps starts with the next one.
+  // The freeze rounds to whole frames (a remainder under half a frame ends it),
+  // so frame-time jitter cannot add a frame: 50 ms is 3 frames at 60 Hz.
+  let hitstopHeld = false
   const loop = new GameLoop(
     FIXED_DT,
     MAX_FRAME_TIME,
@@ -497,10 +503,14 @@ async function boot(): Promise<void> {
 
       // Hit-stop runs on the render clock: it pauses how fast real time feeds
       // the sim, never the sim step itself.
-      drainEliteKills()
       const j = world.juice
-      j.hitstop = Math.max(0, j.hitstop - fd)
-      loop.timeScale = j.hitstop > 0 ? 0 : 1
+      if (hitstopHeld) {
+        j.hitstop -= fd
+        if (j.hitstop < fd * 0.5) j.hitstop = 0
+      }
+      drainEliteKills()
+      hitstopHeld = j.hitstop > 0
+      loop.timeScale = hitstopHeld ? 0 : 1
       if (screen === 'playing' && world.pendingGameOver && j.hitstop <= 0) endRun()
       const playing = screen === 'playing'
 
