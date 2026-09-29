@@ -23,7 +23,7 @@ export interface BestRecord {
 
 const EMPTY_BEST: BestRecord = { score: 0, time: 0, kills: 0, level: 0 }
 
-/** Per-world personal bests. `time` and `kills` are tracked INDEPENDENTLY —
+/** Per-world personal bests. `time` and `kills` are tracked INDEPENDENTLY:
  *  each is the max over every run in that world, so a long-survival run and a
  *  high-kill run can each hold their own record. */
 export interface WorldBest {
@@ -43,7 +43,7 @@ export interface WorldBestGains {
   kills: boolean
 }
 
-/** Score formula — rewards survival, kills, and depth roughly equally. */
+/** Score formula: rewards survival, kills, and depth roughly equally. */
 export function computeScore(time: number, kills: number, level: number): number {
   return Math.floor(time * 10 + kills * 5 + level * 50)
 }

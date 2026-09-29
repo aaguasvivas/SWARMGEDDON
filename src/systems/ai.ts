@@ -6,7 +6,7 @@ import type { Enemy } from '../game/enemy.ts'
 import type { World } from '../game/world.ts'
 
 const SEPARATION = 0.9
-/** Total gravity-well drag on the player, units/sec — hard-capped well below
+/** Total gravity-well drag on the player, units/sec, hard-capped well below
  *  the slowest pilot's speed so the move stick always wins (phone fairness). */
 const MAX_WELL_PULL = 140
 
@@ -89,7 +89,7 @@ export function aiSystem(world: World, dt: number): void {
     switch (def.behavior) {
       case 'charger': {
         // Telegraphed line-dash: heading LOCKS at windup start (aims at the
-        // player's exact position — zero RNG), so a perpendicular sidestep
+        // player's exact position, zero RNG), so a perpendicular sidestep
         // always dodges; the slow recover is the punish window.
         const ch = def.charge!
         if (e.phase === 0) {
@@ -102,7 +102,7 @@ export function aiSystem(world: World, dt: number): void {
         } else if (e.phase === 1) {
           mx = 0
           my = 0
-          separate = false // coil firmly in place — neighbors can't shove the
+          separate = false // coil firmly in place: neighbors can't shove the
           // telegraph off its locked line (else the sprite faces one way and
           // slides another, and the dash launches from a drifted origin).
           facingOverride = e.phaseDir
@@ -257,7 +257,7 @@ export function aiSystem(world: World, dt: number): void {
 }
 
 /** Aura source: refresh a short buff on all enemies within its radius, stamping
- *  its OWN speed multiplier (per-def — hivemind 1.35, deep caller 1.55). When
+ *  its OWN speed multiplier (per-def: hivemind 1.35, deep caller 1.55). When
  *  auras overlap within a frame, the stronger multiplier wins. */
 function applyAura(world: World, src: Enemy, buf: Enemy[]): void {
   const radius = src.def.aura!.radius
@@ -279,8 +279,9 @@ function applyAura(world: World, src: Enemy, buf: Enemy[]): void {
 function teleport(world: World, e: Enemy, range: number): void {
   const b = world.arena.bounds
   spawnPoof(world, e.x, e.y, e.def.tint, 12)
-  const a = world.rng.angle()
-  const r = range * world.rng.range(0.7, 1.05)
+  const rng = world.rngs.spawn
+  const a = rng.angle()
+  const r = range * rng.range(0.7, 1.05)
   e.x = e.prevX = clamp(world.player.x + Math.cos(a) * r, b.x + e.radius, b.x + b.w - e.radius)
   e.y = e.prevY = clamp(world.player.y + Math.sin(a) * r, b.y + e.radius, b.y + b.h - e.radius)
   spawnPoof(world, e.x, e.y, e.def.tint, 12)
@@ -288,10 +289,11 @@ function teleport(world: World, e: Enemy, range: number): void {
 
 /** Queen spawns a brood burst of random offspring around herself. */
 function spawnBrood(world: World, e: Enemy, brood: { ids: readonly string[]; count: number }): void {
+  const rng = world.rngs.spawn
   for (let i = 0; i < brood.count; i++) {
-    const id = world.rng.pick(brood.ids)
-    const a = world.rng.angle()
-    const r = e.radius + world.rng.range(8, 30)
+    const id = rng.pick(brood.ids)
+    const a = rng.angle()
+    const r = e.radius + rng.range(8, 30)
     spawnEnemy(world, id, e.x + Math.cos(a) * r, e.y + Math.sin(a) * r)
   }
   spawnPoof(world, e.x, e.y, e.def.gibColor, 10)

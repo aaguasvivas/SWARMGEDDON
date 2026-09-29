@@ -10,7 +10,7 @@ function fmtTime(s: number): string {
 /**
  * Render a square, alien-hive-styled run summary to a PNG and share it: the Web
  * Share API on mobile (with the image attached), or a download on desktop. All
- * client-side — no upload, no backend.
+ * client-side: no upload, no backend.
  */
 export async function shareRunCard(result: RunResult): Promise<void> {
   const blob = await renderCard(result)
@@ -27,7 +27,7 @@ export async function shareRunCard(result: RunResult): Promise<void> {
       })
       return
     } catch {
-      // user cancelled or share failed — fall through to download
+      // user cancelled or share failed: fall through to download
     }
   }
 
@@ -52,7 +52,7 @@ function renderCard(result: RunResult): Promise<Blob | null> {
   ctx.fillStyle = '#06080f'
   ctx.fillRect(0, 0, S, S)
 
-  // Ichor blotches (denser toward the bottom — the floor drowned in gore).
+  // Ichor blotches (denser toward the bottom: the floor drowned in gore).
   for (let i = 0; i < 90; i++) {
     const x = Math.random() * S
     const y = S * 0.35 + Math.random() * S * 0.65

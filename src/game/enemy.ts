@@ -10,6 +10,8 @@ import type { Poolable } from '../core/pool.ts'
  */
 export class Enemy implements Poolable {
   alive = false
+  /** Run-unique id (World.enemyUidSeq), stable while this pooled object lives. */
+  uid = 0
 
   /** Registry definition for this enemy's type (set on spawn). */
   def: EnemyDef = ENEMIES.swarmer!
@@ -55,7 +57,7 @@ export class Enemy implements Poolable {
   enraged = false
   /** Per-enemy phase offset so the swarm doesn't wobble in lockstep. */
   animPhase = 0
-  /** Sim time this enemy spawned — drives the cosmetic emerge fade (render-only read). */
+  /** Sim time this enemy spawned; drives the cosmetic emerge fade (render-only read). */
   bornAt = 0
   /** Faction-shifted body/gib colors, resolved at spawn (presentation only). */
   tint = 0xffffff

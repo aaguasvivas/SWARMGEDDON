@@ -12,7 +12,7 @@
  *     (prev -> current) for smooth motion that doesn't judder against refresh.
  *
  * The accumulator is clamped (maxFrameTime) so a long stall can't queue seconds
- * of catch-up steps and lock the tab — the classic "spiral of death".
+ * of catch-up steps and lock the tab (the classic "spiral of death").
  */
 export class GameLoop {
   /** Smoothed frames-per-second, refreshed ~2x/sec. For the debug overlay. */
@@ -21,11 +21,14 @@ export class GameLoop {
   frameMs = 0
   /** Number of sim steps executed on the most recent frame (0..N). */
   steps = 0
+  /** How fast real time feeds the sim (0 = frozen, e.g. hit-stop). The sim
+   *  still always steps fixedDt; only the accumulator fill rate changes. */
+  timeScale = 1
 
   // --- frame-time stats (Phase-1 instrument): raw, unclamped wall time -------
   /** Frames > 20ms (a real missed 60Hz frame, past rAF jitter) since resetStats(). */
   longFrames = 0
-  /** Frames > 33.4ms (missed 30Hz — a visible hitch) since the last resetStats(). */
+  /** Frames > 33.4ms (missed 30Hz, a visible hitch) since the last resetStats(). */
   badFrames = 0
   /** Total frames observed since the last resetStats(). */
   totalFrames = 0
@@ -88,7 +91,7 @@ export class GameLoop {
     this.lastTime = now
 
     // Record RAW wall time for the stats (the clamp below hides real stalls).
-    // Frames > 500ms are a backgrounded/suspended tab, not gameplay — skip them.
+    // Frames > 500ms are a backgrounded/suspended tab, not gameplay, so skip them.
     const rawMs = frame * 1000
     if (rawMs > 0 && rawMs <= 500) {
       this.samples[this.sampleIdx] = rawMs
@@ -105,7 +108,7 @@ export class GameLoop {
     if (frame < 0) frame = 0
     this.frameMs = frame * 1000
 
-    this.accumulator += frame
+    this.accumulator += frame * this.timeScale
     let steps = 0
     while (this.accumulator >= this.fixedDt) {
       this.onUpdate(this.fixedDt)

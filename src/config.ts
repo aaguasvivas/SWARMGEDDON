@@ -1,7 +1,7 @@
 /**
  * Global tunables and the alien-hive palette.
  *
- * Everything here is data the engine reads — no logic. Later phases move
+ * Everything here is data the engine reads, no logic. Later phases move
  * content (weapons/enemies/perks) into `src/content/*`; this file holds the
  * engine-level constants that don't belong to any single content registry.
  */
@@ -33,7 +33,7 @@ export const ARENA_H = 1900
 export const PLAYER_RADIUS = 18
 export const PLAYER_SPEED = 285 // units per second
 
-/** Gamepad analog deadzone — sticks rest noisily around center. */
+/** Gamepad analog deadzone: sticks rest noisily around center. */
 export const STICK_DEADZONE = 0.18
 
 /** Player survival. */
@@ -48,18 +48,20 @@ export const MAX_ENEMIES = 700
 export const MAX_PARTICLES = 1500
 export const MAX_FLOATERS = 48
 export const MAX_PICKUPS = 400
+/** Pickup slots guaranteed per kind; the rest of MAX_PICKUPS is shared. */
+export const PICKUP_RESERVE = { xp: 200, bank: 1, health: 40, weapon: 4, core: 4, bonus: 2 } as const
 export const MAX_ACID = 64
 export const MAX_ENEMY_PROJECTILES = 300
 
 /** Pickups / XP. */
 export const BASE_MAGNET_RADIUS = 125 // px; scaled by the Magnetic perk. Generous
-// so XP gems visibly zip to the player on a kill — makes them obviously collectible.
+// so XP gems visibly zip to the player on a kill, which makes them obviously collectible.
 export const GEM_LIFETIME = 12 // seconds before an uncollected XP gem fades
 export const WEAPON_DROP_INTERVAL = 13 // seconds between weapon pod drops
 export const WEAPON_DROP_LIFETIME = 24
 
 /**
- * Health pickups — perk-free sustain tied to killing. Most kills have a small
+ * Health pickups: perk-free sustain tied to killing. Most kills have a small
  * chance to drop a medkit that magnetizes in and heals a little; elites/bosses
  * are reliable chunks. So clearing a big swarm lets you claw HP back bit by bit.
  */

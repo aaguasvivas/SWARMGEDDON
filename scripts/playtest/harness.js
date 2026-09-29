@@ -1,7 +1,10 @@
-// In-page playtest harness. Injected into the DEV build (http://localhost:5176)
-// and driven through window.__SWARM. Stops the rAF loop so ONLY our step(1)
-// calls advance the sim, replaces input.update with a bot, and records events.
-// Never calls endRun (so nothing is submitted to the leaderboard).
+// In-page playtest harness. Injected into the DEV build (the dev server at
+// SWG_URL, default http://localhost:5176) and driven through window.__SWARM.
+// Stops the rAF loop so ONLY our step(1) calls advance the sim, replaces
+// input.update with a bot, and records events. Drafts open through the game's
+// own single path (stepSim hand-off, cards cached on world.draftCards) and are
+// answered through S.pickPerk, exactly like a tap. Never calls endRun (so
+// nothing is submitted to the leaderboard).
 (() => {
   const DT = 1 / 60
   const xpForLevel = (l) => Math.floor(5 + l * 4 + l * l * 0.55)
@@ -12,18 +15,10 @@
     return s
   }
 
-  function clamp(v, a, b) {
-    return v < a ? a : v > b ? b : v
-  }
-
   function bot(w, inp, st) {
     const mode = st.cfg.mode
     const pl = w.player
     const b = w.arena.bounds
-    // Keep the camera following the player (render is stopped) so the sim's
-    // cosmetic onScreen gate (elite hit-stop) sees a realistic window.
-    w.camX = b.w <= w.viewW ? b.x - (w.viewW - b.w) / 2 : clamp(pl.x - w.viewW / 2, b.x, b.x + b.w - w.viewW)
-    w.camY = b.h <= w.viewH ? b.y - (w.viewH - b.h) / 2 : clamp(pl.y - w.viewH / 2, b.y, b.y + b.h - w.viewH)
 
     const act = w.enemies.active
     let best = null
@@ -265,13 +260,9 @@
   }
 
   const PRIORITY = ['twin_shot', 'heavy_rounds', 'adrenaline', 'piercing', 'vitality', 'bulwark', 'regrowth', 'vampiric', 'second_wind', 'explosive_rounds', 'deadeye', 'fleet_footed', 'executioner', 'magnetic', 'dodge', 'hollow_point', 'giant_slayer', 'cryo_rounds', 'scavenger', 'velocity', 'long_barrel', 'steady_aim', 'ricochet', 'thorns', 'overpressure', 'berserker', 'glass_cannon']
-  function handleDraft(w, st) {
-    while (w.pendingLevelUps > 0) {
-      const d = w.draftPerks()
-      if (d.length === 0) {
-        w.pendingLevelUps = 0
-        break
-      }
+  function handleDraft(S, w, st) {
+    while (w.paused && w.pendingLevelUps > 0 && w.draftCards.length > 0) {
+      const d = w.draftCards.slice()
       let pick = d[0]
       if (st.cfg.perkPolicy === 'priority') {
         let bi = 1e9
@@ -284,13 +275,11 @@
           }
         }
       }
-      w.choosePerk(pick.id)
+      S.pickPerk(pick.id)
       st.perks.push(pick.id)
-      w.pendingLevelUps--
       st.levelUpsChunk++
       st.events.push({ t: +w.time.toFixed(2), type: 'levelup', level: w.level - w.pendingLevelUps, perk: pick.id, offered: d.map((p) => p.id) })
     }
-    w.paused = false
   }
 
   window.__PT_run = (untilTime, maxCalls) => {
@@ -366,7 +355,7 @@
       }
 
       if (w.paused && w.pendingLevelUps > 0) {
-        handleDraft(w, st)
+        handleDraft(S, w, st)
         if (inv) {
           w.player.maxHp = 1e9
           w.player.hp = 1e9

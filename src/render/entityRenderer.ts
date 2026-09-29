@@ -9,7 +9,7 @@ const EMERGE_TIME = 0.45
  * Pushes simulation state onto Pixi sprites each rendered frame: interpolation
  * (prev -> current by alpha), rotate-to-face, procedural squash/wobble (so one
  * still illustration reads as a living creature), and hit-flash via tint. Pure
- * presentation — no simulation here.
+ * presentation, no simulation here.
  */
 export function renderEntities(world: World, alpha: number): void {
   const t = world.time + alpha * FIXED_DT
@@ -29,7 +29,7 @@ export function renderEntities(world: World, alpha: number): void {
       continue
     }
     // Emerge: fade/scale in over the first beat after spawn so enemies never
-    // pop into existence — matters on huge viewports where the fixed spawn ring
+    // pop into existence. That matters on huge viewports where the fixed spawn ring
     // can sit in view, and for splitter offspring / queen broods which spawn
     // mid-screen by design. Pure presentation (reads sim time, mutates nothing).
     const emerge = Math.min(1, Math.max(0, (t - e.bornAt) / EMERGE_TIME))

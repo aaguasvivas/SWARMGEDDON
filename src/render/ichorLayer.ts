@@ -12,12 +12,12 @@ interface StampReq {
 }
 
 /**
- * SIGNATURE FEATURE — persistent ichor-staining terrain.
+ * SIGNATURE FEATURE: persistent ichor-staining terrain.
  *
  * One RenderTexture the size of the arena sits beneath all entities. Every kill
  * stamps a gore splat into it. Because thousands of stamps bake into a single
  * texture, the on-screen cost is exactly one textured quad no matter how
- * drenched the floor gets — the arena visibly drowns in acid-green ichor at
+ * drenched the floor gets: the arena visibly drowns in acid-green ichor at
  * constant draw cost.
  *
  * Per frame we batch ALL of the frame's stamps into one container and render it
@@ -67,7 +67,7 @@ export class IchorLayer {
   /**
    * (Re)create the render texture for the current arena size and place the
    * display sprite at the arena origin. Resize is rare (orientation/window),
-   * and stains reset on resize — acceptable, and keeps it leak-free.
+   * and stains reset on resize. Acceptable, and keeps it leak-free.
    */
   resize(w: number, h: number, x: number, y: number): void {
     const old = this.rt
@@ -86,7 +86,7 @@ export class IchorLayer {
     if (old) old.destroy(true)
   }
 
-  /** Ichor stamp tint pair — set per arena theme at run start (presentation
+  /** Ichor stamp tint pair, set per arena theme at run start (presentation
    *  only; the rng draws here are unchanged regardless of color). */
   stampTintA: number = COLORS.ichorA
   stampTintB: number = COLORS.ichorB

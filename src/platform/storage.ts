@@ -2,7 +2,7 @@
  * Tiny synchronous key/value persistence over localStorage.
  *
  * This is the single choke point for client-side storage. In Phase 4 the
- * Capacitor Preferences API (async) slots in behind this same module — game
+ * Capacitor Preferences API (async) slots in behind this same module, so game
  * code only ever calls loadJSON/saveJSON, never touches localStorage directly.
  * All access is wrapped so a disabled/full storage (private mode, quota) never
  * throws into gameplay.

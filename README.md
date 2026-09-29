@@ -19,9 +19,9 @@ browsers)** and, via Capacitor, **iOS / iPad / Android**.
 
 ## Stack
 
-- **Vite 6** + **TypeScript** (strict) — instant dev, tiny app bundle.
-- **PixiJS 8** (WebGL) — GPU-batched sprite rendering.
-- **Capacitor** (Phase 4) — wraps the exact same web build into native shells.
+- **Vite 6** + **TypeScript** (strict): instant dev, tiny app bundle.
+- **PixiJS 8** (WebGL): GPU-batched sprite rendering.
+- **Capacitor** (Phase 4): wraps the exact same web build into native shells.
 - No physics engine: collisions are circle-overlap via a spatial hash (Phase 1).
 
 ## Run it
@@ -51,7 +51,7 @@ One codebase → **Web** (primary, incl. mobile browsers + installable PWA) and,
 via **Capacitor**, **iOS / iPad / Android** native shells that load the exact same
 web build. Platform differences (haptics, safe-area, status bar, splash, Android
 back button) live behind `src/platform/`; everything no-ops on web. Building +
-submitting the native apps is a manual, account-gated process — see
+submitting the native apps is a manual, account-gated process; see
 **[docs/RELEASE.md](docs/RELEASE.md)** (listing copy in [docs/store-listing.md](docs/store-listing.md)).
 
 Web deploys as static files (`dist/`) to any host (Cloudflare Pages / Netlify /
@@ -63,29 +63,29 @@ GitHub Pages); the PWA installs and runs offline after first load.
 | -------------- | ----------------- | ---------------- | ---------------- | ---------- |
 | Keyboard/Mouse | WASD / arrows     | mouse pointer    | hold left button | click      |
 | Touch          | left-half stick   | right-half stick | right stick held | tap        |
-| Gamepad        | left stick        | right stick      | RT / right stick | —          |
+| Gamepad        | left stick        | right stick      | RT / right stick | none       |
 
 On level-up, pick a perk by clicking a card or pressing **1 / 2 / 3**.
 In-run: **Esc** → menu, **R** → restart. Press **`` ` ``** to toggle the debug overlay.
 
 ### Modes
 
-- **Endless** — random seed, survive as long as you can.
-- **Daily Challenge** — everyone gets the same seeded run for the day.
+- **Endless**: random seed, survive as long as you can.
+- **Daily Challenge**: everyone gets the same seeded run for the day.
 
 On death the run is scored (time + kills + level), your best is saved locally, and
 you can generate a shareable PNG run-card.
 
 ### Seeds & determinism
 
-All randomness flows through one seeded PRNG (mulberry32), so a seed reproduces a
-run exactly — the basis for the upcoming Daily Challenge. The floor specks are
+All sim randomness flows through seven seeded mulberry32 streams, so a seed
+reproduces a run exactly. That is the basis for the upcoming Daily Challenge. The floor specks are
 generated from the seed as a visible determinism check.
 
-- `/?seed=12345` — fixed numeric seed
-- `/?seed=foo` — hashed string seed
-- `/?seed=random` — fresh non-deterministic seed each load
-- no param — **today's date** becomes the seed (daily-style)
+- `/?seed=12345`: fixed numeric seed
+- `/?seed=foo`: hashed string seed
+- `/?seed=random`: fresh non-deterministic seed each load
+- no param: **today's date** becomes the seed (daily-style)
 
 ## Architecture
 
@@ -97,7 +97,7 @@ src/
   config.ts          engine tunables + alien-hive palette
   core/              vec, rng (seeded PRNG), time (fixed-step loop), pool, spatialHash
   audio/             synthesized WebAudio engine (SFX + adaptive music)
-  content/           weapons, enemies, perks, waveDirector, assets — pure data
+  content/           weapons, enemies, perks, waveDirector, assets (pure data)
   systems/           spawn, ai, weapons, projectiles, collision, pickups, acid, particles
   effects/           juice (shake/hit-stop), fx (particles/gibs/numbers)
   game/              world (run state), arena, player, enemy/projectile/particle/pickup/acid

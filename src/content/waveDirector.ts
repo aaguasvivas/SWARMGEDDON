@@ -1,14 +1,14 @@
 import type { Rng } from '../core/rng.ts'
 
 /**
- * Wave director — data-driven escalation, now PER ARENA (docs/WORLDS-SPEC.md).
+ * Wave director: data-driven escalation, now PER ARENA (docs/WORLDS-SPEC.md).
  * Each world has its own roster (which enemies exist there at all), spawn
  * rhythm, elite cadence, and boss. This is the core of the "new world with new
  * enemies" feel: HIVE permanently lacks five types (stinger, wraith, burrower,
  * psychic, warper) so the other worlds debut them.
  *
  * `world.beginRun` resolves the arena's WaveConfig ONCE into a field; the spawn
- * system reads that resolved object — no lookups in the hot loop. Arena id is
+ * system reads that resolved object, no lookups in the hot loop. Arena id is
  * already run identity (the Daily rotates it by date), so per-arena configs
  * keyed by arena id preserve device-independent determinism.
  */
@@ -20,16 +20,16 @@ export interface WaveEntry {
 
 export interface WaveConfig {
   table: readonly WaveEntry[]
-  /** interval(t) = max(floor, base - t*slope) — seconds between spawn pulses. */
+  /** interval(t) = max(floor, base - t*slope): seconds between spawn pulses. */
   interval: { base: number; slope: number; floor: number }
-  /** batch(t) = base + floor(t/period) — enemies per pulse. */
+  /** batch(t) = base + floor(t/period): enemies per pulse. */
   batch: { base: number; period: number }
   elite: { id: string; first: number; interval: number; packEvery: number }
   boss: { id: string; first: number; interval: number; announce: string; name: string }
 }
 
 export const ARENA_WAVES: Record<string, WaveConfig> = {
-  // THE ENDLESS TIDE — the classic flood, now exclusive to world 1.
+  // THE ENDLESS TIDE: the classic flood, now exclusive to world 1.
   hive: {
     table: [
       { id: 'swarmer', unlockAt: 0, weight: 10 },
@@ -47,7 +47,7 @@ export const ARENA_WAVES: Record<string, WaveConfig> = {
     elite: { id: 'guardian', first: 55, interval: 48, packEvery: 140 },
     boss: { id: 'queen', first: 175, interval: 165, announce: 'THE QUEEN AWAKENS', name: 'THE QUEEN' },
   },
-  // THE RIPTIDE — pressure lands as crashing surges with genuine lulls; the
+  // THE RIPTIDE: pressure lands as crashing surges with genuine lulls; the
   // world refuses to hold still (blinks, called shoals, maw drag).
   depths: {
     table: [
@@ -65,7 +65,7 @@ export const ARENA_WAVES: Record<string, WaveConfig> = {
     elite: { id: 'abyssalWarden', first: 60, interval: 52, packEvery: 160 },
     boss: { id: 'voidMatron', first: 170, interval: 160, announce: 'THE VOID MATRON STIRS', name: 'THE VOID MATRON' },
   },
-  // THE SIEGE — fewer, tougher bodies; the projectile hail is the pressure.
+  // THE SIEGE: fewer, tougher bodies; the projectile hail is the pressure.
   wastes: {
     table: [
       { id: 'biter', unlockAt: 0, weight: 6 },
@@ -98,7 +98,7 @@ export function spawnBatch(cfg: WaveConfig, time: number): number {
 }
 
 /** Weighted pick among the arena's currently-unlocked types. Fallback is the
- *  arena's own first entry — 'swarmer' does not exist in every world. */
+ *  arena's own first entry, since 'swarmer' does not exist in every world. */
 export function pickEnemy(cfg: WaveConfig, rng: Rng, time: number): string {
   let total = 0
   for (const e of cfg.table) if (time >= e.unlockAt) total += e.weight

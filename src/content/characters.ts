@@ -1,11 +1,11 @@
 import type { Modifiers } from './perks.ts'
 
 /**
- * Unlock metadata — carried by every selectable cosmetic/loadout item from day
+ * Unlock metadata, carried by every selectable cosmetic/loadout item from day
  * one so the future store drops in without rework:
- *   default  — always available.
- *   earn     — unlocked by play (condition checked against a finished run).
- *   premium  — reserved for the cosmetic IAP (dual unlock stays possible: an
+ *   default:  always available.
+ *   earn:     unlocked by play (condition checked against a finished run).
+ *   premium:  reserved for the cosmetic IAP (dual unlock stays possible: an
  *              `earned` condition may coexist with a `sku`).
  */
 export interface UnlockMeta {
@@ -20,16 +20,16 @@ export interface UnlockMeta {
 
 /**
  * Playable pilots. Stats and the signature passive FEED THE SIM (a run's
- * identity), so they must be pure device-independent data — the same seed with
+ * identity), so they must be pure device-independent data: the same seed with
  * the same pilot replays identically everywhere. Colors are presentation.
- * Passives fold into the run's base Modifiers (same pipeline as perks — zero
+ * Passives fold into the run's base Modifiers (same pipeline as perks, zero
  * engine changes).
  */
 export interface CharacterDef {
   id: string
   name: string
   tagline: string
-  /** Hull silhouette (presentation only — hitbox is PLAYER_RADIUS regardless):
+  /** Hull silhouette (presentation only; hitbox is PLAYER_RADIUS regardless):
    *  vanguard = round hull + side pods, dart = swept wedge, heavy = armored hex. */
   shape: 'vanguard' | 'dart' | 'heavy'
   colors: { body: number; outline: number; visor: number; barrel: number }

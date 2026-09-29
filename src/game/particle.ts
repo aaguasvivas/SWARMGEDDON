@@ -1,7 +1,7 @@
 import type { Sprite } from 'pixi.js'
 import type { Poolable } from '../core/pool.ts'
 
-/** Gibs, sparks, muzzle flashes — short-lived visual confetti. Fades by
+/** Gibs, sparks, muzzle flashes: short-lived visual confetti. Fades by
  *  life/maxLife; `drag` bleeds velocity; `grow` scales size over life. */
 export class Particle implements Poolable {
   alive = false

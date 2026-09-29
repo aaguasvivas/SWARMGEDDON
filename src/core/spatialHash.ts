@@ -8,7 +8,7 @@
  * Buckets are reused across frames (clear sets length=0, keeps the arrays) so a
  * steady-state frame allocates nothing.
  *
- * The caller does the precise circle test on the returned candidates — the hash
+ * The caller does the precise circle test on the returned candidates; the hash
  * only narrows the field.
  */
 export class SpatialHash<T> {

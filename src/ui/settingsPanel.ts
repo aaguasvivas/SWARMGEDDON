@@ -32,7 +32,7 @@ export class SettingsPanel {
 
   constructor() {
     this.view.addChild(this.backdrop) // index 0 (drawn each relayout)
-    // The backdrop must SWALLOW pointer events — without this, taps in the
+    // The backdrop must SWALLOW pointer events. Without this, taps in the
     // panel's dead zones fall through to the still-visible main-menu buttons
     // underneath (same trick as the level-up modal).
     this.backdrop.eventMode = 'static'

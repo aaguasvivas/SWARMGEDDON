@@ -21,7 +21,7 @@ export async function initNative(): Promise<void> {
       await StatusBar.setOverlaysWebView({ overlay: true })
     }
   } catch {
-    // status bar not available — ignore
+    // status bar not available, ignore
   }
   // Hide the splash shortly after first paint.
   setTimeout(() => {

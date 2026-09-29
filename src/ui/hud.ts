@@ -26,7 +26,7 @@ export class Hud {
   private xpDisplay = 0 // smooth XP fill
   private clock = 0
 
-  /** Fresh-run reset — otherwise a retry starts with last run's dying bars
+  /** Fresh-run reset. Otherwise a retry starts with last run's dying bars
    *  visibly sweeping back up from empty. */
   reset(): void {
     this.hpDisplay = 1

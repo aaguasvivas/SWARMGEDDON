@@ -6,7 +6,7 @@ import type { RunResult } from './persistence.ts'
 /**
  * Earned-unlock persistence. One flat id set: character and arena ids share the
  * namespace (they're globally unique). `premium` items will ALSO land in this
- * set when purchased/restored — the store only needs to call `grant()`.
+ * set when purchased/restored; the store only needs to call `grant()`.
  */
 const KEY = 'unlocks'
 

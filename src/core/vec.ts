@@ -37,7 +37,7 @@ export function dist(ax: number, ay: number, bx: number, by: number): number {
   return Math.hypot(ax - bx, ay - by)
 }
 
-/** Squared distance — use for comparisons to skip the sqrt. */
+/** Squared distance. Use for comparisons to skip the sqrt. */
 export function distSq(ax: number, ay: number, bx: number, by: number): number {
   const dx = ax - bx
   const dy = ay - by

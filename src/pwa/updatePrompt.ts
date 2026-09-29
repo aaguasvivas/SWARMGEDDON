@@ -2,7 +2,7 @@ import { registerSW } from 'virtual:pwa-register'
 
 /**
  * Register the service worker and, when a freshly deployed build is waiting,
- * surface a small toast so the player can update on the spot — instead of a tab
+ * surface a small toast so the player can update on the spot, instead of a tab
  * silently serving the old cached version until it happens to get reloaded.
  *
  * Tapping "Update" calls updateSW(true): the waiting worker skips waiting, takes

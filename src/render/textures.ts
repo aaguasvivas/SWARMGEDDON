@@ -4,7 +4,7 @@ import { PLACEHOLDER_SPRITES } from '../content/assets.ts'
 interface Baked {
   texture: Texture
   /** Anchor that pivots the sprite at the drawing's (0,0) origin, regardless of
-   *  how asymmetric its bounds are — so rotate-to-face spins around the body. */
+   *  how asymmetric its bounds are, so rotate-to-face spins around the body. */
   anchorX: number
   anchorY: number
 }
@@ -12,7 +12,7 @@ interface Baked {
 /**
  * Bakes the manifest's grayscale draw functions into GPU textures once, and
  * mints batched Sprites from them. Swapping to a real texture atlas later is a
- * change in this one class — entities just ask for a sprite by key.
+ * change in this one class: entities just ask for a sprite by key.
  */
 export class TextureRegistry {
   private readonly map = new Map<string, Baked>()

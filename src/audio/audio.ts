@@ -1,5 +1,5 @@
 /**
- * Procedural audio — fully synthesized via the Web Audio API. No sample files,
+ * Procedural audio, fully synthesized via the Web Audio API. No sample files,
  * so there's nothing to download (instant load) and the whole soundscape is
  * data-light. Layered SFX per event + an adaptive music bed whose intensity
  * tracks the on-screen chaos.
@@ -23,7 +23,7 @@ export type SfxName =
   | 'boss'
   | 'ui'
 
-/** Per-world music identity — pure data over the same look-ahead scheduler. */
+/** Per-world music identity: pure data over the same look-ahead scheduler. */
 export interface MusicTheme {
   bassNotes: readonly number[]
   arpNotes: readonly number[]
@@ -384,8 +384,8 @@ export class AudioEngine {
   updateMusic(): void {
     if (!this.unlocked || !this.ctx || !this.musicBus) return
     const ctx = this.ctx
-    // Self-heal: the context can be suspended/interrupted out from under us — a
-    // tab switch, the OS taking audio focus, a phone interruption — and it never
+    // Self-heal: the context can be suspended/interrupted out from under us (a
+    // tab switch, the OS taking audio focus, a phone interruption), and it never
     // resumes on its own. That's how audio "just stops" (e.g. after tabbing away
     // on the game-over screen, then starting a new run). Nudge it back here, every
     // frame, and resync the clock so we don't burst a pile of past-due notes.
@@ -406,7 +406,7 @@ export class AudioEngine {
     }
   }
 
-  // Bass on the beat, sparse arp that thickens with intensity — note tables,
+  // Bass on the beat, sparse arp that thickens with intensity. Note tables,
   // waveforms, tempo, and filter sweeps all come from the active MusicTheme.
   private scheduleStep(t: number, beat: number): void {
     const th = this.theme

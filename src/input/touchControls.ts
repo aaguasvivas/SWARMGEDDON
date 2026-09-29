@@ -6,7 +6,7 @@ const KNOB_RADIUS = 30
 
 /**
  * On-screen dual virtual joysticks for touch. Floating-origin style: each stick
- * spawns wherever the finger first lands within its half of the screen — left
+ * spawns wherever the finger first lands within its half of the screen: left
  * half drives movement, right half drives aim (and, from Phase 1, autofire).
  *
  * Multi-touch is tracked by `pointerId` so both thumbs work independently.
@@ -71,12 +71,12 @@ export class TouchControls {
   }
 
   /** Live contacts (id -> last position + which half it landed on). Lets us
-   *  tell a GHOST owner (id we no longer track — missed up / browser id reuse)
+   *  tell a GHOST owner (id we no longer track: missed up / browser id reuse)
    *  from a LIVE one, and fall back to a surviving touch when the owner lifts. */
   private contacts = new Map<number, { x: number; y: number; left: boolean; seen: number }>()
 
   onDown(id: number, x: number, y: number, screenW: number): void {
-    // A pointerdown means this id begins a NEW contact — if it still "owns" a
+    // A pointerdown means this id begins a NEW contact. If it still "owns" a
     // stick, that ownership is a stale ghost (pointer-id reuse after a missed
     // up). Release it before anything else so it can't keep firing/steering.
     if (id === this.moveId) this.releaseMove()
@@ -87,7 +87,7 @@ export class TouchControls {
 
     // Claim the half's stick only if it's free or its owner is a ghost. A
     // second LIVE touch on the same half (palm graze beside a held thumb) must
-    // NOT steal the stick — it just becomes the fallback if the owner lifts.
+    // NOT steal the stick; it just becomes the fallback if the owner lifts.
     if (left) {
       if (this.moveId === -1 || !this.contacts.has(this.moveId)) this.claimMove(id, x, y)
     } else {
@@ -142,10 +142,10 @@ export class TouchControls {
 
   /**
    * Reconcile our tracked contacts against the browser's REAL finger count
-   * (TouchEvent.touches.length — ground truth). iOS Safari sometimes never
+   * (TouchEvent.touches.length, the ground truth). iOS Safari sometimes never
    * delivers pointerup/pointercancel when a system gesture interrupts (banner,
    * Dynamic Island, edge swipe), leaving a ZOMBIE contact that owns a stick
-   * forever — stuck aiming/firing, and (because it looks "live") immune to the
+   * forever: stuck aiming/firing, and (because it looks "live") immune to the
    * anti-graze takeover rules. Called from native touchstart/end/cancel.
    */
   reconcile(realCount: number): void {

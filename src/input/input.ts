@@ -13,14 +13,14 @@ const DOWN_KEYS = new Set(['s', 'arrowdown'])
  * Unified input. Aggregates keyboard+mouse, touch dual-sticks, and gamepad into
  * one set of outputs the rest of the game reads each tick:
  *
- *   - `move`    — desired movement, magnitude in [0,1]
- *   - `aimDir`  — unit facing direction, or (0,0) to keep current facing
- *   - `firing`  — trigger held (wired to weapons from Phase 1)
- *   - `lastType`— which device was used most recently (UI adapts to this)
+ *   - `move`:     desired movement, magnitude in [0,1]
+ *   - `aimDir`:   unit facing direction, or (0,0) to keep current facing
+ *   - `firing`:   trigger held (wired to weapons from Phase 1)
+ *   - `lastType`: which device was used most recently (UI adapts to this)
  *
  * Active-source priority is touch > gamepad > keyboard/mouse, so picking up a
  * controller or touching the screen mid-session "just works" without a setting.
- * Outputs are reused objects — `update()` mutates them in place, no per-frame
+ * Outputs are reused objects: `update()` mutates them in place, no per-frame
  * allocation.
  */
 export class InputManager {
@@ -48,7 +48,7 @@ export class InputManager {
   private gp = { active: false, mx: 0, my: 0, ax: 0, ay: 0, aimActive: false, fire: false }
 
   // Cached canvas origin in CSS px. getBoundingClientRect() forces a synchronous
-  // style/layout pass — calling it per pointer EVENT (a 120Hz+ mouse fires
+  // style/layout pass. Calling it per pointer EVENT (a 120Hz+ mouse fires
   // hundreds of moves/sec, and we called it twice per event) thrashes layout on
   // the main thread and shows up as input/movement jank. The canvas is a fixed,
   // full-window element, so its origin only changes on resize; refresh there
@@ -70,7 +70,7 @@ export class InputManager {
     // gesture), release that stick so it can't latch "on".
     canvas.addEventListener('lostpointercapture', this.onPointerUp)
     // Ground truth: native TouchEvents always report how many fingers are REALLY
-    // on the glass — even when iOS drops a pointerup during a system gesture
+    // on the glass, even when iOS drops a pointerup during a system gesture
     // (banner, Dynamic Island, edge swipe) and would otherwise leave a stick
     // stuck aiming/firing for the rest of the run. Reconcile on every change;
     // with zero real fingers, everything tracked is a zombie and hard-resets.
@@ -218,7 +218,7 @@ export class InputManager {
     const trigger = pad.buttons[7]?.value ?? 0
     const fireBtn = pad.buttons[5]?.pressed || pad.buttons[0]?.pressed
     // fire = explicit inputs only. Aim-to-fire is added by update() when the
-    // AUTO-FIRE setting is on — baking aimActive in here made the setting a no-op.
+    // AUTO-FIRE setting is on; baking aimActive in here made the setting a no-op.
     g.fire = trigger > 0.4 || !!fireBtn
 
     let anyButton = false
@@ -243,7 +243,7 @@ export class InputManager {
   }
 
   private onPointerDown = (e: PointerEvent): void => {
-    this.refreshRect() // once per gesture start — cheap, keeps the cache honest
+    this.refreshRect() // once per gesture start: cheap, keeps the cache honest
     if (e.pointerType === 'touch') {
       // Touch takes over: forget the mouse cursor, or on hybrid devices (touch
       // laptops, iPad+trackpad) the kbm fallback aims/fires at a stale position
@@ -251,7 +251,7 @@ export class InputManager {
       this.hasPointer = false
       if (!this.enabled) return // let menu buttons handle the tap
       // Capture this pointer to the canvas so its move/up/cancel are guaranteed to
-      // reach us even if the finger leaves the element — the fix for sticks that
+      // reach us even if the finger leaves the element. This is the fix for sticks that
       // got "stuck" when a pointerup went missing.
       try {
         this.canvas.setPointerCapture(e.pointerId)
@@ -284,8 +284,8 @@ export class InputManager {
     if (e.pointerType === 'touch') {
       this.touch.onUp(e.pointerId)
     } else if (e.button === 0 || e.button === -1) {
-      // button is -1 on pointercancel (pen leaving range, palm rejection) —
-      // without this the weapon kept firing with nothing held.
+      // button is -1 on pointercancel (pen leaving range, palm rejection).
+      // Without this the weapon kept firing with nothing held.
       this.mouseFiring = false
     }
   }
@@ -311,7 +311,7 @@ export class InputManager {
     if (e.gamepad.index === this.gamepadIndex) this.gamepadIndex = -1
   }
 
-  /** Re-read the canvas origin (forces layout — call sparingly, never per-move). */
+  /** Re-read the canvas origin (forces layout; call sparingly, never per-move). */
   private refreshRect = (): void => {
     const r = this.canvas.getBoundingClientRect()
     this.rectL = r.left

@@ -14,6 +14,7 @@ import { PostFX } from './render/postfx.ts'
 import { Vignette } from './render/vignette.ts'
 import { BackdropSystem } from './render/backdrop.ts'
 import { AudioEngine } from './audio/audio.ts'
+import { announce } from './effects/fx.ts'
 import { Arena, type DecorSpeck } from './game/arena.ts'
 import { Player } from './game/player.ts'
 import { World, type RunMode } from './game/world.ts'
@@ -75,14 +76,13 @@ async function boot(): Promise<void> {
   const audio = new AudioEngine()
   audio.attachUnlock()
 
-  // Cosmetic RNG (stable, boot-time) for decor + ichor splats; sim RNG is
-  // reseeded per run inside World.beginRun for daily determinism.
+  // Cosmetic RNG (stable, boot-time) for decor + ichor splat shapes. The run's
+  // streams live in World.rngs and are reseeded per run.
   const cosmetic = new Rng(seedFromString('swarmgeddon:decor'))
-  const sim = new Rng(DEFAULT_SEED)
 
   const arena = new Arena()
   arena.setDecor(makeDecor(cosmetic, 220)) // more specks for the bigger world
-  arena.build() // fixed world — drawn once
+  arena.build() // fixed world, drawn once
   layers.floor.addChild(arena.view)
 
   const ichor = new IchorLayer(app.renderer, cosmetic)
@@ -90,7 +90,10 @@ async function boot(): Promise<void> {
   layers.ichor.addChild(ichor.view)
 
   const player = new Player()
-  const world = new World(sim, arena, player, ichor, audio, layers, texReg)
+  const world = new World(arena, player, ichor, audio, layers, texReg)
+  // Camera window (world-space top-left + CSS px size). Presentation only: the
+  // sim never reads it.
+  const cam = { x: 0, y: 0, w: 1280, h: 720 }
   layers.warpHost.addChild(player.view) // above the swarm, inside the warped/bloomed scene
 
   // Bloom + grade over the game scene (UI stays crisp & unbloomed). On `scene`
@@ -114,7 +117,7 @@ async function boot(): Promise<void> {
   const settingsPanel = new SettingsPanel()
   const leaderboard = new Leaderboard()
   const touchHint = new TouchHint()
-  // Dev instrument only — null in prod so the class, its per-frame update, and
+  // Dev instrument only: null in prod so the class, its per-frame update, and
   // the backtick toggle are all tree-shaken from the shipped bundle.
   const debug = import.meta.env.DEV ? new DebugOverlay() : null
   // vignette sits at the bottom of the UI (above the world, below the HUD).
@@ -133,6 +136,9 @@ async function boot(): Promise<void> {
   let touchLearned = loadJSON('seenTouchControls', false)
   let touchMoveUsed = false
   let touchAimUsed = false
+  // One-time "collect for XP" label on the first gem a new player ever sees.
+  let showGemHint = !loadJSON('seenGemHint', false)
+  let levelFlash = 0
 
   // --- settings ---
   let settings = loadSettings()
@@ -153,7 +159,7 @@ async function boot(): Promise<void> {
   let lastResult: RunResult | null = null
   let submitToken = 0
 
-  // Register the SW + "new version" toast — but never mid-run ("Update"
+  // Register the SW + "new version" toast, but never mid-run ("Update"
   // reloads the page, which would destroy an active run). Parked toasts are
   // released by flushUpdatePrompt() on the menu/game-over transitions.
   setupUpdatePrompt(() => screen !== 'playing')
@@ -167,7 +173,7 @@ async function boot(): Promise<void> {
     const a = arenaById(selArenaId)
     const cOpen = isUnlocked(c.id, c.unlock)
     const aOpen = isUnlocked(a.id, a.unlock)
-    // Two SHORT lines (pilot, then arena) — a single run-on line wraps
+    // Two SHORT lines (pilot, then arena): a single run-on line wraps
     // unpredictably on phones and is hard to scan.
     const cHint = cOpen ? `${c.name}: ${c.passiveDesc}` : `🔒 ${c.name}: ${c.unlock.earnDesc}`
     const aHint = aOpen ? `${a.name}: vs ${a.broodName}` : `🔒 ${a.name}: ${a.unlock.earnDesc}`
@@ -251,7 +257,7 @@ async function boot(): Promise<void> {
     buzz(150)
     input.rumble(320, 0.9)
     // Submit to the global leaderboard (no-op if unconfigured). The token pins
-    // the async response to THIS run — a slow response from run N must never
+    // the async response to THIS run: a slow response from run N must never
     // stamp its rank (or overwrite the rank) on run N+1's death screen.
     const token = ++submitToken
     void submitScore(result).then((r) => {
@@ -271,7 +277,7 @@ async function boot(): Promise<void> {
     refreshLoadoutUI() // re-read the selected world's best (a run may have set one)
     mainMenu.refresh(todayStr())
     mainMenu.show()
-    // Reset the whole presentation to the hive home base — the menu idles a live
+    // Reset the whole presentation to the hive home base. The menu idles a live
     // arena behind it (see the player.spawn at world center), so music, floor
     // theme, and ichor tints must AGREE, not show the last world with hive music.
     const home = arenaById(DEFAULT_ARENA_ID)
@@ -308,24 +314,41 @@ async function boot(): Promise<void> {
     saveSettings(s)
   }
   settingsPanel.onClose = () => settingsPanel.hide()
-  modal.onPick = (perkId) => {
+  /** The only way a draft opens: its cards are rolled once here and stay
+   *  cached on the world until the pick. An empty roll clears the pending
+   *  levels instead of freezing the run. */
+  function openDraft(): void {
+    if (world.rollDraft() === 0) {
+      world.pendingLevelUps = 0
+      world.paused = false
+      modal.close()
+      return
+    }
+    world.paused = true
+    modal.open(world.draftCards)
+    buzz(30)
+    input.rumble(90, 0.4)
+    levelFlash = 1
+  }
+  function pickPerk(perkId: string): void {
     world.choosePerk(perkId)
     world.pendingLevelUps--
     buzz(20)
-    if (world.pendingLevelUps > 0) modal.open(world.draftPerks())
+    if (world.pendingLevelUps > 0) openDraft()
     else {
       modal.close()
       world.paused = false
     }
   }
+  modal.onPick = pickPerk
 
   // --- layout (screen-dependent only; the arena/ichor are fixed-size) ---
   function layout(): void {
     const w = app.screen.width
     const h = app.screen.height
     const insets = getInsets()
-    world.viewW = w
-    world.viewH = h
+    cam.w = w
+    cam.h = h
     hud.layout(w, h, insets)
     debug?.layout(insets)
     touchHint.layout(w, h, insets)
@@ -347,7 +370,7 @@ async function boot(): Promise<void> {
   }
   layout()
   toMenu()
-  // Bind to the renderer's own resize event (authoritative — fires exactly when
+  // Bind to the renderer's own resize event (authoritative: it fires exactly when
   // `resizeTo: window` updates app.screen) plus window events as a backstop.
   app.renderer.on('resize', layout)
   window.addEventListener('resize', layout)
@@ -356,7 +379,7 @@ async function boot(): Promise<void> {
   // Native shell glue (no-ops on web).
   void initNative()
   registerBackButton(() => {
-    // Dismiss the topmost overlay first — back must never exit the app while
+    // Dismiss the topmost overlay first: back must never exit the app while
     // something closable is open (Android store-review expectation).
     if (dismissNamePrompt()) return true
     if (settingsPanel.isOpen()) {
@@ -373,7 +396,7 @@ async function boot(): Promise<void> {
 
   window.addEventListener('keydown', (e) => {
     // Typing in a real text field (the leaderboard name prompt) must never be
-    // read as game input — 'r' would restart, Enter would start a run.
+    // read as game input: 'r' would restart, Enter would start a run.
     const tgt = e.target as HTMLElement | null
     if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)) return
     if (modal.isOpen()) {
@@ -396,36 +419,26 @@ async function boot(): Promise<void> {
   })
 
   // Follow camera: center on (px,py), clamped so we never show past the world
-  // wall. Writes world.camX/camY (world-space top-left of the visible window).
+  // wall. Writes cam.x/cam.y (world-space top-left of the visible window).
   function applyCamera(px: number, py: number): void {
     const b = world.arena.bounds
-    const w = world.viewW
-    const h = world.viewH
-    world.camX = b.w <= w ? b.x - (w - b.w) / 2 : clamp(px - w / 2, b.x, b.x + b.w - w)
-    world.camY = b.h <= h ? b.y - (h - b.h) / 2 : clamp(py - h / 2, b.y, b.y + b.h - h)
+    const w = cam.w
+    const h = cam.h
+    cam.x = b.w <= w ? b.x - (w - b.w) / 2 : clamp(px - w / 2, b.x, b.x + b.w - w)
+    cam.y = b.h <= h ? b.y - (h - b.h) / 2 : clamp(py - h / 2, b.y, b.y + b.h - h)
   }
 
-  // One fixed simulation step (extracted so dev tooling can drive it).
+  // One fixed simulation step (extracted so dev tooling can drive it). After a
+  // death the sim holds still; the render loop ends the run once the death
+  // hit-stop has played out.
   function stepSim(dt: number): void {
-    if (screen !== 'playing' || world.paused) return
-    // Death outranks a level-up earned on the same tick — otherwise the perk
-    // draft opens over a corpse and the pick is applied posthumously.
-    if (world.pendingLevelUps > 0 && !world.pendingGameOver) {
-      world.paused = true
-      return
-    }
-    const j = world.juice
-    if (j.hitstop > 0) {
-      j.hitstop -= dt
-      if (j.hitstop <= 0 && world.pendingGameOver) endRun()
-      return
-    }
+    if (screen !== 'playing' || world.paused || world.pendingGameOver) return
 
     world.time += dt
     // Aim is cursor-relative to the player's SCREEN position, using the camera
     // from the last rendered frame (exactly what the player saw and aimed at).
     // The camera itself is recomputed each render from the interpolated position.
-    input.update(player.x - world.camX, player.y - world.camY)
+    input.update(player.x - cam.x, player.y - cam.y)
     spawnSystem(world, dt)
     buildEnemyHash(world)
     aiSystem(world, dt)
@@ -448,10 +461,27 @@ async function boot(): Promise<void> {
     world.floaters.sweep()
     world.pickups.sweep()
     world.acid.sweep()
+
+    // Hand-off: a level earned this tick opens the draft (death outranks it, so
+    // a pick is never applied posthumously).
+    if (world.pendingLevelUps > 0 && !world.pendingGameOver) openDraft()
+  }
+
+  /** Impact feedback for elite kills, which lands only when the kill is on
+   *  screen (judged against the last rendered camera window). */
+  function drainEliteKills(): void {
+    const xy = world.eliteKillXY
+    for (let i = 0; i < world.eliteKillN; i++) {
+      const x = xy[i * 2]!
+      const y = xy[i * 2 + 1]!
+      const onScreen = x > cam.x - 90 && x < cam.x + cam.w + 90 && y > cam.y - 90 && y < cam.y + cam.h + 90
+      world.juice.addTrauma(onScreen ? 0.2 : 0.05)
+      if (onScreen) world.juice.addHitstop(0.05)
+    }
+    world.eliteKillN = 0
   }
 
   let warpAmt = 0
-  let levelFlash = 0
   let prevHurt = 0
   // Ambient render clock: advanced by the CLAMPED render delta (never lurches
   // after a backgrounded tab), decoupled from the sim accumulator so backdrop
@@ -462,9 +492,24 @@ async function boot(): Promise<void> {
     MAX_FRAME_TIME,
     stepSim,
     (alpha) => {
-      const playing = screen === 'playing'
       const fd = loop.frameMs / 1000
       renderClock += fd
+
+      // Hit-stop runs on the render clock: it pauses how fast real time feeds
+      // the sim, never the sim step itself.
+      drainEliteKills()
+      const j = world.juice
+      j.hitstop = Math.max(0, j.hitstop - fd)
+      loop.timeScale = j.hitstop > 0 ? 0 : 1
+      if (screen === 'playing' && world.pendingGameOver && j.hitstop <= 0) endRun()
+      const playing = screen === 'playing'
+
+      if (playing && showGemHint && world.firstGemAt >= 0) {
+        showGemHint = false
+        announce(world, '✦ collect for XP', world.firstGemX, world.firstGemY - 18, COLORS.gem)
+        saveJSON('seenGemHint', true)
+      }
+
       renderEntities(world, alpha)
       player.render(alpha)
       ichor.flush()
@@ -477,19 +522,6 @@ async function boot(): Promise<void> {
       hud.view.visible = playing
       if (playing) hud.update(world, fd)
 
-      // Level-up modal lifecycle.
-      if (playing && world.paused && world.pendingLevelUps > 0 && !world.pendingGameOver && !modal.isOpen()) {
-        const draft = world.draftPerks()
-        if (draft.length === 0) {
-          world.pendingLevelUps = 0
-          world.paused = false
-        } else {
-          modal.open(draft)
-          buzz(30)
-          input.rumble(90, 0.4)
-          levelFlash = 1
-        }
-      }
       if ((!world.paused || !playing) && modal.isOpen()) modal.close()
 
       // Touch onboarding: show the dual-stick guide on touch until both sticks
@@ -530,13 +562,13 @@ async function boot(): Promise<void> {
       world.juice.updateShake(fd)
       applyCamera(player.view.x, player.view.y)
       layers.world.position.set(
-        -world.camX + world.juice.offsetX * shakeMul,
-        -world.camY + world.juice.offsetY * shakeMul,
+        -cam.x + world.juice.offsetX * shakeMul,
+        -cam.y + world.juice.offsetY * shakeMul,
       )
 
       // Ambient backdrop (motes + atmosphere). AFTER the camera write above, so
       // camera-bounded mote recycling uses this frame's window (no edge popping).
-      backdrop.update(renderClock, fd, world.camX, world.camY, world.viewW, world.viewH)
+      backdrop.update(renderClock, fd, cam.x, cam.y, cam.w, cam.h)
 
       // Reality-warp distortion: scale/rotate around the player, inside the
       // bloomed scene (so the filter never sits on a transformed container).
@@ -581,9 +613,10 @@ async function boot(): Promise<void> {
     },
   )
 
-  // Warm the GPU paths Pixi otherwise builds on FIRST use mid-combat — the
+  // Warm the GPU paths Pixi otherwise builds on FIRST use mid-combat: the
   // additive-blend batch pipeline (first spark/muzzle flash) and the Text
-  // rasterizer (first damage number) — so they never land as an in-run hitch.
+  // rasterizer (first damage number). Warming them here keeps them from
+  // landing as an in-run hitch.
   // Sprite textures themselves are already GPU-resident (baked at boot).
   {
     const warm = new Container()
@@ -624,6 +657,10 @@ async function boot(): Promise<void> {
       },
       startRun: (mode: RunMode) => startRun(mode),
       endRun: () => endRun(),
+      pickPerk: (id: string) => pickPerk(id),
+      get settings() {
+        return settings
+      },
       setLoadout: (charId: string, arenaId: string) => {
         grant(charId)
         grant(arenaId)
@@ -637,7 +674,8 @@ async function boot(): Promise<void> {
       flood: (n: number) => debugFloodSwarmers(world, n),
       spawn: (id: string, n = 1) => {
         const b = world.arena.bounds
-        for (let i = 0; i < n; i++) spawnEnemy(world, id, b.x + world.rng.float() * b.w, b.y + world.rng.float() * b.h)
+        const rng = world.rngs.spawn
+        for (let i = 0; i < n; i++) spawnEnemy(world, id, b.x + rng.float() * b.w, b.y + rng.float() * b.h)
       },
       addXp: (n: number) => world.addXp(n),
       give: (id: string) => world.equipWeapon(id),

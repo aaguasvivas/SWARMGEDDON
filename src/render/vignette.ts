@@ -1,7 +1,7 @@
 import { Sprite, Texture } from 'pixi.js'
 
 /**
- * Screen-edge vignette — a single stretched radial-ramp quad above the game
+ * Screen-edge vignette: a single stretched radial-ramp quad above the game
  * world but below the HUD. Darkens the corners to focus the eye and add mood at
  * constant cost. The ramp is baked once as pure WHITE (transparent center ->
  * opaque edge); each world tints it (`view.tint`) and sets its depth

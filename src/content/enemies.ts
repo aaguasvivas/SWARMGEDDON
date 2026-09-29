@@ -1,7 +1,7 @@
 import { COLORS } from '../config.ts'
 
 /**
- * Enemy registry — pure data. "Type" = sprite key + stats + a behavior tag the
+ * Enemy registry: pure data. "Type" = sprite key + stats + a behavior tag the
  * AI switches on + behavior-specific param blocks + an animation/ichor
  * signature. Variants reuse a base sprite with a different tint/scale; only the
  * genuinely new silhouettes get their own sprite builder.
@@ -43,7 +43,7 @@ export interface EnemyDef {
   /** Charger: telegraphed line-dash (heading locked at windup start, zero RNG). */
   charge?: { triggerRange: number; windup: number; dashSpeed: number; dashTime: number; recover: number }
   /** Gravity well: drags the player toward this enemy (total pull is clamped
-   *  globally — see aiSystem — so it can never overpower the move stick). */
+   *  globally (see aiSystem), so it can never overpower the move stick). */
   wellPull?: { radius: number; strength: number }
   /** Queen brood spawning + enrage. */
   brood?: { ids: readonly string[]; count: number; cooldown: number }
@@ -70,19 +70,19 @@ export const ENEMIES: Record<string, EnemyDef> = {
   queen: { id: 'queen', sprite: 'queen', hp: 1600, speed: 34, radius: 46, damage: 60, xp: 200, tint: 0xff3a8a, scale: 2.6, behavior: 'queen', gibColor: 0xff6aa8, gibCount: 30, boss: true, brood: { ids: ['swarmer', 'splitter', 'flyer'], count: 4, cooldown: 4 }, enrageAt: 0.5, hpRamp: 1 / 2 },
 
   // --- Three Worlds roster (docs/WORLDS-SPEC.md) -----------------------------
-  // HIVE signature: splitter-line capstone — one kill cascades 2 splitters -> 6 swarmers.
+  // HIVE signature: splitter-line capstone: one kill cascades 2 splitters -> 6 swarmers.
   broodmother: { id: 'broodmother', sprite: 'broodmother', hp: 44, speed: 46, radius: 22, damage: 26, xp: 8, tint: 0xff8ad0, scale: 1.7, behavior: 'splitter', gibColor: 0xff9ae0, gibCount: 11, splitInto: 'splitter', splitCount: 2, hpRamp: 1 / 10 },
-  // DEPTHS signature: shoal-scale speed aura (needs per-def speedMul — honored in ai.ts).
+  // DEPTHS signature: shoal-scale speed aura (needs per-def speedMul, honored in ai.ts).
   deepCaller: { id: 'deepCaller', sprite: 'deepCaller', hp: 40, speed: 36, radius: 20, damage: 16, xp: 8, tint: 0xd28fff, scale: 1.4, behavior: 'aura', gibColor: 0xdbaeff, gibCount: 8, aura: { radius: 230, speedMul: 1.55 }, hpRamp: 1 / 10 },
   // DEPTHS verb: slow drifting gravity well that drags the player toward it.
   abyssalMaw: { id: 'abyssalMaw', sprite: 'maw', hp: 36, speed: 30, radius: 20, damage: 20, xp: 7, tint: 0xff6aba, scale: 1.5, behavior: 'chaser', gibColor: 0xff8ac3, gibCount: 8, wellPull: { radius: 260, strength: 120 }, hpRamp: 1 / 12 },
-  // WASTES verb: telegraphed line-dash — heading locks at windup, sidestep beats it.
+  // WASTES verb: telegraphed line-dash: heading locks at windup, sidestep beats it.
   cinderCharger: { id: 'cinderCharger', sprite: 'charger', hp: 18, speed: 78, radius: 16, damage: 26, xp: 4, tint: 0xfffb4a, scale: 1.05, behavior: 'charger', gibColor: 0xfffd66, gibCount: 6, charge: { triggerRange: 300, windup: 0.7, dashSpeed: 460, dashTime: 0.55, recover: 0.65 }, hpRamp: 1 / 16 },
   // WASTES signature: long-range artillery whose slow globs carpet the floor.
   cinderMortarch: { id: 'cinderMortarch', sprite: 'cinderMortarch', hp: 30, speed: 34, radius: 18, damage: 18, xp: 8, tint: 0xfffd66, scale: 1.4, behavior: 'spitter', gibColor: 0xfaff7a, gibCount: 8, preferRange: 380, fireCooldown: 2.8, projectileSpeed: 170, projectileDamage: 20, leavesAcid: true, hpRamp: 1 / 12 },
-  // DEPTHS elite: psychic remix — the teleporter behavior already fires shots.
+  // DEPTHS elite: psychic remix; the teleporter behavior already fires shots.
   abyssalWarden: { id: 'abyssalWarden', sprite: 'psychic', hp: 260, speed: 52, radius: 26, damage: 40, xp: 26, tint: 0xff9ac9, scale: 2.0, behavior: 'teleporter', gibColor: 0xffb2d1, gibCount: 14, preferRange: 320, fireCooldown: 2.0, projectileSpeed: 340, projectileDamage: 26, teleport: { cooldown: 2.8, range: 300 }, elite: true, hpRamp: 1 / 4 },
-  // WASTES elite: burrower remix — intangible submerged; unload in surface windows.
+  // WASTES elite: burrower remix: intangible submerged; unload in surface windows.
   duneLeviathan: { id: 'duneLeviathan', sprite: 'burrower', hp: 320, speed: 96, radius: 28, damage: 64, xp: 30, tint: 0xe8e75a, scale: 2.3, behavior: 'burrower', gibColor: 0xedf06a, gibCount: 16, burrow: { underTime: 2.5, surfaceTime: 2.5, underSpeedMul: 2.2 }, elite: true, hpRamp: 1 / 4 },
   // DEPTHS boss: the reality-warp runs for the whole fight.
   voidMatron: { id: 'voidMatron', sprite: 'queen', hp: 1500, speed: 40, radius: 44, damage: 55, xp: 200, tint: 0xff6b95, scale: 2.5, behavior: 'queen', gibColor: 0xff9ab9, gibCount: 28, boss: true, warps: true, brood: { ids: ['wraith', 'psychic', 'biter'], count: 4, cooldown: 3.8 }, enrageAt: 0.6, hpRamp: 1 / 2 },

@@ -54,12 +54,15 @@ function fire(world: World, ax: number, ay: number): void {
   const life = w.projectileLife * m.projectileLifeMul
   const scale = w.projectileRadius / 4
 
-  // Explosion: from the weapon, or granted by the Explosive Rounds perk.
+  // Explosion: from the weapon, or granted by the Explosive Rounds perk. Both
+  // scale with the damage perks.
   const explodeRadius = w.explodeRadius ?? (m.explosiveRounds > 0 ? 60 : 0)
-  const explodeDamage = w.explodeDamage ?? (m.explosiveRounds > 0 ? damage * 0.5 * m.explosiveRounds : 0)
+  const explodeDamage =
+    w.explodeDamage !== undefined ? w.explodeDamage * m.damageMul : m.explosiveRounds > 0 ? damage * 0.5 * m.explosiveRounds : 0
 
+  const rng = world.rngs.combat
   for (let i = 0; i < count; i++) {
-    const ang = baseAng + world.rng.range(-spread, spread)
+    const ang = baseAng + rng.range(-spread, spread)
     const p = world.projectiles.acquire()
     p.x = p.prevX = mx
     p.y = p.prevY = my
@@ -76,6 +79,7 @@ function fire(world: World, ax: number, ay: number): void {
     p.explodeDamage = explodeDamage
     p.chain = w.chain ?? 0
     p.chainRange = w.chainRange ?? 0
+    p.hitN = 0
     const s = p.sprite
     s.visible = true
     s.alpha = 1

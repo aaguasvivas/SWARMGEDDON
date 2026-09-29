@@ -42,12 +42,15 @@ export function collisionSystem(world: World, dt: number): void {
       if (!e.alive || e.submerged) continue
       const rr = p.radius + e.radius
       if (distSq(p.x, p.y, e.x, e.y) < rr * rr) {
-        applyHit(world, e, p)
+        if (hasHit(p, e.uid)) continue
+        p.hitUids[p.hitN & 7] = e.uid
+        p.hitN++
+        const crit = applyHit(world, e, p)
         spawnImpact(world, p.x, p.y)
         if (p.pierce > 0) {
           p.pierce--
         } else {
-          if (p.explodeRadius > 0) explode(world, p.x, p.y, p.explodeRadius, p.explodeDamage)
+          if (p.explodeRadius > 0) explode(world, p.x, p.y, p.explodeRadius, crit ? p.explodeDamage * m.critMul : p.explodeDamage)
           p.alive = false
           break
         }
@@ -60,14 +63,14 @@ export function collisionSystem(world: World, dt: number): void {
   for (let i = 0; i < enemies.length; i++) {
     const e = enemies[i]!
     // Skip enemies already killed by the projectile pass above (the pool isn't
-    // swept until end of tick). Matters most for the charger's FLAT ram — you
+    // swept until end of tick). Matters most for the charger's FLAT ram: you
     // shouldn't eat a 26-burst from a charger you killed on the same tick.
     if (!e.alive || e.submerged) continue
     const rr = e.radius + pl.radius
     if (distSq(e.x, e.y, pl.x, pl.y) < rr * rr) {
       // Charger windup/dash is NOT a chip: the telegraph (phase 1) is safe to
       // stand near, and the dash (phase 2) lands ONE solid ram if its locked
-      // line catches you — the payoff for the tell (a fast dt-scaled pass would
+      // line catches you. That is the payoff for the tell (a fast dt-scaled pass would
       // otherwise be nearly free). Stalk/recover use normal contact.
       if (e.def.behavior === 'charger' && (e.phase === 1 || e.phase === 2)) {
         if (e.phase === 2 && !e.dashHit) {
@@ -93,7 +96,7 @@ export function collisionSystem(world: World, dt: number): void {
     if (!p.alive) continue
     const rr = p.radius + pl.radius
     if (distSq(p.x, p.y, pl.x, pl.y) < rr * rr) {
-      if (m.dodge > 0 && world.rng.float() < m.dodge) {
+      if (m.dodge > 0 && world.rngs.combat.float() < m.dodge) {
         p.alive = false
         continue
       }
@@ -108,10 +111,25 @@ export function collisionSystem(world: World, dt: number): void {
   handleDeath(world)
 }
 
-function applyHit(world: World, e: Enemy, p: Projectile): void {
+/** Whether `p` already struck the enemy with this uid (last 8 hits). */
+function hasHit(p: Projectile, uid: number): boolean {
+  const n = p.hitN < 8 ? p.hitN : 8
+  const h = p.hitUids
+  for (let i = 0; i < n; i++) if (h[i] === uid) return true
+  return false
+}
+
+/** Giant Slayer's multiplier applies to every damage source on elites and bosses. */
+function vsTarget(world: World, e: Enemy, dmg: number): number {
+  return e.def.elite || e.def.boss ? dmg * world.mods.eliteDamageMul : dmg
+}
+
+/** Resolve one bullet hit. Returns whether it crit, so the bullet's AoE and
+ *  chain inherit the same roll. */
+function applyHit(world: World, e: Enemy, p: Projectile): boolean {
   const m = world.mods
   let dmg = p.damage
-  const crit = m.critChance > 0 && world.rng.float() < m.critChance
+  const crit = m.critChance > 0 && world.rngs.combat.float() < m.critChance
   if (crit) dmg *= m.critMul
 
   // Beetle-style frontal armor.
@@ -121,8 +139,7 @@ function applyHit(world: World, e: Enemy, p: Projectile): void {
     if (dot < -0.25) dmg *= 1 - e.def.frontArmor
   }
 
-  // Giant Slayer: bonus damage vs elites & bosses.
-  if (m.eliteDamageMul !== 1 && (e.def.elite || e.def.boss)) dmg *= m.eliteDamageMul
+  dmg = vsTarget(world, e, dmg)
 
   // Knockback nudge (heavier enemies shrug it off).
   const sp = Math.hypot(p.vx, p.vy) || 1
@@ -146,7 +163,8 @@ function applyHit(world: World, e: Enemy, p: Projectile): void {
     dealDamage(world, e, e.hp)
   }
 
-  if (p.chain > 0) chainLightning(world, e, p, dmg * 0.6)
+  if (p.chain > 0) chainLightning(world, e, p, (crit ? p.damage * m.critMul : p.damage) * 0.6)
+  return crit
 }
 
 /** Apply raw damage and resolve death. Safe to call on the same enemy twice. */
@@ -158,31 +176,43 @@ function dealDamage(world: World, e: Enemy, dmg: number): void {
 }
 
 /** Chain lightning hops to nearby enemies (separate scratch buffer so it can run
- *  inside the projectile loop without clobbering its query). */
+ *  inside the projectile loop without clobbering its query). Each enemy is
+ *  struck at most once per chain. */
 function chainLightning(world: World, from: Enemy, p: Projectile, dmg: number): void {
   const buf2 = world.queryBuf2
+  const seen = world.chainSeen
+  seen[0] = from.uid
+  let seenN = 1
+  const hops = p.chain < seen.length - 1 ? p.chain : seen.length - 1
+  const range2 = p.chainRange * p.chainRange
   let cx = from.x
   let cy = from.y
-  let prev: Enemy = from
-  for (let jump = 0; jump < p.chain; jump++) {
+  for (let jump = 0; jump < hops; jump++) {
     const n = world.hash.query(cx, cy, p.chainRange, buf2)
     let best: Enemy | null = null
-    let bestD = Infinity
+    let bestD = range2
     for (let k = 0; k < n; k++) {
       const o = buf2[k]!
-      if (!o.alive || o.submerged || o === from || o === prev) continue
+      if (!o.alive || o.submerged) continue
       const dd = distSq(cx, cy, o.x, o.y)
-      if (dd < bestD) {
-        bestD = dd
-        best = o
+      if (dd >= bestD) continue
+      let dup = false
+      for (let q = 0; q < seenN; q++) {
+        if (seen[q] === o.uid) {
+          dup = true
+          break
+        }
       }
+      if (dup) continue
+      bestD = dd
+      best = o
     }
     if (!best) break
+    seen[seenN++] = best.uid
     spawnChainArc(world, cx, cy, best.x, best.y)
     cx = best.x
     cy = best.y
-    prev = best
-    dealDamage(world, best, dmg)
+    dealDamage(world, best, vsTarget(world, best, dmg))
   }
 }
 
@@ -190,7 +220,7 @@ function chainLightning(world: World, from: Enemy, p: Projectile, dmg: number): 
 function explode(world: World, x: number, y: number, radius: number, dmg: number): void {
   spawnExplosion(world, x, y, radius)
   spawnRing(world, x, y, 0xffd27a, radius / 22)
-  world.ichor.queueStamp(x, y, world.rng)
+  world.ichor.queueStamp(x, y, world.rngs.fx)
   world.juice.addTrauma(0.18)
   world.audio.play('heavy')
   const buf2 = world.queryBuf2
@@ -198,7 +228,7 @@ function explode(world: World, x: number, y: number, radius: number, dmg: number
   for (let k = 0; k < n; k++) {
     const o = buf2[k]!
     if (!o.alive || o.submerged) continue
-    if (distSq(x, y, o.x, o.y) < radius * radius) dealDamage(world, o, dmg)
+    if (distSq(x, y, o.x, o.y) < radius * radius) dealDamage(world, o, vsTarget(world, o, dmg))
   }
 }
 
@@ -208,31 +238,24 @@ function killEnemy(world: World, e: Enemy): void {
   world.kills++
   const def = e.def
 
-  world.ichor.queueStamp(e.x, e.y, world.rng)
+  world.ichor.queueStamp(e.x, e.y, world.rngs.fx)
   spawnGibs(world, e.x, e.y, def.gibCount, e.gibTint)
   world.audio.play('kill')
 
-  // Big-kill juice (hit-stop freeze + heavy shake) only lands when the death is
-  // actually VISIBLE. An elite dying off-screen (ricochets, explosions, the wide
-  // spawn ring) used to freeze the sim for 3 frames with no visible cause —
-  // which players feel as an unexplained movement stutter, not as impact.
-  // camX/viewW are render state, but they only gate cosmetic time/shake here —
-  // never sim content or the sim RNG stream.
-  const onScreen =
-    e.x > world.camX - 90 && e.x < world.camX + world.viewW + 90 &&
-    e.y > world.camY - 90 && e.y < world.camY + world.viewH + 90
-  world.juice.addTrauma(def.boss ? 0.6 : def.elite && onScreen ? 0.2 : 0.05)
-
   // Death-pop shockwave ring (+ a punchy hit-stop on the big ones). Skip the
-  // xp-1 chaff so a swarm wipe stays clean and cheap.
+  // xp-1 chaff so a swarm wipe stays clean and cheap. Elite impact (shake and
+  // hit-stop) depends on whether the kill is on screen, which only
+  // presentation knows, so the sim just reports where it happened.
   if (def.boss) {
+    world.juice.addTrauma(0.6)
     spawnRing(world, e.x, e.y, e.gibTint, 5.5)
     world.juice.addHitstop(0.12)
   } else if (def.elite) {
     spawnRing(world, e.x, e.y, e.gibTint, 3)
-    if (onScreen) world.juice.addHitstop(0.05)
-  } else if (def.xp >= 2) {
-    spawnRing(world, e.x, e.y, e.gibTint, 1.4)
+    world.noteEliteKill(e.x, e.y)
+  } else {
+    world.juice.addTrauma(0.05)
+    if (def.xp >= 2) spawnRing(world, e.x, e.y, e.gibTint, 1.4)
   }
 
   if (world.mods.lifestealPerKill > 0) {
@@ -242,14 +265,15 @@ function killEnemy(world: World, e: Enemy): void {
   dropGem(world, e.x, e.y, def.xp)
 
   // Perk-free sustain: kills can drop a medkit, biased toward HARD MOMENTS. The
-  // lower your HP, the likelier a kill coughs one up — so a horde that's chipping
+  // lower your HP, the likelier a kill coughs one up, so a horde that's chipping
   // you down also feeds you the medkits to survive it, while a healthy player
   // gets almost none (the difficulty stays intact). Roll the RNG always (keeps
   // the daily stream deterministic), then gate on a danger-scaled threshold.
-  const roll = world.rng.float()
+  const loot = world.rngs.loot
+  const roll = loot.float()
   if (def.boss) {
     for (let i = 0; i < 5; i++) {
-      const a = world.rng.angle()
+      const a = loot.angle()
       dropHealth(world, e.x + Math.cos(a) * 26, e.y + Math.sin(a) * 26, HEALTH_HEAL_ELITE)
     }
   } else if (def.elite) {
@@ -265,8 +289,9 @@ function killEnemy(world: World, e: Enemy): void {
 
   if (def.behavior === 'splitter' && def.splitInto) {
     const count = def.splitCount ?? 2
+    const rng = world.rngs.spawn
     for (let i = 0; i < count; i++) {
-      const a = world.rng.angle()
+      const a = rng.angle()
       spawnEnemy(world, def.splitInto, e.x + Math.cos(a) * 14, e.y + Math.sin(a) * 14)
     }
   }
@@ -276,14 +301,14 @@ function killEnemy(world: World, e: Enemy): void {
     world.boss = null
     explode(world, e.x, e.y, 140, 0)
     world.juice.addTrauma(1)
-    spawnWeaponDrop(world, e.x, e.y, world.rng.pick(PICKUP_WEAPON_IDS))
+    spawnWeaponDrop(world, e.x, e.y, loot.pick(PICKUP_WEAPON_IDS))
     for (let i = 0; i < 6; i++) {
-      const a = world.rng.angle()
+      const a = loot.angle()
       dropGem(world, e.x + Math.cos(a) * 24, e.y + Math.sin(a) * 24, 20)
     }
-    announce(world, 'QUEEN SLAIN', e.x, e.y - 36, 0xffe066)
-  } else if (def.elite && world.rng.bool(0.5)) {
-    spawnWeaponDrop(world, e.x, e.y, world.rng.pick(PICKUP_WEAPON_IDS))
+    announce(world, world.arenaTheme.slainText, e.x, e.y - 36, 0xffe066)
+  } else if (def.elite && loot.bool(0.5)) {
+    spawnWeaponDrop(world, e.x, e.y, loot.pick(PICKUP_WEAPON_IDS))
   }
 }
 

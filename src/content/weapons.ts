@@ -2,7 +2,7 @@ import { COLORS } from '../config.ts'
 import type { SfxName } from '../audio/audio.ts'
 
 /**
- * Weapon registry — pure data. The starting Sidearm has infinite ammo; pickups
+ * Weapon registry: pure data. The starting Sidearm has infinite ammo; pickups
  * grant the others with finite mags that revert to the Sidearm when empty. Two
  * special mechanics ride on optional fields: `explode*` (rockets) and `chain*`
  * (lightning). Everything else is feel expressed through the shared params.
@@ -113,5 +113,5 @@ export const WEAPONS: Record<string, WeaponDef> = {
 }
 
 /** Weapon ids that can drop as field pickups. Infinite-ammo weapons are the
- *  pilots' base weapons — they never drop (finite mags revert to the pilot's). */
+ *  pilots' base weapons; they never drop (finite mags revert to the pilot's). */
 export const PICKUP_WEAPON_IDS = Object.keys(WEAPONS).filter((id) => WEAPONS[id]!.ammo !== -1)

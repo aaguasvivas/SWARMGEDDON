@@ -2,7 +2,7 @@ import type { Sprite } from 'pixi.js'
 import type { Poolable } from '../core/pool.ts'
 
 /**
- * Lingering acid pool left by spitters — a ground hazard that damages the
+ * Lingering acid pool left by spitters: a ground hazard that damages the
  * player while standing in it. Visually it lives on top of the ichor terrain
  * and fades over its lifetime.
  */

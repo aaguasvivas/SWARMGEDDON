@@ -31,6 +31,10 @@ export class Projectile implements Poolable {
   /** Chain lightning: extra targets + jump range. */
   chain = 0
   chainRange = 0
+  /** Uids of enemies this bullet already hit (ring of the last 8), so a
+   *  piercing bullet damages each enemy once. */
+  readonly hitUids = new Int32Array(8)
+  hitN = 0
 
   constructor(readonly sprite: Sprite) {}
 }

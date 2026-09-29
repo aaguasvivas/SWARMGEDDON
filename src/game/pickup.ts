@@ -3,6 +3,11 @@ import type { Poolable } from '../core/pool.ts'
 
 export type PickupKind = 'xp' | 'weapon' | 'health'
 
+/** Pool reservation slot per kind, in PICKUP_RESERVE order (xp, bank, health,
+ *  weapon, core, bonus). Bank, core and bonus slots belong to later kinds. */
+export const PICKUP_SLOT: Readonly<Record<PickupKind, number>> = { xp: 0, health: 2, weapon: 3 }
+export const PICKUP_SLOTS = 6
+
 /**
  * Field pickup: an XP crystal (auto-magnetized, grants XP) or a weapon pod
  * (grants a weapon with ammo). One pool serves both; the sprite/tint are set

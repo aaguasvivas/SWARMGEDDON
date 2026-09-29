@@ -1,9 +1,9 @@
-# SWARMGEDDON — Per-World Backdrops (build spec)
+# SWARMGEDDON: Per-World Backdrops (build spec)
 
 Status: approved 2026-07-08. Goal: kill the "same room, recolored" feeling. The
 enemies already differentiate the worlds; the **environment** does not. Every
-arena shares one visual skeleton — the same 80px square grid, a flat floor rect,
-the same border, sparse specks — recolored three ways. This replaces that
+arena shares one visual skeleton (the same 80px square grid, a flat floor rect,
+the same border, sparse specks), recolored three ways. This replaces that
 skeleton with a distinct per-world backdrop so each world reads as a different
 *place* in the first half-second.
 
@@ -31,7 +31,7 @@ accumulator. Daily determinism stays bit-identical; 60fps @ 500+ enemies holds.
 Two owners, no parallel registry:
 
 - **`Arena` owns the world-space STRUCTURE** (replaces the grid). Drawn once per
-  theme swap with `Graphics` (static geometry — Pixi caches it, cheap per frame),
+  theme swap with `Graphics` (static geometry: Pixi caches it, cheap per frame),
   in `layers.floor`, so it scrolls with the camera and warps for free. Selected
   by the existing `decorStyle` tag (`pods`→hive membrane, `trench`→depths
   contours, `plates`→wastes basalt+seams). Deterministic per-world local RNG.
@@ -53,18 +53,18 @@ stage
 │  │  └─ warpHost   warp pivot
 │  │     ├─ floor        arena.view: floor rect + STRUCTURE + border
 │  │     ├─ ichor
-│  │     ├─ backdrop     NEW — world-space ambient motes (above gore, below swarm)
+│  │     ├─ backdrop     NEW: world-space ambient motes (above gore, below swarm)
 │  │     ├─ (player)
 │  │     ├─ entities
 │  │     └─ fx
-│  └─ atmosphere    NEW — screen-space overlay (god-rays / blooms / haze), bloomed
+│  └─ atmosphere    NEW: screen-space overlay (god-rays / blooms / haze), bloomed
 └─ ui               vignette (tinted, unbloomed) · hurt · hud · sticks
 ```
 
-`warpHost.addChild(floor, ichor, backdrop, player?, entities, fx)` — note `player.view`
+`warpHost.addChild(floor, ichor, backdrop, player?, entities, fx)`. Note: `player.view`
 is added to warpHost in main; keep motes below it. `scene.addChild(world, atmosphere)`.
 
-### Data — extend `ArenaTheme` (no separate registry)
+### Data: extend `ArenaTheme` (no separate registry)
 
 Add to each of the 3 themes in `src/content/arenas.ts`:
 
@@ -81,14 +81,14 @@ tuning by hand (counts, colors, alpha, strengths).
 
 ## Per-world looks
 
-- **hive** — honeycomb membrane: dim hex lattice + glowing capillary veins +
+- **hive**: honeycomb membrane: dim hex lattice + glowing capillary veins +
   pod clusters. Motes: spores rising (green, additive). Atmosphere: 2–3 slow
   breathing blooms. Grade: green-teal, sat+, slight bright+. Vignette teal-black.
-- **depths** — abyssal trench: bathymetric contour rings + a rim-lit crevasse,
+- **depths**: abyssal trench: bathymetric contour rings + a rim-lit crevasse,
   NO grid. Motes: marine snow falling (pale/violet, mostly normal blend so it
   doesn't blow out under bloom). Atmosphere: 3–4 god-ray shafts from the top,
   swaying. Grade: cold/violet, bright−. Vignette violet-black, strong.
-- **wastes** — cracked basalt: dark plate shards + a branching delta of glowing
+- **wastes**: cracked basalt: dark plate shards + a branching delta of glowing
   magma seams (halo/body/hot-core stack; core above the 0.42 bloom threshold).
   Motes: embers rising (additive) + ash falling (dark, normal). Atmosphere:
   ember-haze quad along the bottom. Grade: warm, contrast+. Vignette charcoal-red.
@@ -98,7 +98,7 @@ tuning by hand (counts, colors, alpha, strengths).
 1. **No per-swap bake** (supersedes the leak fix): generic textures baked once at
    boot; `setTheme` only tints/repositions. `BackdropSystem.setTheme` still
    early-outs on unchanged id.
-2. **Grade math**: compose via the accumulating helpers only — `reset()` →
+2. **Grade math**: compose via the accumulating helpers only: `reset()` →
    `saturate(0.16+s, true)` → `contrast(0.05+c, true)` → `brightness(1+b, true)`
    → `tint(effTint, true)` where `effTint = lerp(0xffffff, tint, tintStrength)`.
    NEVER assign `.matrix = [...]` (it discards the accumulated saturate/contrast).

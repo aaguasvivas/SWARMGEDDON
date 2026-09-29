@@ -10,7 +10,7 @@
  *      list (O(active), swap-remove, no allocation).
  *
  * `active` is a dense array safe to iterate directly. Don't hold references to
- * pooled objects across a sweep — a recycled object may be reused.
+ * pooled objects across a sweep: a recycled object may be reused.
  */
 export interface Poolable {
   alive: boolean

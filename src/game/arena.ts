@@ -22,7 +22,7 @@ export interface DecorSpeck {
 /**
  * The bounded play-field: a FIXED large world (camera follows the player). The
  * floor, per-world structure, and glowing border are drawn once at boot (and on
- * theme swap) — per-frame floor cost is zero, and the structure scrolling under
+ * theme swap). Per-frame floor cost is zero, and the structure scrolling under
  * the camera sells the sense of a huge field. The player is clamped to these
  * bounds.
  */
@@ -38,7 +38,7 @@ export class Arena {
   private theme: ArenaTheme = ARENAS[0]!
   private built = false
   /** World-space anchor points where the backdrop parks breathing glows (pod
-   *  clusters / magma hotspots). Deterministic — filled by draw() from the same
+   *  clusters / magma hotspots). Deterministic: filled by draw() from the same
    *  constant-seed structure RNG. Empty for worlds whose identity is darkness. */
   readonly glowSpots: { x: number; y: number }[] = []
 
@@ -52,7 +52,7 @@ export class Arena {
     if (this.built) this.draw()
   }
 
-  /** Swap the visual theme (palette only — bounds/logic identical) and redraw. */
+  /** Swap the visual theme (palette only; bounds/logic identical) and redraw. */
   setTheme(theme: ArenaTheme): void {
     if (theme.id === this.theme.id && this.built) return
     this.theme = theme
@@ -81,7 +81,7 @@ export class Arena {
     const srng = new Rng(seedFromString('swarmgeddon:structure:' + t.id))
     switch (t.decorStyle) {
       case 'trench':
-        drawContours(this.structure, t, srng, this.bounds) // no glows — the deep stays dark
+        drawContours(this.structure, t, srng, this.bounds) // no glows: the deep stays dark
         break
       case 'plates':
         drawBasalt(this.structure, t, srng, this.bounds, this.glowSpots)
@@ -91,7 +91,7 @@ export class Arena {
     }
 
     // Deterministic decor specks (seeded), rendered in the theme's silhouette
-    // language — pods / trench rings / cracked plates. Drawn ONCE at build.
+    // language: pods / trench rings / cracked plates. Drawn ONCE at build.
     this.decorG.clear()
     const g = this.decorG
     for (const s of this.decor) {
@@ -142,7 +142,7 @@ function drawMembrane(g: Graphics, t: ArenaTheme, rng: Rng, b: Bounds, glowSpots
   const R = 88
   const hx = 1.5 * R
   const vstep = Math.sqrt(3) * R
-  // Honeycomb lattice — accumulate every cell into ONE path, stroke once.
+  // Honeycomb lattice: accumulate every cell into ONE path, stroke once.
   let colIdx = 0
   for (let cx = x - R; cx < x + w + R; cx += hx, colIdx++) {
     const off = colIdx % 2 ? vstep / 2 : 0
@@ -190,7 +190,7 @@ function drawContours(g: Graphics, t: ArenaTheme, rng: Rng, b: Bounds): void {
   for (let i = 0; i < 28; i++) {
     g.circle(x + rng.float() * w, y + rng.float() * h, rng.range(30, 90)).fill({ color: t.gridLineBright, alpha: 0.06 })
   }
-  // Concentric contour islands (the grid replacement — organic, never square).
+  // Concentric contour islands (the grid replacement: organic, never square).
   for (let i = 0; i < 9; i++) {
     const cx = x + rng.range(0.1, 0.9) * w
     const cy = y + rng.range(0.1, 0.9) * h
@@ -240,7 +240,7 @@ function drawContours(g: Graphics, t: ArenaTheme, rng: Rng, b: Bounds): void {
 function drawBasalt(g: Graphics, t: ArenaTheme, rng: Rng, b: Bounds, glowSpots: { x: number; y: number }[]): void {
   const { x, y, w, h } = b
   // Lifted clearly off the 0x140b0a floor so the shattered crust actually reads
-  // (the original palette's darkest plate was the floor color — invisible).
+  // (the original palette's darkest plate was the floor color, invisible).
   const plate = [0x1c100c, 0x241410, 0x2e1a12]
   // Plate shards (shatters the flat floor; the seams carry the light).
   for (let i = 0; i < 34; i++) {

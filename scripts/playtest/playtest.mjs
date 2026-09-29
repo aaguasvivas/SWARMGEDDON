@@ -1,4 +1,5 @@
 // Simulated playtest driver (modeled on scripts/measure.mjs).
+// Server origin: env SWG_URL (default http://localhost:5176).
 // (see Usage below)
 //   mode: turret (invincible, stationary) | roam (invincible, kite+collect)
 //         crude (normal HP, flee centroid) | smart (normal HP, kite+dodge+collect)
@@ -18,6 +19,7 @@ const configs = process.argv.slice(3).map((s) => {
   return { mode, seed: parseInt(seed), minutes: parseFloat(min), char: char || 'nova', perkPolicy: perkPolicy || 'first' }
 })
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+const ORIGIN = (process.env.SWG_URL || 'http://localhost:5176').replace(/\/+$/, '')
 const W = 390
 const H = 844
 
@@ -34,7 +36,7 @@ async function launch() {
       })
       const page = await browser.newPage()
       page.on('pageerror', (e) => console.error('PAGE ERROR:', e.message))
-      await page.goto(`http://localhost:5176/?seed=777`, { waitUntil: 'networkidle0', timeout: 60000 })
+      await page.goto(`${ORIGIN}/?seed=777`, { waitUntil: 'networkidle0', timeout: 60000 })
       await page.waitForFunction('!!window.__SWARM', { timeout: 30000 })
       return { browser, page }
     } catch (e) {

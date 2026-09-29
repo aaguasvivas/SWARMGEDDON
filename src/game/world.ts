@@ -1,7 +1,7 @@
 import type { Texture } from 'pixi.js'
 import { HASH_CELL, SHAKE_DECAY, SHAKE_MAX_OFFSET } from '../config.ts'
 import { Pool } from '../core/pool.ts'
-import { Rng } from '../core/rng.ts'
+import { RunRngs, SALT, hash32 } from '../core/rng.ts'
 import { hueShiftHex } from '../core/color.ts'
 import { SpatialHash } from '../core/spatialHash.ts'
 import { DEFAULT_WEAPON_ID, WEAPONS, type WeaponDef } from '../content/weapons.ts'
@@ -10,7 +10,6 @@ import { PERKS, baseModifiers, perkById, type Modifiers, type PerkDef } from '..
 import { CHARACTERS, type CharacterDef } from '../content/characters.ts'
 import { ARENAS, type ArenaTheme } from '../content/arenas.ts'
 import type { AudioEngine } from '../audio/audio.ts'
-import { loadJSON } from '../platform/storage.ts'
 import { Juice } from '../effects/juice.ts'
 import type { Layers } from '../render/app.ts'
 import type { IchorLayer } from '../render/ichorLayer.ts'
@@ -20,7 +19,7 @@ import { AcidPool } from './acidPool.ts'
 import { Enemy } from './enemy.ts'
 import { FloatingText } from './floatingText.ts'
 import { Particle } from './particle.ts'
-import { Pickup } from './pickup.ts'
+import { PICKUP_SLOT, PICKUP_SLOTS, Pickup } from './pickup.ts'
 import { Player } from './player.ts'
 import { Projectile } from './projectile.ts'
 
@@ -52,7 +51,7 @@ export class World {
 
   weapon: WeaponDef = WEAPONS[DEFAULT_WEAPON_ID]!
   ammo = -1
-  /** The pilot's infinite base weapon — empty finite mags revert to this. */
+  /** The pilot's infinite base weapon; empty finite mags revert to this. */
   baseWeaponId = DEFAULT_WEAPON_ID
   readonly mods: Modifiers = baseModifiers()
   readonly perkStacks = new Map<string, number>()
@@ -60,7 +59,7 @@ export class World {
   /** Run identity: pilot (feeds the sim) + arena theme (presentation + brood). */
   character: CharacterDef = CHARACTERS[0]!
   arenaTheme: ArenaTheme = ARENAS[0]!
-  /** The arena's wave config, resolved once per run — the sim reads only this. */
+  /** The arena's wave config, resolved once per run. The sim reads only this. */
   waveCfg: WaveConfig = waveConfigFor(ARENAS[0]!.id)
   private readonly tintCache = new Map<number, number>()
 
@@ -85,24 +84,39 @@ export class World {
   boss: Enemy | null = null
   warperActive = false
   /** Accumulated gravity-well drag on the player (units/sec, pre-clamped in
-   *  aiSystem). Applied by player.update — a pure function of positions. */
+   *  aiSystem). Applied by player.update as a pure function of positions. */
   pullX = 0
   pullY = 0
 
   paused = false
   pendingGameOver = false
-  /** Show the one-time "collect for XP" hint on the first gem (until seen once). */
-  showGemHint = false
 
-  /** Visible viewport size (screen, CSS px) — used to spawn just off-screen. */
-  viewW = 1280
-  viewH = 720
-  /** Camera top-left in world space (player-centered, clamped to arena). */
-  camX = 0
-  camY = 0
+  // P1: foundation
+  /** Every sim random draw comes from one of these streams. */
+  readonly rngs = new RunRngs()
+  /** Next Enemy.uid; uids are never reused within a run. */
+  enemyUidSeq = 1
+  /** Uids already struck by the chain being resolved (chain hop uniqueness). */
+  readonly chainSeen = new Int32Array(16)
+  /** Sim time of this run's first XP gem (-1 = none yet) and where it landed.
+   *  Presentation reads it to show the one-time gem hint. */
+  firstGemAt = -1
+  firstGemX = 0
+  firstGemY = 0
+  /** Elite kill positions (x, y pairs) not yet drained by presentation, which
+   *  decides on-screen impact feedback. Capped; overflow is dropped. */
+  readonly eliteKillXY = new Float32Array(16)
+  eliteKillN = 0
+  /** Drafts opened this run; each open reseeds the draft stream from it. */
+  draftIndex = 0
+  /** Cards of the open draft, rolled once per open and reused until the pick. */
+  readonly draftCards: PerkDef[] = []
+  /** Boss fights started this run; each reseeds the boss stream. */
+  bossFights = 0
+  /** Live pickups per PICKUP_SLOT, for the per-kind pool reservation. */
+  readonly pickupN = new Int16Array(PICKUP_SLOTS)
 
   constructor(
-    readonly rng: Rng,
     readonly arena: Arena,
     readonly player: Player,
     readonly ichor: IchorLayer,
@@ -121,8 +135,8 @@ export class World {
     )
     this.projectiles = new Pool<Projectile>(
       () => { const s = texReg.makeSprite('bullet'); layers.entities.addChild(s); return new Projectile(s) },
-      (p) => { p.sprite.visible = false; p.pierce = 0; p.leavesAcid = false; p.bounces = 0; p.explodeRadius = 0; p.chain = 0 },
-      128,
+      (p) => { p.sprite.visible = false; p.pierce = 0; p.leavesAcid = false; p.bounces = 0; p.explodeRadius = 0; p.chain = 0; p.hitN = 0 },
+      512,
     )
     this.enemyProjectiles = new Pool<Projectile>(
       () => { const s = texReg.makeSprite('acidGlob'); layers.entities.addChild(s); return new Projectile(s) },
@@ -141,8 +155,8 @@ export class World {
     )
     this.pickups = new Pool<Pickup>(
       () => { const s = texReg.makeSprite('gem'); layers.fx.addChild(s); return new Pickup(s) },
-      (p) => { p.sprite.visible = false },
-      32,
+      (p) => { p.sprite.visible = false; this.pickupN[PICKUP_SLOT[p.kind]]!-- },
+      256,
     )
     this.acid = new Pool<AcidPool>(
       () => { const s = texReg.makeSprite('acidPool'); layers.ichor.addChild(s); return new AcidPool(s) },
@@ -156,7 +170,7 @@ export class World {
   /** Reseed + reset for a fresh run of `mode` as `character` in `theme`. Leak-free. */
   beginRun(seed: number, mode: RunMode, character?: CharacterDef, theme?: ArenaTheme): void {
     this.clearAll()
-    this.rng.reseed(seed)
+    this.rngs.begin(seed)
     this.seed = seed
     this.mode = mode
     if (character) this.character = character
@@ -193,7 +207,12 @@ export class World {
     this.warperActive = false
     this.paused = false
     this.pendingGameOver = false
-    this.showGemHint = !loadJSON('seenGemHint', false)
+    this.enemyUidSeq = 1
+    this.firstGemAt = -1
+    this.eliteKillN = 0
+    this.draftIndex = 0
+    this.draftCards.length = 0
+    this.bossFights = 0
 
     const b = this.arena.bounds
     this.player.spawn(b.x + b.w / 2, b.y + b.h / 2)
@@ -264,24 +283,40 @@ export class World {
     else this.player.hp = Math.min(this.player.hp, this.player.maxHp)
   }
 
-  draftPerks(): PerkDef[] {
+  /** Roll the next draft into `draftCards` (up to 3) and return the count.
+   *  Called once per draft open; the cards stay fixed until the pick. */
+  rollDraft(): number {
+    this.draftIndex++
+    const rng = this.rngs.draft
+    rng.reseed(hash32(this.seed, SALT.draft, this.draftIndex * 64, 0))
     const avail = PERKS.filter((p) => (this.perkStacks.get(p.id) ?? 0) < p.maxStacks)
     const bag: PerkDef[] = []
     for (const p of avail) {
       const w = p.rarity === 'rare' ? 1 : 3
       for (let i = 0; i < w; i++) bag.push(p)
     }
-    const chosen: PerkDef[] = []
-    const used = new Set<string>()
+    const cards = this.draftCards
+    cards.length = 0
     let guard = 0
-    while (chosen.length < 3 && used.size < avail.length && guard++ < 300) {
-      const p = this.rng.pick(bag)
-      if (!used.has(p.id)) {
-        used.add(p.id)
-        chosen.push(p)
-      }
+    while (cards.length < 3 && cards.length < avail.length && guard++ < 300) {
+      const p = rng.pick(bag)
+      if (!cards.includes(p)) cards.push(p)
     }
-    return chosen
+    return cards.length
+  }
+
+  /** Start a boss fight: the boss stream is reseeded per fight. */
+  beginBossFight(): void {
+    this.rngs.boss.reseed(hash32(this.seed, SALT.boss, this.bossFights))
+    this.bossFights++
+  }
+
+  /** Hand an elite kill position to presentation (bounded; cosmetic only). */
+  noteEliteKill(x: number, y: number): void {
+    if (this.eliteKillN >= 8) return
+    this.eliteKillXY[this.eliteKillN * 2] = x
+    this.eliteKillXY[this.eliteKillN * 2 + 1] = y
+    this.eliteKillN++
   }
 }
 

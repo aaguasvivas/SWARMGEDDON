@@ -10,7 +10,7 @@ import type { World } from '../game/world.ts'
  * Wave director driver. Streams the ARENA's roster from the edges per its own
  * rhythm curves, and layers in the arena's elite and boss on their cadences
  * (one boss at a time). All config comes from world.waveCfg, resolved once per
- * run in beginRun — per-world rosters/rhythm are what make each arena play as
+ * run in beginRun. Per-world rosters/rhythm are what make each arena play as
  * a different world (docs/WORLDS-SPEC.md).
  */
 export function spawnSystem(world: World, dt: number): void {
@@ -29,13 +29,13 @@ export function spawnSystem(world: World, dt: number): void {
     }
     for (let i = 0; i < batch; i++) {
       if (world.enemies.size >= MAX_ENEMIES) break
-      spawnFromEdge(world, pickEnemy(cfg, world.rng, t))
+      spawnFromEdge(world, pickEnemy(cfg, world.rngs.spawn, t))
     }
   }
 
   // Elites: one per cadence, stepping up to a small pack deep into a run as a
   // late-game pressure ramp. At the enemy cap (the NORMAL late-game state),
-  // don't burn the cadence — retry shortly, once kills open room. Capacity is
+  // don't burn the cadence: retry shortly, once kills open room. Capacity is
   // checked BEFORE any RNG draw so the failed path stays deterministic.
   if (t >= cfg.elite.first) {
     world.eliteTimer -= dt
@@ -51,7 +51,7 @@ export function spawnSystem(world: World, dt: number): void {
     }
   }
 
-  // Boss — same retry-at-cap rule: the boss must never be silently skipped
+  // Boss: same retry-at-cap rule. The boss must never be silently skipped
   // for a whole interval just because the pool was momentarily full.
   world.bossTimer -= dt
   if (world.bossTimer <= 0 && !world.bossAlive) {
@@ -67,11 +67,11 @@ export function spawnSystem(world: World, dt: number): void {
 /** Seconds before re-attempting an elite/boss spawn that hit the enemy cap. */
 const RETRY_AT_CAP = 2
 
-// FIXED spawn extents (NOT the actual viewport) — constant so the Daily
+// FIXED spawn extents (NOT the actual viewport), constant so the Daily
 // Challenge is truly device-independent (spawn positions never depend on screen
 // size). Sized to clear the visible half-extents of a maximized 1440p window
 // (half 1280x720); on rarer, even larger viewports (4K/ultrawide, where the
-// whole 2800x1900 arena fits on screen anyway) spawns can land in view — the
+// whole 2800x1900 arena fits on screen anyway) spawns can land in view; the
 // cosmetic emerge fade in entityRenderer makes those read as intentional.
 const SPAWN_HALF_W = 1300
 const SPAWN_HALF_H = 760
@@ -83,7 +83,7 @@ const SPAWN_HALF_H = 760
  * world wall.
  */
 function viewportSpawnPoint(world: World): { x: number; y: number } {
-  const rng = world.rng
+  const rng = world.rngs.spawn
   const b = world.arena.bounds
   const px = world.player.x
   const py = world.player.y
@@ -132,6 +132,7 @@ function spawnBoss(world: World): void {
   const p = viewportSpawnPoint(world)
   const boss = spawnEnemy(world, cfg.boss.id, p.x, p.y)
   if (!boss) return
+  world.beginBossFight()
   world.bossAlive = true
   world.boss = boss
   world.audio.play('boss')
@@ -147,9 +148,10 @@ function spawnBoss(world: World): void {
 export function spawnEnemy(world: World, defId: string, x: number, y: number): Enemy | null {
   if (world.enemies.size >= MAX_ENEMIES) return null
   const def = ENEMIES[defId]!
-  const rng = world.rng
+  const rng = world.rngs.spawn
   const e = world.enemies.acquire()
 
+  e.uid = world.enemyUidSeq++
   e.def = def
   e.x = e.prevX = x
   e.y = e.prevY = y
@@ -167,14 +169,14 @@ export function spawnEnemy(world: World, defId: string, x: number, y: number): E
   e.enraged = false
   e.submerged = false
   e.stateTimer = 0
-  e.animPhase = rng.angle()
+  e.animPhase = world.rngs.fx.angle()
   e.bornAt = world.time
   e.phase = 0
   e.phaseDir = 0
   e.dashHit = false
   e.buffedMul = 1
   // Faction skin: the arena's paired brood hue-shifts every enemy's palette.
-  // Pure presentation (no RNG, cached per color) — the sim never reads tints.
+  // Pure presentation (no RNG, cached per color); the sim never reads tints.
   e.tint = world.broodTint(def.tint)
   e.gibTint = world.broodTint(def.gibColor)
 

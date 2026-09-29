@@ -16,10 +16,10 @@ const BASE_CONTRAST = 0.05
 
 /**
  * Post-processing for the game world: a threshold bloom (so only the bright
- * neon — player, bullets, sparks, gems, ichor — glows, while the dark floor
+ * neon (player, bullets, sparks, gems, ichor) glows, while the dark floor
  * stays clean) plus a subtle saturation/contrast grade so the palette pops.
  *
- * Bloom is multi-pass, so the `setIntensity(0)` path removes ALL filters — a
+ * Bloom is multi-pass, so the `setIntensity(0)` path removes ALL filters: a
  * true off-switch for low-end devices, exposed via the Glow setting. Applied to
  * the screen-space `scene` container (an identity child of the stage, ABOVE the
  * camera/shake/warp translate), so the bloom processes exactly the visible window
@@ -42,10 +42,10 @@ export class PostFX {
       blur: 5,
       quality: 3,
     })
-    // IMPORTANT: a filter's `resolution` is NOT just its own passes — Pixi takes
+    // IMPORTANT: a filter's `resolution` is NOT just its own passes. Pixi takes
     // the MIN across the whole filter chain when it flattens the scene into the
     // input texture, so a 0.5 here rendered the ENTIRE world at half resolution
-    // (blurry map, crisp UI — audit finding). Keep both filters at 1 (CSS-pixel
+    // (blurry map, crisp UI, audit finding). Keep both filters at 1 (CSS-pixel
     // capture, sharp at normal viewing) as the perf/quality floor; full-DPR
     // capture is a measured Phase-1 decision (4x the bloom fill on retina).
     this.grade.resolution = 1
@@ -64,7 +64,7 @@ export class PostFX {
   /**
    * Per-world color grade. Composed ONLY through the accumulating helpers
    * (`saturate`/`contrast`/`brightness`/`tint` with multiply=true) so each step
-   * multiplies onto the running matrix — assigning `.matrix` directly would
+   * multiplies onto the running matrix; assigning `.matrix` directly would
    * silently discard the saturate/contrast. `tint` is a uniform color multiply,
    * so partial strength is done by pre-lerping the tint toward white.
    */

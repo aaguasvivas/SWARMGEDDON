@@ -23,7 +23,7 @@ export class Player {
   private prevY = 0
 
   readonly radius = PLAYER_RADIUS
-  /** Base move speed — set per pilot at run start. */
+  /** Base move speed, set per pilot at run start. */
   speed = PLAYER_SPEED
   hp = PLAYER_MAX_HP
   maxHp = PLAYER_MAX_HP
@@ -36,7 +36,7 @@ export class Player {
   }
 
   /**
-   * Repaint the ship in a pilot's colors + hull silhouette (presentation only —
+   * Repaint the ship in a pilot's colors + hull silhouette (presentation only:
    * the hitbox is PLAYER_RADIUS for every shape). Each hull says what the pilot
    * IS at a glance: vanguard = round + side pods, dart = swept speed wedge,
    * heavy = wide armored hex. The barrel stub is shared so facing always reads.
@@ -49,7 +49,7 @@ export class Player {
     g.rect(r * 0.5, -3.5, r * 1.0, 7).fill(colors.barrel)
 
     if (shape === 'dart') {
-      // EMBER — a swept wedge with a notched tail and twin exhaust embers.
+      // EMBER: a swept wedge with a notched tail and twin exhaust embers.
       g.poly([r * 1.3, 0, -r * 0.95, -r * 0.8, -r * 0.45, 0, -r * 0.95, r * 0.8])
         .fill(colors.body)
         .stroke({ width: 3, color: colors.outline, join: 'round' })
@@ -59,7 +59,7 @@ export class Player {
       g.circle(-r * 0.78, -r * 0.44, 2.4).fill(0xffd27a)
       g.circle(-r * 0.78, r * 0.44, 2.4).fill(0xffd27a)
     } else if (shape === 'heavy') {
-      // VESPER — a wide armored hex with an inner plate and a scythe visor.
+      // VESPER: a wide armored hex with an inner plate and a scythe visor.
       const R = r * 1.12
       const pts: number[] = []
       for (let i = 0; i < 6; i++) {
@@ -78,7 +78,7 @@ export class Player {
       g.circle(r * 0.4, 0, r * 0.44).fill(colors.visor)
       g.circle(r * 0.12, 0, r * 0.34).fill({ color: colors.barrel, alpha: 0.85 })
     } else {
-      // NOVA — the classic round hull, plus twin side pods and a faint
+      // NOVA: the classic round hull, plus twin side pods and a faint
       // magnet-coil ring (her passive made visible).
       g.circle(0, -r * 0.86, r * 0.34).fill(colors.barrel)
       g.circle(0, r * 0.86, r * 0.34).fill(colors.barrel)

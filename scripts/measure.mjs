@@ -2,34 +2,71 @@
 //
 // Setup (one-time, not a repo dependency):  npm i --no-save puppeteer-core
 // Start the dev server first:               npm run dev -- --port 5176 --strictPort
+// Server origin: env SWG_URL (default http://localhost:5176), so parallel
+// worktrees can each point at their own dev server.
 //
-// Usage: node scripts/measure.mjs <width> <height> <mode> [args]
-//   det  [charId] [arenaId]        determinism probe: ?seed=777, step(600), FNV hash of
-//                                  enemy positions+hp+player pos. Run at TWO different
-//                                  viewport sizes — hashes MUST be identical (hard invariant).
+// Usage: node scripts/measure.mjs <width> <height> <mode> [args] [--dpr=N] [--settings=JSON]
+//   det  [charId] [arenaId|all] [steps]
+//                                  determinism probe: ?seed=777, flood(200), a scripted
+//                                  bot (aim at nearest, fire, walk to pickups or circle,
+//                                  always pick card 1), `steps` ticks (default 600). One line
+//                                  per world with an FNV hash of enemies, player, progress
+//                                  and all 7 RNG stream states. Default world: all three.
+//                                  Hashes MUST match across viewports, DPR, injected
+//                                  settings and reruns (hard invariant).
 //   perf                           6s live combat at flood(500) + auto-fire; reports
 //                                  fps / p95 / max / long(>20ms) / bad(>33.4ms) frames.
 //   thrash                         perf variant re-injecting layout thrash (A/B baseline).
 //   shot <charId> <arenaId> <out>  screenshot of live combat with a varied enemy pack
 //                                  pulled into view (for visual audits / galleries).
+//   --dpr=N                        device pixel ratio for the page (default 1).
+//   --settings=JSON                settings merged into the save before boot, e.g.
+//                                  '{"shake":0,"reduceMotion":true,"damageNumbers":"off","flashes":false,"glow":0}'
 //
 // Notes: drives the DEV build's __SWARM handle (world/step/flood/give/setLoadout/loop).
 // rAF runs normally in headless "new"; sim-only checks use step() (no wall clock).
 import puppeteer from 'puppeteer-core'
 
-const [W, H] = [parseInt(process.argv[2] || '1920'), parseInt(process.argv[3] || '1080')]
-const MODE = process.argv[4] || 'perf'
+const ORIGIN = (process.env.SWG_URL || 'http://localhost:5176').replace(/\/+$/, '')
+const flags = {}
+const pos = []
+for (const a of process.argv.slice(2)) {
+  const m = /^--([a-z]+)=(.*)$/s.exec(a)
+  if (m) flags[m[1]] = m[2]
+  else pos.push(a)
+}
+const [W, H] = [parseInt(pos[0] || '1920'), parseInt(pos[1] || '1080')]
+const MODE = pos[2] || 'perf'
+const DPR = flags.dpr ? parseFloat(flags.dpr) : 1
+const SETTINGS = flags.settings ? JSON.parse(flags.settings) : null
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
 const browser = await puppeteer.launch({
   executablePath: CHROME,
   headless: true,
   args: [`--window-size=${W},${H}`, '--hide-scrollbars', '--mute-audio', '--enable-gpu', '--use-angle=metal'],
-  defaultViewport: { width: W, height: H },
+  defaultViewport: { width: W, height: H, deviceScaleFactor: DPR },
 })
 const page = await browser.newPage()
-page.on('pageerror', (e) => console.error('PAGE ERROR:', e.message))
-await page.goto(`http://localhost:5176/?seed=777`, { waitUntil: 'networkidle0', timeout: 30000 })
+const pageErrors = []
+page.on('pageerror', (e) => {
+  pageErrors.push(e.message)
+  console.error('PAGE ERROR:', e.message)
+})
+page.on('console', (m) => {
+  if (m.type() === 'error') {
+    pageErrors.push(m.text())
+    console.error('CONSOLE ERROR:', m.text())
+  }
+})
+if (SETTINGS) {
+  await page.evaluateOnNewDocument((s) => {
+    try {
+      localStorage.setItem('swarmgeddon:settings', JSON.stringify(s))
+    } catch {}
+  }, SETTINGS)
+}
+await page.goto(`${ORIGIN}/?seed=777`, { waitUntil: 'networkidle0', timeout: 30000 })
 await page.waitForFunction('!!window.__SWARM', { timeout: 15000 })
 
 const glInfo = await page.evaluate(() => {
@@ -44,8 +81,8 @@ if (MODE === 'shot') {
   // With simSeconds: steps the ORGANIC sim to that time (real roster, real
   // hazards, boss if due), then fans the live pack around the player so the
   // world's roster is readable in one frame.
-  const [charId, arenaId, outfile] = [process.argv[5], process.argv[6], process.argv[7]]
-  const simSeconds = parseInt(process.argv[8] || '0')
+  const [charId, arenaId, outfile] = [pos[3], pos[4], pos[5]]
+  const simSeconds = parseInt(pos[6] || '0')
   await page.evaluate((c, a, simS) => {
     const S = window.__SWARM
     S.setLoadout(c, a)
@@ -55,8 +92,8 @@ if (MODE === 'shot') {
     w.player.hp = 1e9
     if (simS > 0) {
       // Step in chunks with cap relief: a stationary zero-kill probe pins the
-      // pool at MAX_ENEMIES, which (correctly) makes the boss retry forever —
-      // cull chaff so elites/bosses actually appear in the frame.
+      // pool at MAX_ENEMIES, which (correctly) makes the boss retry forever.
+      // Cull chaff so elites/bosses actually appear in the frame.
       for (let s = 0; s < simS; s += 5) {
         S.step(5 * 60)
         const act = w.enemies.active
@@ -92,43 +129,118 @@ if (MODE === 'shot') {
 } else if (MODE === 'det') {
   // Runs the same (seed, pilot, arena) sim TWICE in one page: hash1 must equal
   // hash2 (catches state leaking across beginRun), and both must match the
-  // other-viewport invocation (device independence).
-  const charId = process.argv[5] || 'nova'
-  const arenaId = process.argv[6] || 'hive'
-  const steps = parseInt(process.argv[7] || '600')
-  const res = await page.evaluate((c, a, nSteps) => {
-    const S = window.__SWARM
-    const runOnce = () => {
-      S.setLoadout(c, a)
-      S.startRun('endless')
-      S.world.player.maxHp = 1e9
-      S.world.player.hp = 1e9
-      S.flood(200)
-      S.step(nSteps)
-      let h = 0x811c9dc5
-      const mix = (n) => {
-        const v = Math.round(n * 16)
-        h ^= v & 0xff; h = Math.imul(h, 0x01000193)
-        h ^= (v >> 8) & 0xff; h = Math.imul(h, 0x01000193)
+  // other-viewport / other-settings invocations (device independence).
+  const charId = pos[3] || 'nova'
+  const arenaArg = pos[4] || 'all'
+  const steps = parseInt(pos[5] || '600')
+  const arenas = arenaArg === 'all' ? ['hive', 'depths', 'wastes'] : [arenaArg]
+  const applied = await page.evaluate(() => window.__SWARM.settings)
+  for (const arenaId of arenas) {
+    const res = await page.evaluate((c, a, nSteps) => {
+      const S = window.__SWARM
+      const w = S.world
+      const inp = S.input
+      // Scripted input: a pure function of sim state, so the camera, viewport
+      // and pointer never reach the sim.
+      const bot = () => {
+        const pl = w.player
+        let best = null
+        let bd = Infinity
+        for (const e of w.enemies.active) {
+          if (!e.alive || e.submerged) continue
+          const d2 = (e.x - pl.x) ** 2 + (e.y - pl.y) ** 2
+          if (d2 < bd) { bd = d2; best = e }
+        }
+        if (best) {
+          const d = Math.sqrt(bd) || 1
+          inp.aimDir.x = (best.x - pl.x) / d
+          inp.aimDir.y = (best.y - pl.y) / d
+          inp.firing = true
+        } else {
+          inp.aimDir.x = 0
+          inp.aimDir.y = 0
+          inp.firing = false
+        }
+        // Walk to the nearest pickup, else circle-strafe.
+        let gem = null
+        let gd = 600 * 600
+        for (const p of w.pickups.active) {
+          const d2 = (p.x - pl.x) ** 2 + (p.y - pl.y) ** 2
+          if (p.alive && d2 < gd) { gd = d2; gem = p }
+        }
+        if (gem) {
+          const d = Math.sqrt(gd) || 1
+          inp.move.x = (gem.x - pl.x) / d
+          inp.move.y = (gem.y - pl.y) / d
+        } else {
+          inp.move.x = Math.cos(w.time * 0.7) * 0.8
+          inp.move.y = Math.sin(w.time * 0.7) * 0.8
+        }
       }
-      const byType = {}
-      for (const e of S.world.enemies.active) {
-        mix(e.x); mix(e.y); mix(e.hp)
-        byType[e.def.id] = (byType[e.def.id] ?? 0) + 1
+      const runOnce = () => {
+        S.setLoadout(c, a)
+        S.startRun('endless')
+        w.player.maxHp = 1e9
+        w.player.hp = 1e9
+        S.flood(200)
+        const realUpdate = inp.update
+        inp.update = bot
+        let drafts = 0
+        try {
+          for (let i = 0; i < nSteps; i++) {
+            S.step(1)
+            while (w.paused && w.pendingLevelUps > 0 && w.draftCards.length > 0) {
+              drafts++
+              S.pickPerk(w.draftCards[0].id)
+            }
+            w.player.maxHp = 1e9
+            w.player.hp = 1e9
+          }
+        } finally {
+          inp.update = realUpdate
+        }
+        let h = 0x811c9dc5
+        const byte = (v) => { h ^= v & 0xff; h = Math.imul(h, 0x01000193) }
+        const mix = (n) => { const v = Math.round(n * 16); byte(v); byte(v >> 8); byte(v >> 16); byte(v >> 24) }
+        const mix32 = (v) => { byte(v); byte(v >>> 8); byte(v >>> 16); byte(v >>> 24) }
+        const byType = {}
+        for (const e of w.enemies.active) {
+          mix(e.x); mix(e.y); mix(e.hp); mix32(e.uid)
+          byType[e.def.id] = (byType[e.def.id] ?? 0) + 1
+        }
+        for (const p of w.pickups.active) { mix(p.x); mix(p.y); mix(p.xp) }
+        mix(w.player.x); mix(w.player.y)
+        mix(w.kills); mix(w.level); mix(w.xp); mix(w.time); mix(w.ammo)
+        mix(w.projectiles.size); mix(w.enemyProjectiles.size); mix(w.acid.size); mix(w.particles.size)
+        for (const ch of w.weapon.id) byte(ch.charCodeAt(0))
+        for (const [id, n] of w.perkStacks) { for (const ch of id) byte(ch.charCodeAt(0)); mix(n) }
+        const streams = {}
+        for (const k of ['spawn', 'script', 'boss', 'loot', 'draft', 'combat', 'fx']) {
+          const st = w.rngs[k].state
+          mix32(st)
+          streams[k] = st.toString(16)
+        }
+        return {
+          hash: (h >>> 0).toString(16), enemies: w.enemies.active.length, kills: w.kills, level: w.level,
+          drafts, pickups: w.pickups.active.length, time: +w.time.toFixed(2), byType, streams,
+        }
       }
-      mix(S.world.player.x); mix(S.world.player.y)
-      mix(S.world.kills); mix(S.world.level)
-      return { hash: (h >>> 0).toString(16), enemies: S.world.enemies.active.length, kills: S.world.kills, time: +S.world.time.toFixed(1), byType }
-    }
-    const r1 = runOnce()
-    const r2 = runOnce()
-    return { r1, r2, rerunMatch: r1.hash === r2.hash }
-  }, charId, arenaId, steps)
-  console.log(JSON.stringify({ mode: 'det', W, H, charId, arenaId, steps, hash: res.r1.hash, rerunMatch: res.rerunMatch, enemies: res.r1.enemies, kills: res.r1.kills, time: res.r1.time, byType: res.r1.byType }))
+      const r1 = runOnce()
+      const r2 = runOnce()
+      return { r1, r2, rerunMatch: r1.hash === r2.hash }
+    }, charId, arenaId, steps)
+    const r = res.r1
+    console.log(JSON.stringify({
+      mode: 'det', W, H, dpr: DPR, settings: SETTINGS ? applied : null, charId, arenaId, steps,
+      hash: r.hash, rerunMatch: res.rerunMatch, enemies: r.enemies, kills: r.kills, level: r.level,
+      drafts: r.drafts, pickups: r.pickups, time: r.time, streams: r.streams, byType: r.byType,
+    }))
+  }
+  if (pageErrors.length) console.log(JSON.stringify({ mode: 'det', pageErrors }))
 } else {
-  // perf [charId] [arenaId] — live combat in any world (default nova/hive).
-  const pChar = process.argv[5] || 'nova'
-  const pArena = process.argv[6] || 'hive'
+  // perf [charId] [arenaId]: live combat in any world (default nova/hive).
+  const pChar = pos[3] || 'nova'
+  const pArena = pos[4] || 'hive'
   await page.evaluate((c, a) => {
     const S = window.__SWARM
     S.setLoadout(c, a)

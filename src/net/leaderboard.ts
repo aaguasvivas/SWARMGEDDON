@@ -4,7 +4,7 @@ import type { RunResult } from '../state/persistence.ts'
 /**
  * Thin client for the Cloudflare Worker leaderboard (see /server). Everything is
  * a no-op when `VITE_LEADERBOARD_URL` is unset, so the game runs fine with no
- * backend — the leaderboard UI just stays hidden.
+ * backend: the leaderboard UI just stays hidden.
  */
 const BASE = ((import.meta.env.VITE_LEADERBOARD_URL as string | undefined) ?? '').replace(/\/+$/, '')
 

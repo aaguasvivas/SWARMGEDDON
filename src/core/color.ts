@@ -1,6 +1,6 @@
 /**
  * Tiny color math for faction/theme tinting. Pure functions, no allocation
- * beyond the return value — safe to call from content code at spawn time.
+ * beyond the return value, so it is safe to call from content code at spawn time.
  */
 
 /** Linear blend between two 0xRRGGBB colors; t=0 -> a, t=1 -> b. */

@@ -1,5 +1,5 @@
 /**
- * Perks — pure data + a pure modifier fold. The whole "build" lives in one
+ * Perks: pure data + a pure modifier fold. The whole "build" lives in one
  * `Modifiers` struct; perks compose into it (stacking), systems read the
  * aggregate. Adding a perk is one entry here, zero engine change.
  */

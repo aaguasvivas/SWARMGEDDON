@@ -4,21 +4,47 @@ import {
   GEM_LIFETIME,
   HEALTH_LIFETIME,
   MAX_PICKUPS,
+  PICKUP_RESERVE,
   WEAPON_DROP_INTERVAL,
   WEAPON_DROP_LIFETIME,
 } from '../config.ts'
 import { PICKUP_WEAPON_IDS, WEAPONS } from '../content/weapons.ts'
 import { announce } from '../effects/fx.ts'
-import { saveJSON } from '../platform/storage.ts'
-import type { Pickup } from '../game/pickup.ts'
+import { PICKUP_SLOT, PICKUP_SLOTS, type Pickup, type PickupKind } from '../game/pickup.ts'
 import type { World } from '../game/world.ts'
+
+const R = PICKUP_RESERVE
+/** Guaranteed slots per PICKUP_SLOT index. */
+const RESERVE_BY_SLOT = new Int16Array([R.xp, R.bank, R.health, R.weapon, R.core, R.bonus])
+const SHARED_SLOTS = MAX_PICKUPS - (R.xp + R.bank + R.health + R.weapon + R.core + R.bonus)
+
+/**
+ * Take a pickup from the pool if `kind` has room: its own reserved slots
+ * first, then the shared remainder. So a gem flood can never starve pods or
+ * medkits, and the pool never exceeds MAX_PICKUPS.
+ */
+function acquirePickup(world: World, kind: PickupKind): Pickup | null {
+  const n = world.pickupN
+  const slot = PICKUP_SLOT[kind]
+  if (n[slot]! >= RESERVE_BY_SLOT[slot]!) {
+    let sharedUsed = 0
+    for (let i = 0; i < PICKUP_SLOTS; i++) {
+      const over = n[i]! - RESERVE_BY_SLOT[i]!
+      if (over > 0) sharedUsed += over
+    }
+    if (sharedUsed >= SHARED_SLOTS) return null
+  }
+  const p = world.pickups.acquire()
+  p.kind = kind
+  n[slot]!++
+  return p
+}
 
 /** Drop an XP crystal at a kill site (with a little scatter velocity). */
 export function dropGem(world: World, x: number, y: number, xp: number): void {
-  if (world.pickups.size >= MAX_PICKUPS) return
-  const rng = world.rng
-  const p = world.pickups.acquire()
-  p.kind = 'xp'
+  const p = acquirePickup(world, 'xp')
+  if (!p) return
+  const rng = world.rngs.loot
   p.xp = xp
   p.weaponId = ''
   p.x = p.prevX = x + rng.range(-6, 6)
@@ -29,7 +55,7 @@ export function dropGem(world: World, x: number, y: number, xp: number): void {
   p.vy = Math.sin(a) * sp
   p.radius = 7
   p.life = GEM_LIFETIME
-  p.phase = rng.angle()
+  p.phase = world.rngs.fx.angle()
 
   world.texReg.applySprite(p.sprite, 'gem')
   const s = p.sprite
@@ -38,20 +64,18 @@ export function dropGem(world: World, x: number, y: number, xp: number): void {
   s.alpha = 1
   s.scale.set(1.15)
 
-  // One-time teaching moment: label the very first gem the player ever drops.
-  if (world.showGemHint) {
-    world.showGemHint = false
-    announce(world, '✦ collect for XP', p.x, p.y - 18, COLORS.gem)
-    saveJSON('seenGemHint', true)
+  if (world.firstGemAt < 0) {
+    world.firstGemAt = world.time
+    world.firstGemX = p.x
+    world.firstGemY = p.y
   }
 }
 
 /** Drop a health medkit (perk-free sustain). Magnetizes in like a gem. */
 export function dropHealth(world: World, x: number, y: number, heal: number): void {
-  if (world.pickups.size >= MAX_PICKUPS) return
-  const rng = world.rng
-  const p = world.pickups.acquire()
-  p.kind = 'health'
+  const p = acquirePickup(world, 'health')
+  if (!p) return
+  const rng = world.rngs.loot
   p.heal = heal
   p.xp = 0
   p.weaponId = ''
@@ -63,7 +87,7 @@ export function dropHealth(world: World, x: number, y: number, heal: number): vo
   p.vy = Math.sin(a) * sp
   p.radius = 9
   p.life = HEALTH_LIFETIME
-  p.phase = rng.angle()
+  p.phase = world.rngs.fx.angle()
 
   world.texReg.applySprite(p.sprite, 'health')
   const s = p.sprite
@@ -75,9 +99,8 @@ export function dropHealth(world: World, x: number, y: number, heal: number): vo
 
 /** Drop a weapon pod (color-coded to the weapon). */
 export function spawnWeaponDrop(world: World, x: number, y: number, weaponId: string): void {
-  if (world.pickups.size >= MAX_PICKUPS) return
-  const p = world.pickups.acquire()
-  p.kind = 'weapon'
+  const p = acquirePickup(world, 'weapon')
+  if (!p) return
   p.weaponId = weaponId
   p.xp = 0
   p.x = p.prevX = x
@@ -106,8 +129,9 @@ export function pickupSystem(world: World, dt: number): void {
   if (world.weaponDropTimer <= 0) {
     world.weaponDropTimer = WEAPON_DROP_INTERVAL
     const b = world.arena.bounds
-    const id = world.rng.pick(PICKUP_WEAPON_IDS)
-    spawnWeaponDrop(world, b.x + world.rng.range(0.15, 0.85) * b.w, b.y + world.rng.range(0.15, 0.85) * b.h, id)
+    const rng = world.rngs.loot
+    const id = rng.pick(PICKUP_WEAPON_IDS)
+    spawnWeaponDrop(world, b.x + rng.range(0.15, 0.85) * b.w, b.y + rng.range(0.15, 0.85) * b.h, id)
   }
 
   const a = world.pickups.active

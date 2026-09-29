@@ -1,13 +1,13 @@
 import type { Graphics } from 'pixi.js'
 
 /**
- * Asset manifest — placeholder edition.
+ * Asset manifest: placeholder edition.
  *
  * Each entry draws a sprite in GRAYSCALE pointing +x (the facing direction), so
  * the render system can rotate-to-face and recolor per entity via `tint`
  * (white body * green tint = green creature; tint white = hit-flash). Baked once
  * into GPU textures at boot (see render/textures.ts) and drawn as batched
- * Sprites — never re-rendered as Graphics in the hot loop.
+ * Sprites, never re-rendered as Graphics in the hot loop.
  *
  * This is the seam for real art: replace these draw fns (or, later, point the
  * registry at a TexturePacker atlas keyed by the same names) and nothing else
@@ -65,7 +65,7 @@ function drawRing(g: Graphics): void {
   g.circle(0, 0, 28).stroke({ width: 14, color: W, alpha: 0.2 })
 }
 
-/** Chunky gib shard — irregular for organic gore. */
+/** Chunky gib shard, irregular for organic gore. */
 function drawGib(g: Graphics): void {
   g.poly([-4, -3, 3, -4, 5, 1, 1, 4, -4, 3]).fill(W)
   g.poly([-4, -3, 3, -4, 0, 0]).fill({ color: SHADE, alpha: 0.7 })
@@ -242,7 +242,7 @@ function drawQueen(g: Graphics): void {
   g.circle(24, 4, 2.6).fill(EYE)
 }
 
-/** Broodmother: a pregnant splitter — swollen abdomen trailing egg pods. */
+/** Broodmother: a pregnant splitter: swollen abdomen trailing egg pods. */
 function drawBroodmother(g: Graphics): void {
   for (const s of [-1, 1]) {
     g.moveTo(-8, s * 9).lineTo(-16, s * 17).stroke({ width: 3.5, color: DARK, cap: 'round' })
@@ -253,7 +253,7 @@ function drawBroodmother(g: Graphics): void {
   g.ellipse(-4, 0, 14, 12).fill(MID)
   g.ellipse(8, 0, 10, 8).fill(LIGHT)
   g.ellipse(-2, -3, 8, 4).fill({ color: W, alpha: 0.3 })
-  // Egg-pod cluster riding the back — the tell that this thing multiplies.
+  // Egg-pod cluster riding the back: the tell that this thing multiplies.
   for (const [ex, ey] of [[-16, -7], [-10, -11], [-3, -9], [-17, 6], [-9, 10], [-2, 9]] as const) {
     g.circle(ex, ey, 3.4).fill({ color: W, alpha: 0.5 })
     g.circle(ex + 0.8, ey + 0.6, 1.1).fill(EYE)
@@ -265,7 +265,7 @@ function drawBroodmother(g: Graphics): void {
   g.circle(10, 3, 2).fill(EYE)
 }
 
-/** Deep caller: an abyssal jellyfish — bell, trailing tendrils, one bright lure. */
+/** Deep caller: an abyssal jellyfish: bell, trailing tendrils, one bright lure. */
 function drawDeepCaller(g: Graphics): void {
   // Trailing tendrils (behind, -x) with bead dots.
   for (const [oy, len] of [[-8, 16], [-4, 22], [0, 26], [4, 22], [8, 16]] as const) {
@@ -278,7 +278,7 @@ function drawDeepCaller(g: Graphics): void {
   g.ellipse(2, 0, 13, 12).fill(MID)
   g.ellipse(5, -3, 7, 4.5).fill({ color: W, alpha: 0.55 })
   for (const ry of [-8, -3, 2, 7]) g.circle(-5, ry, 2.6).fill(SHADE)
-  // The lure: one bright core (no eyes — it isn't looking, it's calling).
+  // The lure: one bright core (no eyes: it isn't looking, it's calling).
   g.circle(9, 0, 3.4).fill(W)
 }
 
@@ -302,7 +302,7 @@ function drawCinderMortarch(g: Graphics): void {
   g.circle(7, 7, 1.5).fill(EYE)
 }
 
-/** Abyssal maw: a drifting ring-mouth — inward teeth and a dark throat. */
+/** Abyssal maw: a drifting ring-mouth: inward teeth and a dark throat. */
 function drawMaw(g: Graphics): void {
   // Outer body ring.
   g.circle(0, 0, 14).fill(MID)
@@ -326,7 +326,7 @@ function drawMaw(g: Graphics): void {
   g.ellipse(-12, 8, 5, 2.5).fill({ color: LIGHT, alpha: 0.5 })
 }
 
-/** Cinder charger: a wedge ram-bug — the silhouette says "get out of the lane". */
+/** Cinder charger: a wedge ram-bug. The silhouette says "get out of the lane". */
 function drawCharger(g: Graphics): void {
   for (const s of [-1, 1]) {
     g.moveTo(-6, s * 6).lineTo(-12, s * 13).stroke({ width: 3, color: DARK, cap: 'round' })

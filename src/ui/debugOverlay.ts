@@ -43,7 +43,7 @@ export class DebugOverlay {
       },
     })
     this.view.addChild(this.text)
-    // Hidden by default — it's a dev instrument, not player UI (it used to ship
+    // Hidden by default: it's a dev instrument, not player UI (it used to ship
     // visible and crowd the HUD). Press backtick to bring it up.
     this.view.visible = false
   }

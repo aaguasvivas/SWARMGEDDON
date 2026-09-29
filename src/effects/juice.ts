@@ -6,10 +6,11 @@ import { HITSTOP_MAX } from '../config.ts'
  * Trauma is added by impacts and decays linearly; the actual offset uses
  * trauma² (Squirrel Eiserloh's trick) so small hits barely nudge while big ones
  * really kick. Shake is purely cosmetic, so it uses Math.random and real frame
- * time — it never touches the deterministic sim RNG.
+ * time; it never touches the deterministic sim RNG.
  *
- * Hit-stop freezes the fixed-step sim for a few frames on a big event; the loop
- * checks `hitstop` and skips simulation while it drains.
+ * Hit-stop is a render-clock freeze: while `hitstop` drains, main.ts stops
+ * feeding real time to the fixed-step loop (GameLoop.timeScale = 0). The sim
+ * step itself never changes, so hit-stop cannot alter a run.
  */
 export class Juice {
   trauma = 0
@@ -27,7 +28,7 @@ export class Juice {
   }
 
   addHitstop(seconds: number): void {
-    // Take the longer of current/new, clamped — overlapping hits don't stack
+    // Take the longer of current/new, clamped, so overlapping hits don't stack
     // into a long freeze.
     this.hitstop = Math.min(HITSTOP_MAX, Math.max(this.hitstop, seconds))
   }

@@ -64,7 +64,7 @@ export class GameOver {
 
   /** Show the player's global rank once the async submit comes back. */
   setRank(rank: number): void {
-    if (this.hasUnlockBanner) return // an unlock is the bigger news — keep it
+    if (this.hasUnlockBanner) return // an unlock is the bigger news, keep it
     this.rank.text = `◆  GLOBAL RANK #${rank}  ◆`
     this.relayout() // the banner slot is sized to its content
   }
@@ -78,7 +78,7 @@ export class GameOver {
     this.relayout()
   }
 
-  /** The score never reached the leaderboard — say so instead of silence. */
+  /** The score never reached the leaderboard; say so instead of silence. */
   setSubmitFailed(): void {
     if (this.hasUnlockBanner || !leaderboardEnabled()) return
     this.rank.text = 'score not submitted, check your connection'
@@ -100,7 +100,7 @@ export class GameOver {
     this.rank.style.wordWrapWidth = Math.min(w - 32, 500)
     // Flow by REAL text heights: the stats block is 5 lines since the loadout
     // line was added, and the rank slot doubles as the unlock banner (which can
-    // wrap) — fixed offsets let them print over each other (owner playtest bug).
+    // wrap). Fixed offsets let them print over each other (owner playtest bug).
     const short = h < 560
     let y = h * 0.5 - (short ? 170 : 156)
     this.title.position.set(cx, y)

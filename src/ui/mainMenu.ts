@@ -65,7 +65,7 @@ export class MainMenu {
     this.daily = new Button('DAILY CHALLENGE', 280, 58, 0xffc24a)
     this.settings = new Button('SETTINGS', 136, 46, COLORS.hudDim, 14)
     this.leaderboard = new Button('LEADERS', 136, 46, 0x57c8ff, 14)
-    // Loadout selectors — tap to cycle pilot / arena (labels set via setLoadout).
+    // Loadout selectors: tap to cycle pilot / arena (labels set via setLoadout).
     this.pilot = new Button('', 136, 40, COLORS.player, 13)
     this.arena = new Button('', 136, 40, 0xffc24a, 13)
     this.endless.onClick = () => this.onPlay('endless')
@@ -105,7 +105,7 @@ export class MainMenu {
     this.loadoutHint.style.wordWrapWidth = Math.min(w - 24, 500)
     // Short screens (phone landscape): drop the tagline AND the hold-to-fire
     // hint (touch aims-and-fires by drag, so it's the least useful line there),
-    // and tighten every gap — otherwise the stack overflows 375px-tall screens,
+    // and tighten every gap. Otherwise the stack overflows 375px-tall screens,
     // clipping the title and squeezing the loadout hint into the score lines.
     const short = h < 560
     this.tagline.visible = !short

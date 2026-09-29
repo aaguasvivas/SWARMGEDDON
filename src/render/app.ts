@@ -12,14 +12,14 @@ export interface Layers {
    *  Lives *inside* the bloomed `scene`, so the camera never drags the bloom's
    *  screen-space filterArea off-screen. */
   world: Container
-  /** Carries the bloom filter. A direct, IDENTITY-transform child of the stage —
-   *  i.e. true screen space — so its filterArea (0,0,w,h) always maps to the
+  /** Carries the bloom filter. A direct, IDENTITY-transform child of the stage
+   *  (i.e. true screen space), so its filterArea (0,0,w,h) always maps to the
    *  visible window. The camera/shake translate is applied to its `world` child,
    *  *under* the filter, so the bloom processes exactly the on-screen image.
    *  (Putting the filter inside the camera-translated container instead clips the
    *  world to a black rectangle that slides with the camera.) */
   scene: Container
-  /** Reality-warp host (scale/rotation around the player) — nested under the
+  /** Reality-warp host (scale/rotation around the player), nested under the
    *  camera, so the filter never sits on a pivoted/translated container. */
   warpHost: Container
   floor: Container // arena background + per-world structure + border
@@ -75,7 +75,7 @@ export async function createRenderer(mount: HTMLElement): Promise<GameRenderer> 
   // scene (bloom, screen-space) -> world (camera/shake) -> warpHost (warp) -> content.
   // The bloom sits ABOVE the camera/shake translate (on `scene`, an identity child
   // of the stage), so its screen-space filterArea is never dragged off-screen by
-  // the camera — the world stays fully visible everywhere in the arena.
+  // the camera, and the world stays fully visible everywhere in the arena.
   // `backdrop` (ambient motes) is world-space, above the ichor gore but below the
   // swarm so a 500-enemy crowd always reads on top. `atmosphere` is screen-space:
   // a direct child of `scene`, so it is graded + bloomed with the world (god-rays

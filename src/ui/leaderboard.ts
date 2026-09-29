@@ -14,7 +14,7 @@ const TABS: { key: Tab; label: string; mode: 'endless' | 'daily'; board: 'alltim
   { key: 'daily', label: 'DAILY', mode: 'daily', board: 'daily', scope: 'global' },
 ]
 
-/** Global leaderboard screen — Global / Region / Daily tabs, top scores, and an
+/** Global leaderboard screen: Global / Region / Daily tabs, top scores, and an
  *  editable player name. No-ops gracefully when no backend is configured. */
 export class Leaderboard {
   readonly view = new Container()

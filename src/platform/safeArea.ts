@@ -7,7 +7,7 @@
  * read its computed style. Cheap, and correct across orientation changes.
  *
  * This lives in `platform/` because the same abstraction will back the
- * Capacitor shell in Phase 4 — game code never reads env() directly.
+ * Capacitor shell in Phase 4; game code never reads env() directly.
  */
 
 export interface Insets {

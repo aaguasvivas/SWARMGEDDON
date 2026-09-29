@@ -7,7 +7,7 @@ import type { World } from '../game/world.ts'
  *  ichor terrain so the hazard reads as part of the floor. */
 export function spawnAcidPool(world: World, x: number, y: number): void {
   if (world.acid.size >= MAX_ACID) return
-  const rng = world.rng
+  const rng = world.rngs.spawn
   const ap = world.acid.acquire()
   ap.x = x
   ap.y = y
@@ -15,7 +15,7 @@ export function spawnAcidPool(world: World, x: number, y: number): void {
   ap.damage = 16
   ap.life = ap.maxLife = rng.range(3.5, 5)
 
-  world.ichor.queueStamp(x, y, rng)
+  world.ichor.queueStamp(x, y, world.rngs.fx)
   spawnAcidSplash(world, x, y)
 
   const s = ap.sprite
@@ -40,7 +40,7 @@ export function acidSystem(world: World, dt: number): void {
     }
     const rr = ap.radius + pl.radius * 0.4
     if (distSq(ap.x, ap.y, pl.x, pl.y) < rr * rr) {
-      pl.hp -= ap.damage * dt
+      pl.hp -= ap.damage * dt * (1 - world.mods.damageReduction)
       world.hurtFlash = Math.min(0.6, world.hurtFlash + ap.damage * dt * 0.04)
     }
   }

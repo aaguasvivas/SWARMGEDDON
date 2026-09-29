@@ -16,7 +16,8 @@ const browser = await puppeteer.launch({
 })
 const page = await browser.newPage()
 page.on('pageerror', (e) => console.error('PAGE ERROR:', e.message))
-await page.goto('http://localhost:5176/?seed=777', { waitUntil: 'networkidle0', timeout: 30000 })
+const ORIGIN = (process.env.SWG_URL || 'http://localhost:5176').replace(/\/+$/, '')
+await page.goto(`${ORIGIN}/?seed=777`, { waitUntil: 'networkidle0', timeout: 30000 })
 await page.waitForFunction('!!window.__SWARM', { timeout: 15000 })
 
 /** Stage a combat scene: organic sim to `simS`, fan the pack, normalize HUD. */

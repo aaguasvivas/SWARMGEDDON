@@ -15,7 +15,7 @@ import type { Vignette } from './vignette.ts'
  *   - the per-world color GRADE (via PostFX) and tinted VIGNETTE.
  *
  * Every texture is baked ONCE at construction (generic white shapes) and merely
- * tinted / repositioned / re-counted per world — nothing re-bakes on `setTheme`,
+ * tinted / repositioned / re-counted per world. Nothing re-bakes on `setTheme`,
  * so there is no VRAM churn or teardown to get wrong. All motion is driven by a
  * render clock with zero per-frame allocation (pools mutated in place).
  */
@@ -119,7 +119,7 @@ export class BackdropSystem {
     this.qual = glow <= 0.02 ? 0.5 : 1
   }
 
-  /** Reconfigure for a world (tints/counts/positions only — no re-bake).
+  /** Reconfigure for a world (tints/counts/positions only, no re-bake).
    *  `glowSpots` are the arena's deterministic anchor points for the breathing
    *  ground-glows (pod clusters / magma hotspots); pass `arena.glowSpots`. */
   setTheme(theme: ArenaTheme, glowSpots: readonly { x: number; y: number }[] = []): void {
@@ -189,7 +189,7 @@ export class BackdropSystem {
         tint = i % 4 ? 0xd8e4ff : 0x8a5cff
         blend = i < 6 ? 'add' : 'normal' // most diffuse so bloom doesn't blow it out
       } else {
-        // emberAsh — first ~60% rise as embers (additive), rest fall as ash.
+        // emberAsh: first ~60% rise as embers (additive), rest fall as ash.
         if (i < total * 0.6) {
           mo.vy = -(14 + r0 * 20)
           mo.size = 1 + r1 * 1.4
@@ -230,7 +230,7 @@ export class BackdropSystem {
       this.setupAtm(1, { role: 1, tex: this.rampUp, tint: at.color, fx: 0.58, a: alpha * 0.9, ph: 1.7, sway: 11 })
       this.setupAtm(2, { role: 1, tex: this.rampUp, tint: at.color2, fx: 0.84, a: alpha, ph: 3.4, sway: 16 })
     } else {
-      // emberHaze — one broad glow along the bottom edge.
+      // emberHaze: one broad glow along the bottom edge.
       this.setupAtm(0, { role: 2, tex: this.rampDown, tint: at.color, fx: 0.5, a: alpha, ph: 0, sway: 0 })
     }
   }
