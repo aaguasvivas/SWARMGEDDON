@@ -77,14 +77,14 @@ export function collisionSystem(world: World, dt: number): void {
           const ram = e.damage * (1 - m.damageReduction)
           pl.hp -= ram
           world.feel.emit(FeelKind.PlayerHurt, FF_DISCRETE | FF_RAM, e.x, e.y, ram, 0, e.def)
-          if (m.thorns > 0) dealDamage(world, e, m.thorns)
+          if (m.thorns > 0) thornsDamage(world, e, m.thorns)
         }
         continue
       }
       const bite = e.damage * dt * (1 - m.damageReduction)
       pl.hp -= bite
       world.feel.emit(FeelKind.PlayerHurt, FF_CONTACT, e.x, e.y, bite, 0, e.def)
-      if (m.thorns > 0) dealDamage(world, e, m.thorns * dt)
+      if (m.thorns > 0) thornsDamage(world, e, m.thorns * dt)
     }
   }
 
@@ -182,6 +182,14 @@ function dealDamage(world: World, e: Enemy, dmg: number): void {
   e.hp -= dmg
   e.flash = 0.07
   if (e.hp <= 0) killEnemy(world, e)
+}
+
+/** Thorns has no shot, so a thorns kill must not carry the last bullet's
+ *  direction: a zero vector tells presentation to spray gibs radially. */
+function thornsDamage(world: World, e: Enemy, dmg: number): void {
+  world.lastHitVx = 0
+  world.lastHitVy = 0
+  dealDamage(world, e, dmg)
 }
 
 /** Chain lightning hops to nearby enemies (separate scratch buffer so it can run

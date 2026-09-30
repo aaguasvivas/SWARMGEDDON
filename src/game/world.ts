@@ -113,7 +113,8 @@ export class World {
   /** The sim's only output to presentation; drained once per render frame. */
   readonly feel = new FeelQueue()
   readonly alerts = new RunAlertRing()
-  /** Velocity of the last projectile that hit an enemy (kill direction). */
+  /** Velocity of the shot behind the damage being resolved (Kill direction);
+   *  zero when the damage has no shot (thorns). */
   lastHitVx = 0
   lastHitVy = 0
 

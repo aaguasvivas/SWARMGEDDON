@@ -659,7 +659,7 @@ export const FF_CRIT = 1, FF_ELITE = 2, FF_BOSS = 4, FF_AOE = 8, FF_DISCRETE = 1
 |---|---|---|
 | Weapon fire | `Shot`, a = angle, b = weapon index | `spawnMuzzle` stays and uses the fx stream |
 | Enemy hit | `Hit`, with flags and `ref` | |
-| Kill | `Kill` | a, b = the killing projectile's vx, vy, stored in `world.lastHitVx/Vy` |
+| Kill | `Kill` | a, b = the killing projectile's vx, vy, stored in `world.lastHitVx/Vy`; 0, 0 for a thorns kill, which has no shot |
 | Explosion | `Explosion` | |
 | Player damage | `PlayerHurt` | emitted from inside `hurtPlayer` |
 | Boss spawn / phase / frenzy / kill | `BossSpawn` / `BossPhase` / `BossFrenzy` / `BossKill` | |
@@ -738,7 +738,7 @@ If the app goes to the background during the sequence, the game jumps straight t
   - per-event table in A16.3
 - **Particle tint fix:** `fx.ts begin(p, x, y, tint)` sets both `p.tint` and `sprite.tint`.
 - **Hit flash:** baked `key@white` silhouettes plus a 1.12 scale pulse.
-- **Directional gibs:** 60% of gibs spread within ±0.6 rad of the killing shot's direction.
+- **Directional gibs:** 60% of gibs spread within ±0.6 rad of the killing shot's direction. A Kill with a zero vector (thorns) spreads its gibs radially.
 - **Tracers:** rail and beam stretch by `1 + speed / 1800`.
 - **Muzzle:** 2 sparks plus one additive flash quad.
 - **Damage numbers** (`src/effects/damageNumbers.ts`; `FloatingText`, `world.floaters`, `announce` and `MAX_FLOATERS` are deleted):
