@@ -29,6 +29,14 @@ const DASH_KICK_PX = 4
 
 const ALERT_HOLD_LONG = 3.0
 const ALERT_HOLD_SHORT = 2.0
+/** A15 holds for the boss-fight lines. */
+const PHASE_HOLD = 1.0
+const FRENZY_HOLD = 1.2
+const WIN_HOLD = 2.0
+/** A boss telegraph sounds the charger windup this many semitones lower. */
+const BOSS_TELE_SEMIS = -7
+/** A16.3: a hazard detonation this close to the player shakes the view. */
+const HAZARD_NEAR = 400
 
 // A17 haptic pacing.
 const HEAVY_HIT_HAPTIC_GAP_MS = 150
@@ -197,7 +205,21 @@ export class FeelDirector {
           this.audio.play('boss')
           haptic('heavy')
           this.shake.add(0.45, 1)
+          this.numbers.label(this.world.director.bossTitle + ' ENRAGES', x, y, 70, 0xff6aa8, PHASE_HOLD)
           break
+        case FeelKind.BossTele:
+          this.audio.play('chargerWindup', BOSS_TELE_SEMIS, 1, panOf(x, view))
+          break
+        case FeelKind.BossFrenzy:
+          this.audio.play('alertEvent')
+          this.numbers.label('FRENZY', x, y, 70, 0xff5a6e, FRENZY_HOLD)
+          this.numbers.label('FINISH IT', x, y, 48, 0xff5a6e, FRENZY_HOLD)
+          break
+        case FeelKind.HazardDetonate: {
+          const pl = this.world.player
+          if ((pl.x - x) ** 2 + (pl.y - y) ** 2 < HAZARD_NEAR * HAZARD_NEAR) this.shake.add(0.15, 0.5)
+          break
+        }
         case FeelKind.BossKill:
           this.audio.play('bossKill')
           this.heavyThenSuccess(nowMs)
@@ -254,6 +276,12 @@ export class FeelDirector {
         case FeelKind.Win:
           this.audio.play('win')
           haptic('success')
+          this.shake.add(0.6, 1)
+          this.numbers.label(this.world.script.text.win, x, y, -40, 0xffc24a, WIN_HOLD)
+          break
+        case FeelKind.Stalemate:
+          this.audio.play('multBreak')
+          this.numbers.label(this.world.script.text.stalemate, x, y, 40, 0xff5a6e, WIN_HOLD)
           break
       }
     }

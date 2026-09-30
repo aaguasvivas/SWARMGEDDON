@@ -1,4 +1,4 @@
-import { COLORS, FIXED_DT } from '../config.ts'
+import { BOSS_EMERGE, COLORS, FIXED_DT } from '../config.ts'
 import { lerp, lerpAngle } from '../core/vec.ts'
 import type { World } from '../game/world.ts'
 
@@ -21,7 +21,7 @@ export function renderEntities(world: World, alpha: number): void {
     s.x = lerp(e.prevX, e.x, alpha)
     s.y = lerp(e.prevY, e.y, alpha)
     s.rotation = lerpAngle(e.prevFacing, e.facing, alpha)
-    if (e.submerged) {
+    if (e.submerged && !e.def.boss) {
       // A faint burrow mound while underground (intangible).
       s.scale.set(e.def.scale * 0.6)
       s.alpha = 0.28
@@ -32,7 +32,8 @@ export function renderEntities(world: World, alpha: number): void {
     // pop into existence. That matters on huge viewports where the fixed spawn ring
     // can sit in view, and for splitter offspring / queen broods which spawn
     // mid-screen by design. Pure presentation (reads sim time, mutates nothing).
-    const emerge = Math.min(1, Math.max(0, (t - e.bornAt) / EMERGE_TIME))
+    // A boss is untargetable for its whole BOSS_EMERGE, so it fades in over that.
+    const emerge = Math.min(1, Math.max(0, (t - e.bornAt) / (e.def.boss ? BOSS_EMERGE : EMERGE_TIME)))
     s.alpha = emerge
     const base = e.def.scale * (e.buffed > 0 ? 1.08 : 1) * (0.55 + 0.45 * emerge)
     const wob = Math.sin(t * 14 + e.animPhase)

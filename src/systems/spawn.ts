@@ -68,7 +68,7 @@ export function ringPointAt(world: World, ang: number, half: RingHalf): void {
 /**
  * Spawn one enemy of `defId` at (x,y). Stats come from the registry; HP and
  * speed ramp with time. Returns the enemy (or null if at the cap). Also used for
- * splitter offspring and queen broods.
+ * splitter offspring and boss brood.
  */
 export function spawnEnemy(world: World, defId: string, x: number, y: number): Enemy | null {
   if (world.enemies.size >= MAX_ENEMIES) return null
@@ -91,8 +91,8 @@ export function spawnEnemy(world: World, defId: string, x: number, y: number): E
   e.buffed = 0
   e.slow = 0
   e.slowFactor = 0
-  e.enraged = false
   e.submerged = false
+  e.brood = 0
   e.stateTimer = 0
   e.animPhase = world.rngs.fx.angle()
   e.bornAt = world.time
@@ -112,8 +112,7 @@ export function spawnEnemy(world: World, defId: string, x: number, y: number): E
   } else if (def.behavior === 'teleporter' && def.teleport) {
     e.stateTimer = def.teleport.cooldown
   }
-  if (def.brood) e.fireTimer = def.brood.cooldown
-  else e.fireTimer = def.fireCooldown ? rng.range(0.4, def.fireCooldown) : 0
+  e.fireTimer = def.fireCooldown ? rng.range(0.4, def.fireCooldown) : 0
 
   world.texReg.applySprite(e.sprite, def.sprite)
   const s = e.sprite

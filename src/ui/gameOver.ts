@@ -41,7 +41,8 @@ export class GameOver {
   constructor() {
     this.title = new Text({ text: 'OVERRUN', style: { fontFamily: FONT.display, fontSize: 40, fontWeight: '900', fill: COLORS.hurtFlash, letterSpacing: 3 } })
     this.title.anchor.set(0.5)
-    this.title.filters = [new GlowFilter({ color: COLORS.hurtFlash, distance: 14, outerStrength: 2, innerStrength: 0, quality: 0.3 })]
+    this.glow = new GlowFilter({ color: COLORS.hurtFlash, distance: 14, outerStrength: 2, innerStrength: 0, quality: 0.3 })
+    this.title.filters = [this.glow]
     this.best = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 15, fontWeight: 'bold', fill: 0xffe066 } })
     this.best.anchor.set(0.5)
     this.rank = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 14, fontWeight: 'bold', fill: 0x57c8ff, align: 'center', wordWrap: true, wordWrapWidth: 500, lineHeight: 19 } })
@@ -65,6 +66,7 @@ export class GameOver {
   }
 
   private hasUnlockBanner = false
+  private readonly glow: GlowFilter
 
   acceptsInput(): boolean {
     return performance.now() >= this.readyAt
@@ -83,6 +85,15 @@ export class GameOver {
     this.hasUnlockBanner = true
     this.rank.text = `★ UNLOCKED: ${names.join(' + ')} ★`
     this.rank.style.fill = 0xffe066
+    this.relayout()
+  }
+
+  /** Replace the OVERRUN header: a clear shows the world's win text, a
+   *  stalemate its escape line. */
+  setHeadline(text: string, color: number): void {
+    this.title.text = text
+    this.title.style.fill = color
+    this.glow.color = color
     this.relayout()
   }
 
@@ -110,6 +121,10 @@ export class GameOver {
     // line was added, and the rank slot doubles as the unlock banner (which can
     // wrap). Fixed offsets let them print over each other (owner playtest bug).
     const short = h < 560
+    // Long headers (THE QUEEN ESCAPED) shrink to the width instead of clipping.
+    this.title.scale.set(1)
+    const room = w - 32
+    if (this.title.width > room) this.title.scale.set(room / this.title.width)
     // Never above the top edge (phone landscape is only 375 tall).
     let y = Math.max(h * 0.5 - (short ? 170 : 156), this.title.height / 2 + 4)
     this.title.position.set(cx, y)
@@ -135,6 +150,9 @@ export class GameOver {
   }
 
   show(result: RunResult, isHigh: boolean, gains: WorldBestGains): void {
+    this.title.text = 'OVERRUN'
+    this.title.style.fill = COLORS.hurtFlash
+    this.glow.color = COLORS.hurtFlash
     // Prefer the per-world record callout (what the player is chasing now); fall
     // back to the score-based global best.
     this.best.text =

@@ -1,7 +1,8 @@
-import { ENEMY_SPEED_CEIL, MAX_ENEMY_PROJECTILES } from '../config.ts'
+import { ENEMY_SPEED_CEIL, MAX_ENEMIES, MAX_ENEMY_PROJECTILES } from '../config.ts'
 import { clamp } from '../core/vec.ts'
 import { spawnPoof } from '../effects/fx.ts'
-import { FF_BOSS, FeelKind } from '../effects/feelQueue.ts'
+import { FeelKind } from '../effects/feelQueue.ts'
+import { bossStep } from './bossAI.ts'
 import { spawnEnemy } from './spawn.ts'
 import type { Enemy } from '../game/enemy.ts'
 import type { World } from '../game/world.ts'
@@ -26,12 +27,17 @@ export function buildEnemyHash(world: World): void {
  * buff neighbors; then each enemy seeks/strafes/dives/teleports per its tag,
  * separates from neighbors (where appropriate), and integrates. Tracks whether a
  * reality-warper is alive so the render layer can run its distortion gimmick.
+ * Bosses run bossAI. While the cage is up, its fence keeps every enemy but the
+ * fight's brood outside, and only the brood may shoot.
  */
 export function aiSystem(world: World, dt: number): void {
   const a = world.enemies.active
   const px = world.player.x
   const py = world.player.y
   const buf = world.queryBuf
+  const cage = world.director.cage
+  const fight = world.bossFights
+  let brood = 0
 
   // Aura + warper + gravity-well pass. Well pull is a pure function of
   // positions (zero RNG) accumulated here and applied by player.update.
@@ -73,6 +79,13 @@ export function aiSystem(world: World, dt: number): void {
     if (e.flash > 0) e.flash = Math.max(0, e.flash - dt)
     if (e.slow > 0) e.slow = Math.max(0, e.slow - dt)
     if (e.buffed > 0) e.buffed = Math.max(0, e.buffed - dt)
+    if (def.behavior === 'boss') {
+      bossStep(world, e, dt)
+      continue
+    }
+    const inFight = cage.active && e.brood === fight
+    const caged = cage.active && !inFight
+    if (inFight) brood++
 
     const dx = px - e.x
     const dy = py - e.y
@@ -153,7 +166,7 @@ export function aiSystem(world: World, dt: number): void {
         e.fireTimer -= dt
         if (e.fireTimer <= 0) {
           e.fireTimer = def.fireCooldown ?? 2
-          fireEnemyShot(world, e, ux, uy)
+          if (!caged) fireEnemyShot(world, e, ux, uy)
         }
         break
       }
@@ -174,7 +187,7 @@ export function aiSystem(world: World, dt: number): void {
         e.fireTimer -= dt
         if (e.fireTimer <= 0) {
           e.fireTimer = def.fireCooldown ?? 2.4
-          fireEnemyShot(world, e, ux, uy)
+          if (!caged) fireEnemyShot(world, e, ux, uy)
         }
         e.stateTimer -= dt
         if (e.stateTimer <= 0 && def.teleport) {
@@ -201,20 +214,12 @@ export function aiSystem(world: World, dt: number): void {
         break
       }
 
-      case 'queen': {
-        faceTarget = true
+      case 'egg':
+        mx = 0
+        my = 0
         separate = false
-        if (def.enrageAt && !e.enraged && e.hp <= e.maxHp * def.enrageAt) {
-          e.enraged = true
-          world.feel.emit(FeelKind.BossPhase, FF_BOSS, e.x, e.y, 0, 0, def)
-        }
-        e.fireTimer -= dt
-        if (e.fireTimer <= 0 && def.brood) {
-          e.fireTimer = (e.enraged ? 0.6 : 1) * def.brood.cooldown
-          spawnBrood(world, e, def.brood)
-        }
+        if (world.time - e.bornAt >= def.hatch!.after) hatch(world, e)
         break
-      }
       // 'chaser' and 'splitter' use the default seek + separation.
     }
 
@@ -225,7 +230,6 @@ export function aiSystem(world: World, dt: number): void {
     if (e.slow > 0) spd *= 1 - e.slowFactor
     if (e.buffed > 0) spd *= e.buffedMul
     if (def.behavior === 'burrower' && e.submerged && def.burrow) spd *= def.burrow.underSpeedMul
-    if (def.behavior === 'queen' && e.enraged) spd *= 1.4
     if (spd > ENEMY_SPEED_CEIL && !(def.behavior === 'charger' && e.phase === 2)) spd = ENEMY_SPEED_CEIL
 
     if (separate) {
@@ -255,7 +259,39 @@ export function aiSystem(world: World, dt: number): void {
         ? Math.atan2(uy, ux)
         : Math.atan2(e.vy, e.vx)
       : facingOverride
+
+    if (caged) {
+      const fx = e.x - cage.x
+      const fy = e.y - cage.y
+      const min = cage.r + e.radius
+      const d2 = fx * fx + fy * fy
+      if (d2 < min * min) {
+        const fd = Math.sqrt(d2)
+        if (fd > 1e-6) {
+          e.x = cage.x + (fx / fd) * min
+          e.y = cage.y + (fy / fd) * min
+        } else {
+          e.x = cage.x + min
+          e.y = cage.y
+        }
+      }
+    }
   }
+  world.director.broodCount = brood
+}
+
+/** An egg hatches into its brood where it lies; the egg itself gives no credit. */
+function hatch(world: World, e: Enemy): void {
+  const h = e.def.hatch!
+  e.alive = false
+  if (world.enemies.size >= MAX_ENEMIES - 20) return
+  const rng = world.rngs.spawn
+  for (let i = 0; i < h.count; i++) {
+    const a = rng.angle()
+    const s = spawnEnemy(world, h.into, e.x + Math.cos(a) * 14, e.y + Math.sin(a) * 14)
+    if (s) s.brood = e.brood
+  }
+  spawnPoof(world, e.x, e.y, e.gibTint, 6)
 }
 
 /** Aura source: refresh a short buff on all enemies within its radius, stamping
@@ -288,18 +324,6 @@ function teleport(world: World, e: Enemy, range: number): void {
   e.y = e.prevY = clamp(world.player.y + Math.sin(a) * r, b.y + e.radius, b.y + b.h - e.radius)
   spawnPoof(world, e.x, e.y, e.def.tint, 12)
   world.feel.emit(FeelKind.Teleport, 0, e.x, e.y, 0, 0, e.def)
-}
-
-/** Queen spawns a brood burst of random offspring around herself. */
-function spawnBrood(world: World, e: Enemy, brood: { ids: readonly string[]; count: number }): void {
-  const rng = world.rngs.spawn
-  for (let i = 0; i < brood.count; i++) {
-    const id = rng.pick(brood.ids)
-    const a = rng.angle()
-    const r = e.radius + rng.range(8, 30)
-    spawnEnemy(world, id, e.x + Math.cos(a) * r, e.y + Math.sin(a) * r)
-  }
-  spawnPoof(world, e.x, e.y, e.def.gibColor, 10)
 }
 
 /** Enemy ranged shot (spitter acid / stinger / psychic blast). */

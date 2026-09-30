@@ -1,5 +1,5 @@
 import type { Texture } from 'pixi.js'
-import { DASH, GRACE, HASH_CELL } from '../config.ts'
+import { DASH, GRACE, HASH_CELL, MAX_HAZARDS } from '../config.ts'
 import { Pool } from '../core/pool.ts'
 import { RunRngs, SALT, hash32 } from '../core/rng.ts'
 import { hueShiftHex } from '../core/color.ts'
@@ -11,12 +11,14 @@ import { CHARACTERS, type CharacterDef } from '../content/characters.ts'
 import { ARENAS, type ArenaTheme } from '../content/arenas.ts'
 import { FeelKind, FeelQueue, RunAlertRing } from '../effects/feelQueue.ts'
 import { Director } from '../systems/director.ts'
+import { BossFight } from '../systems/bossAI.ts'
 import type { Layers } from '../render/app.ts'
 import type { IchorLayer } from '../render/ichorLayer.ts'
 import type { TextureRegistry } from '../render/textures.ts'
 import type { Arena } from './arena.ts'
 import { AcidPool } from './acidPool.ts'
 import { Enemy } from './enemy.ts'
+import { Hazard } from './hazard.ts'
 import { Particle } from './particle.ts'
 import { PICKUP_SLOT, PICKUP_SLOTS, Pickup } from './pickup.ts'
 import { Player } from './player.ts'
@@ -142,6 +144,17 @@ export class World {
   /** The additive muzzle flash quad (section 6.4). */
   readonly flashTex: Texture
 
+  // P6a: hazards, cage, boss framework
+  readonly hazards = new Pool<Hazard>(() => new Hazard(), () => {}, MAX_HAZARDS)
+  /** Last Hazard.seq handed out this run. */
+  hazardSeq = 0
+  readonly bossFight = new BossFight()
+  /** The PRIME died this run. */
+  cleared = false
+  /** Hand-offs to main.ts: open the win panel, or end the run as a stalemate. */
+  pendingWin = false
+  pendingEnd = false
+
   constructor(
     readonly arena: Arena,
     readonly player: Player,
@@ -244,6 +257,11 @@ export class World {
     this.closeCallSeq = 0
     this.damageTaken = 0
     this.lastHitBy = -1
+    this.hazardSeq = 0
+    this.bossFight.begin('mid1')
+    this.cleared = false
+    this.pendingWin = false
+    this.pendingEnd = false
 
     const b = this.arena.bounds
     this.player.spawn(b.x + b.w / 2, b.y + b.h / 2)
@@ -257,6 +275,7 @@ export class World {
     this.particles.clear()
     this.pickups.clear()
     this.acid.clear()
+    this.hazards.clear()
     this.ichor.clear()
   }
 
@@ -267,6 +286,12 @@ export class World {
   /** Grace after a draft or core reveal closes. */
   resumeFromDraft(): void {
     this.player.grantInvuln(GRACE.draft, 2)
+  }
+
+  /** The win panel's OVERTIME: the run goes on past the win. */
+  startOvertime(): void {
+    this.director.runState = 'overtime'
+    this.pendingWin = false
   }
 
   get score(): number {

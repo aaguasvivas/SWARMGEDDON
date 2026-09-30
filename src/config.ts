@@ -173,9 +173,47 @@ export const HP_RAMP_T_CAP = 720
 export const BOSS_MIN_GAP = 20
 export const MID2_LATEST = 570
 export const BOSS_SPAWN_DIST = 300
-export const BOSS_SPAWN_MIN_DIST = 160
 /** Event and elite beats due during a boss fight fire this long after the
  *  kill, then DEFER_GAP apart; an event more than DEFER_DROP_LATE late is dropped. */
 export const DEFER_AFTER_KILL = 10
 export const DEFER_GAP = 12
 export const DEFER_DROP_LATE = 60
+
+// P6a: hazards, cage, boss framework (docs/NEXT-LEVEL.md 4.1, 4.7, A7.1)
+export const CAGE_R = 520
+export const CAGE_R_MIN = 340
+/** Top-up floor for the swarm kept outside the cage, per arena. */
+export const CAGE_OUTSIDE_MIN: Readonly<Record<string, number>> = { hive: 40, depths: 35, wastes: 30 }
+/** The cage center keeps CAGE_R + CAGE_WALL_PAD inside the arena walls; the
+ *  ring clears the player by at least CAGE_PLAYER_PAD. */
+export const CAGE_WALL_PAD = 30
+export const CAGE_PLAYER_PAD = 80
+/** The arrival shockwave throws the swarm this far past the ring. */
+export const CAGE_SHOCK_PAD = 40
+/** Top-up spawns land at least this far past the ring while it is up. */
+export const CAGE_SPAWN_PAD = 80
+export const POST_BOSS_LULL = 15
+export const POST_BOSS_LULL_MIN = 0.5
+export const FRENZY_AFTER = 90
+export const FRENZY_STEP = 15
+export const FRENZY_CADENCE = 1.1
+export const FRENZY_CADENCE_MAX = 1.6
+export const FRENZY_CAGE_STEP = 25
+export const STALEMATE_AFTER = 210
+/** Boss and elite HP: hp x clamp(baseDps / BOSS_DPS_REF, 1, BOSS_BUILD_MAX) ** BOSS_HP_EXP. */
+export const BOSS_DPS_REF = 88
+export const BOSS_BUILD_MAX = 12
+export const BOSS_HP_EXP = 0.75
+export const ELITE_HP_MUL = 1.5
+export const ELITE_AFFIX_HP = 0.25
+export const BOSS_TELE_MIN = 0.6
+export const BOSS_EMERGE = 1.0
+export const BOSS_ROAR = 0.8
+/** The arrival marker shows where the boss will emerge for this long before it does. */
+export const BOSS_MARKER_LEAD = 1.5
+export const BOSS_MARKER_R = 90
+export const MAX_BROOD = 24
+export const MAX_HAZARDS = 48
+export const PURGE_SEC = 1.2
+export const PURGE_RADIUS = 1500
+export const WIN_PANEL_DELAY = 2.0

@@ -6,7 +6,7 @@ import { COLORS } from '../config.ts'
  * signature. Variants reuse a base sprite with a different tint/scale; only the
  * genuinely new silhouettes get their own sprite builder.
  */
-export type EnemyBehavior = 'chaser' | 'flyer' | 'spitter' | 'splitter' | 'burrower' | 'aura' | 'teleporter' | 'queen' | 'charger'
+export type EnemyBehavior = 'chaser' | 'flyer' | 'spitter' | 'splitter' | 'burrower' | 'aura' | 'teleporter' | 'boss' | 'egg' | 'charger'
 
 export interface EnemyDef {
   id: string
@@ -47,9 +47,8 @@ export interface EnemyDef {
   /** Gravity well: drags the player toward this enemy (total pull is clamped
    *  globally (see aiSystem), so it can never overpower the move stick). */
   wellPull?: { radius: number; strength: number }
-  /** Queen brood spawning + enrage. */
-  brood?: { ids: readonly string[]; count: number; cooldown: number }
-  enrageAt?: number // hp fraction
+  /** Egg: hatches `count` of `into` this many seconds after it is laid. */
+  hatch?: { after: number; into: string; count: number }
   elite?: boolean
   boss?: boolean
 }
@@ -69,7 +68,10 @@ export const ENEMIES: Record<string, EnemyDef> = {
   psychic: { id: 'psychic', displayName: 'PSYCHIC', sprite: 'psychic', hp: 18, speed: 52, radius: 16, damage: 16, xp: 5, tint: 0x9b7aff, scale: 1.15, behavior: 'teleporter', gibColor: 0xb79aff, gibCount: 7, preferRange: 300, fireCooldown: 2.4, projectileSpeed: 420, projectileDamage: 18, teleport: { cooldown: 3.5, range: 260 }, hpRamp: 1 / 18 },
   warper: { id: 'warper', displayName: 'WARPER', sprite: 'warper', hp: 24, speed: 58, radius: 18, damage: 24, xp: 6, tint: 0x7affd8, scale: 1.25, behavior: 'chaser', gibColor: 0x9affe0, gibCount: 8, warps: true, hpRamp: 1 / 14 },
   guardian: { id: 'guardian', displayName: 'GUARDIAN', sprite: 'beetle', hp: 120, speed: 54, radius: 28, damage: 52, xp: 20, tint: 0xe85a3a, scale: 1.9, behavior: 'chaser', gibColor: 0xff7a4a, gibCount: 16, frontArmor: 0.4, elite: true, hpRamp: 1 / 4 },
-  queen: { id: 'queen', displayName: 'THE QUEEN', sprite: 'queen', hp: 1600, speed: 34, radius: 46, damage: 60, xp: 200, tint: 0xff3a8a, scale: 2.6, behavior: 'queen', gibColor: 0xff6aa8, gibCount: 30, boss: true, brood: { ids: ['swarmer', 'splitter', 'flyer'], count: 4, cooldown: 4 }, enrageAt: 0.5, hpRamp: 1 / 2 },
+  // A boss the director spawns takes its HP from the stage table (content/bosses.ts).
+  queen: { id: 'queen', displayName: 'THE QUEEN', sprite: 'queen', hp: 1600, speed: 34, radius: 46, damage: 60, xp: 120, tint: 0xff3a8a, scale: 2.6, behavior: 'boss', gibColor: 0xff6aa8, gibCount: 30, boss: true, hpRamp: 0 },
+  queenPrime: { id: 'queenPrime', displayName: 'QUEEN PRIME', sprite: 'queen', hp: 4200, speed: 34, radius: 56, damage: 60, xp: 240, tint: 0xff2a6a, scale: 3.2, behavior: 'boss', gibColor: 0xff6aa8, gibCount: 36, boss: true, hpRamp: 0 },
+  egg: { id: 'egg', displayName: 'EGG', sprite: 'splitter', hp: 40, speed: 0, radius: 14, damage: 0, xp: 2, tint: 0xffc2e6, scale: 0.9, behavior: 'egg', gibColor: 0xffd6ee, gibCount: 5, hatch: { after: 4.0, into: 'swarmer', count: 3 }, hpRamp: 0 },
 
   // --- Three Worlds roster (docs/WORLDS-SPEC.md) -----------------------------
   // HIVE signature: splitter-line capstone: one kill cascades 2 splitters -> 6 swarmers.
@@ -87,7 +89,9 @@ export const ENEMIES: Record<string, EnemyDef> = {
   // WASTES elite: burrower remix: intangible submerged; unload in surface windows.
   duneLeviathan: { id: 'duneLeviathan', displayName: 'LEVIATHAN', sprite: 'burrower', hp: 320, speed: 96, radius: 28, damage: 64, xp: 30, tint: 0xe8e75a, scale: 2.3, behavior: 'burrower', gibColor: 0xedf06a, gibCount: 16, burrow: { underTime: 2.5, surfaceTime: 2.5, underSpeedMul: 2.2 }, elite: true, hpRamp: 1 / 4 },
   // DEPTHS boss: the reality-warp runs for the whole fight.
-  voidMatron: { id: 'voidMatron', displayName: 'THE VOID MATRON', sprite: 'queen', hp: 1500, speed: 40, radius: 44, damage: 55, xp: 200, tint: 0xff6b95, scale: 2.5, behavior: 'queen', gibColor: 0xff9ab9, gibCount: 28, boss: true, warps: true, brood: { ids: ['wraith', 'psychic', 'biter'], count: 4, cooldown: 3.8 }, enrageAt: 0.6, hpRamp: 1 / 2 },
+  voidMatron: { id: 'voidMatron', displayName: 'THE VOID MATRON', sprite: 'queen', hp: 1500, speed: 40, radius: 44, damage: 55, xp: 120, tint: 0xff6b95, scale: 2.5, behavior: 'boss', gibColor: 0xff9ab9, gibCount: 28, boss: true, warps: true, hpRamp: 0 },
+  voidMatronPrime: { id: 'voidMatronPrime', displayName: 'MATRON PRIME', sprite: 'queen', hp: 4200, speed: 40, radius: 54, damage: 55, xp: 240, tint: 0xff4f86, scale: 3.1, behavior: 'boss', gibColor: 0xff9ab9, gibCount: 34, boss: true, warps: true, hpRamp: 0 },
   // WASTES boss: surrounds itself with flak turrets.
-  emberTyrant: { id: 'emberTyrant', displayName: 'THE EMBER TYRANT', sprite: 'queen', hp: 2000, speed: 30, radius: 48, damage: 60, xp: 220, tint: 0xffeb3d, scale: 2.8, behavior: 'queen', gibColor: 0xfff25a, gibCount: 32, boss: true, brood: { ids: ['beetle', 'stinger'], count: 3, cooldown: 4.5 }, enrageAt: 0.35, hpRamp: 1 / 2 },
+  emberTyrant: { id: 'emberTyrant', displayName: 'THE EMBER TYRANT', sprite: 'queen', hp: 2000, speed: 30, radius: 48, damage: 60, xp: 130, tint: 0xffeb3d, scale: 2.8, behavior: 'boss', gibColor: 0xfff25a, gibCount: 32, boss: true, hpRamp: 0 },
+  emberTyrantPrime: { id: 'emberTyrantPrime', displayName: 'TYRANT PRIME', sprite: 'queen', hp: 4200, speed: 30, radius: 58, damage: 60, xp: 260, tint: 0xffd23d, scale: 3.4, behavior: 'boss', gibColor: 0xfff25a, gibCount: 38, boss: true, hpRamp: 0 },
 }

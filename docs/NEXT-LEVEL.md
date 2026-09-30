@@ -278,7 +278,7 @@ export interface RunRngs { spawn: Rng; script: Rng; boss: Rng; loot: Rng; draft:
    - OVERTIME calls `world.startOvertime()` and grants the PRIME Hive Core.
 
 **FRENZY and STALEMATE:**
-- **FRENZY** starts 90 s after any boss arrives and steps every 15 s: cadence x1.1 per step (max x1.6), cage radius -25 per step (min 340), and a `FRENZY` alert.
+- **FRENZY** starts 90 s after any boss arrives and steps every 15 s: cadence x1.1 per step (compounding, max x1.6), cage radius -25 per step (min 340), and a `FRENZY` alert. A step past both caps changes nothing and is not announced.
 - **STALEMATE** comes 210 s after the PRIME arrives. The PRIME retreats, the cage drops, `pendingEnd = true`, and `endRun('stalemate')` runs.
 
 **OVERTIME** (Standard only). Cycles last 180 s.
@@ -494,7 +494,7 @@ Numbers are in A5.
 2. **t - 1.5:** a marker hazard (r 90, no damage) follows `player + 300·dir(φ)`.
 3. **At arrival:**
    - Cage center `C = clamp(player, arena shrunk by R + 30)`, with `R = max(520, |player - C| + 80)`.
-   - Boss spawn point `P = C + 300·dir(φ)`, flipped 180 degrees if it lands within 160 u of the player.
+   - Boss spawn point `P = player + 300·dir(φ)`: the marker's spot, so the marker never lies. If `P` lies outside the ring (inset by the PRIME radius + 20), it flips 180 degrees; if both sides lie outside, `P` is pulled in to the ring along its ray. (Decided in P6a: `C + 300·dir(φ)` puts the boss up to 750 u from a player near a wall, which breaks A5.)
    - A shockwave pushes non-boss enemies to `R + 40 + radius` and removes enemy shots, acid and hazards inside R.
    - The boss spends 1.0 s in `EMERGE`: untargetable, no bite, no attack.
    - The `boss` stream is reseeded.
@@ -505,7 +505,7 @@ Numbers are in A5.
    - The player is clamped inside R.
 5. **Kill:**
    - Slain text from the script.
-   - The cage drops, a 15 s post-boss lull starts, and `lastBossKillAt = t`.
+   - The cage drops, a 15 s post-boss lull (minAlive x0.5) starts, and `lastBossKillAt = t`.
    - Hive Core and pod drop.
 
 **HP** (fights of 20 to 40 s, PRIME 40 to 75 s):
@@ -651,6 +651,7 @@ export const enum FeelKind {
   ChargerWindup, EnemyShot, Teleport, Dash, CloseCall, Alert /* b = RunAlert ring index */,
   MultUp /* a = tier */, MultDown, ChainHit, Fusion /* b = fusion index */, Evolve /* b = weapon index */,
   CoreOpen /* a = levels */, Shard, BonusPickup /* b = bonus index */, BonusEnd, HazardDetonate, Win, Stalemate,
+  BossTele /* a = attack kind, b = telegraph seconds */,
 }
 export const FF_CRIT = 1, FF_ELITE = 2, FF_BOSS = 4, FF_AOE = 8, FF_DISCRETE = 16, FF_CONTACT = 32, FF_ACID = 64, FF_RAM = 128
 ```
@@ -1889,6 +1890,7 @@ export const CAGE_R = 520, CAGE_R_MIN = 340, CAGE_OUTSIDE_MIN = { hive: 40, dept
 export const BOSS_MIN_GAP = 20, POST_BOSS_LULL = 15, FRENZY_AFTER = 90, FRENZY_STEP = 15, STALEMATE_AFTER = 210
 export const BOSS_DPS_REF = 88, BOSS_TELE_MIN = 0.6, MAX_BOSS_TELEGRAPHS = 1, MAX_BROOD = 24, MAX_HAZARDS = 48
 export const PURGE_SEC = 1.2, PURGE_RADIUS = 1500, WIN_PANEL_DELAY = 2.0
+export const POST_BOSS_LULL_MIN = 0.5, BOSS_MARKER_LEAD = 1.5, BOSS_MARKER_R = 90, BOSS_EMERGE = 1.0, BOSS_ROAR = 0.8
 ```
 
 | t | Beat | script draws |
@@ -2077,6 +2079,8 @@ Idle gap: queen 0.9 s, matron 0.7 s, tyrant 1.1 s. Cadence divides idleGap and r
 | B royalLunge | 0.90 | up to 1.0 | 1.00 | 30 | lane len 560, halfW 50, heading locked at tele start; dash 560 u/s; stops at the cage edge; one hit |
 | C eggClutch | 0.60 | instant | 0.60 | 0 | 5 eggs (PRIME P3: 7) on r 150, 1 boss draw; at brood cap, cast A instead |
 | SIG mothersCall | 1.20 | instant | 1.00 | none | 24 swarmers (hp x1.5) on 27 slots at `cage.r - 40`; 3 empty slots face away from the queen |
+
+Decals: sporeNova a circle r 120 on the queen; royalLunge its lane, cut at the ring; eggClutch a circle r 164 (the egg ring plus an egg radius); mothersCall a circle of `cage.r - 40` on the cage center. Until P6b lands, the VOID MATRON and EMBER TYRANT cast the QUEEN's attacks with their own idle movement and gaps.
 
 **THE VOID MATRON** (idle: strafes at 260 u)
 

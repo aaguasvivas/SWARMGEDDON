@@ -11,10 +11,11 @@ export const enum FeelKind {
   PlayerHurt /* x, y = source, a = HP removed */, PlayerDeath, Revive, LevelUp /* a = new level */,
   GemCollect /* a = xp */, HealCollect /* a = HP gained */,
   WeaponPickup /* b = weapon index */, WeaponEmpty /* b = weapon index */, LowAmmo /* a = rounds left */,
-  PodSpawn /* b = weapon index */, EliteSpawn, BossSpawn, BossPhase, BossFrenzy, BossKill,
+  PodSpawn /* b = weapon index */, EliteSpawn, BossSpawn, BossPhase /* a = new phase */, BossFrenzy /* a = step */, BossKill,
   ChargerWindup, EnemyShot, Teleport, Dash /* a, b = heading unit vector */, CloseCall, Alert /* b = RunAlert ring index */,
   MultUp /* a = tier */, MultDown /* a = tier */, ChainHit, Fusion /* b = fusion index */, Evolve /* b = weapon index */,
-  CoreOpen /* a = levels */, Shard, BonusPickup /* b = bonus index */, BonusEnd, HazardDetonate, Win, Stalemate,
+  CoreOpen /* a = levels */, Shard, BonusPickup /* b = bonus index */, BonusEnd, HazardDetonate /* a = radius */, Win, Stalemate,
+  BossTele /* a = attack kind (content/bosses.ts ATK_*), b = telegraph seconds; ref = EnemyDef */,
 }
 
 export const FF_CRIT = 1, FF_ELITE = 2, FF_BOSS = 4, FF_AOE = 8, FF_DISCRETE = 16, FF_CONTACT = 32, FF_ACID = 64, FF_RAM = 128
