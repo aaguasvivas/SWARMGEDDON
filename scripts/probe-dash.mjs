@@ -6,7 +6,10 @@
 //   sim    dash distance and i-frame ticks, end-lag, buffer, charges, Close Call
 //          once per dash per trigger type and never on grace, bite cadence and cap,
 //          discrete hit cooldown, revive and draft grace, a chained draft that
-//          ends on an empty roll (grace applies, a stale dash press drops)
+//          ends on an empty roll (grace applies, a stale dash press drops), and
+//          at 5:00 with 100 HP: the bite cap binds (16), 7 capped bites kill,
+//          a swarmer bite carries dmgMul, a queen bite does not, and an enemy
+//          shot carries dmgMul exactly once
 //   touch  at 320x568, 360x640, 375x667, 667x375, 568x320 and 390x844 (safe-area
 //          insets 47/34): DASH tap dashes and claims no stick, the exclusion ring
 //          spawns nothing, a slide onto the button does nothing, the fire latch, and
@@ -325,6 +328,67 @@ function simChecks() {
     ...resumed,
     dashed,
     pass: opened && !resumed.paused && resumed.pending === 0 && resumed.invuln === 0.75 && resumed.src === 2 && dashed === 0,
+  }
+
+  // 10. Time ramp and bite cap at 5:00 with NOVA's real 100 HP. The det bots
+  //     run at 1e9 HP, so only this group sees the cap bind and a death.
+  const late = () => {
+    fresh()
+    ctl.mx = 0
+    S.jumpTo(300)
+    // A lull with no floor: the director spawns nothing while the group runs.
+    w.director.lullUntil = 1e9
+    w.director.lullMin = 0
+  }
+  const firstBite = (id, maxHp) => {
+    late()
+    pl.maxHp = pl.hp = maxHp
+    const e = spawnAt(id, pl.x, pl.y)
+    e.hp = e.maxHp = 1e9
+    const before = pl.hp
+    S.step(1)
+    return { bite: +(before - pl.hp).toFixed(4), dmgMul: w.dmgMul, damage: e.damage }
+  }
+  const swarmer = firstBite('swarmer', 1000)
+  const queen = firstBite('queen', 1000)
+  late()
+  const brutes = [0, 1, 2].map(() => spawnAt('brute', pl.x, pl.y))
+  const capBites = []
+  let deathTick = -1
+  for (let t = 0; t < 400 && deathTick < 0; t++) {
+    for (const e of brutes) {
+      e.x = e.prevX = pl.x
+      e.y = e.prevY = pl.y
+      e.hp = e.maxHp = 1e9
+    }
+    const before = pl.hp
+    S.step(1)
+    if (pl.hp < before) capBites.push([t, +(before - pl.hp).toFixed(4)])
+    if (w.pendingGameOver) deathTick = t
+  }
+  const deathHp = pl.hp
+  late()
+  const stinger = spawnAt('stinger', pl.x + 150, pl.y)
+  stinger.hp = stinger.maxHp = 1e9
+  let shot = null
+  let shotHurt = -1
+  for (let t = 0; t < 300 && shotHurt < 0; t++) {
+    const before = pl.hp
+    S.step(1)
+    if (!shot && w.enemyProjectiles.active.length > 0) shot = { damage: w.enemyProjectiles.active[0].damage, dmgMul: w.dmgMul }
+    if (pl.hp < before) shotHurt = +(before - pl.hp).toFixed(4)
+  }
+  const near = (a, b) => Math.abs(a - b) < 1e-3
+  const cap = 0.16 * 100
+  out.rampCap = {
+    swarmer, queen, capBites, deathTick, deathHp, shot, shotHurt,
+    pass:
+      swarmer.dmgMul > 1.19 &&
+      near(swarmer.bite, swarmer.damage * 0.4 * swarmer.dmgMul) &&
+      near(queen.bite, queen.damage * 0.4) &&
+      capBites.length === 7 && capBites.slice(0, 6).every(([, v]) => near(v, cap)) &&
+      capBites[6][0] - capBites[0][0] === 6 * 24 && deathTick === capBites[6][0] && deathHp === 0 &&
+      shot !== null && near(shot.damage, 11 * shot.dmgMul) && near(shotHurt, shot.damage),
   }
   return out
 }

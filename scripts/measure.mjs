@@ -26,6 +26,17 @@
 //                                  60 s. The view is the camera's world view at W x H
 //                                  (W / baseZoom by H / baseZoom) unless viewW viewH
 //                                  override it.
+//   ringview [arenaId|all] [seconds]
+//                                  C27 check: the det-long bot plays `seconds` (default
+//                                  300, so the 4:00 boss fight is in it). Every non-boss
+//                                  spawn on the spawn ring is tested against the camera
+//                                  this W x H device gets, with the look-ahead, touch
+//                                  portrait bias and boss pull fully blended in: centered
+//                                  (kbm, no aim), aim (kbm, 8 aim directions) and touch
+//                                  (portrait only, 9 aims). Counts spawns whose body is
+//                                  inside the view and the deepest overlap in world units;
+//                                  visibleNoWallClamp repeats the test without the arena
+//                                  clamp, to separate the offsets from the wall effect.
 //   perf                           6s live combat at flood(500) + auto-fire; reports
 //                                  fps / p95 / max / long(>20ms) / bad(>33.4ms) frames.
 //                                  Drafts are answered with card 1 and the field is kept
@@ -380,6 +391,86 @@ if (MODE === 'shot') {
   const pass = worst.firstInView <= 1.0 && worst.firstKill <= 2.5 && worst.emptyViewSec <= 2.0
   console.log(JSON.stringify({ mode: 'opening', W, H, view, worst, pass }))
   if (pageErrors.length) console.log(JSON.stringify({ mode: 'opening', pageErrors }))
+} else if (MODE === 'ringview') {
+  const arenaArg = pos[3] || 'hive'
+  const seconds = parseFloat(pos[4] || '300')
+  const arenas = arenaArg === 'all' ? ['hive', 'depths', 'wastes'] : [arenaArg]
+  await page.evaluate(DET_HELPER)
+  for (const arenaId of arenas) {
+    await page.evaluate((a) => window.__DET.start('nova', a, 'endless', true), arenaId)
+    const r = await page.evaluate(async (steps) => {
+      const S = window.__SWARM
+      const w = S.world
+      const { RING_NEAR, RING_STD, RING_NEAR_UNTIL } = await import('/src/config.ts')
+      const cam = new S.camera.constructor()
+      const sw = S.app.screen.width
+      const sh = S.app.screen.height
+      cam.resize(sw, sh)
+      const touches = sh > sw ? [false, true] : [false]
+      const AIMS = [[0, 0]]
+      for (let k = 0; k < 8; k++) AIMS.push([Math.cos((k * Math.PI) / 4), Math.sin((k * Math.PI) / 4)])
+      const cls = ['centered', 'aim', 'touch']
+      const out = { ring: 0, elites: 0, duringBoss: 0, visible: {}, visibleDuringBoss: 0, visibleNoWallClamp: 0, maxInside: {}, worst: {} }
+      const NO_WALLS = { x: -1e5, y: -1e5, w: 2e5, h: 2e5 }
+      for (const c of cls) { out.visible[c] = 0; out.maxInside[c] = 0 }
+      const depth = (e) => {
+        const rr = e.radius
+        return Math.min(e.x + rr - cam.x, cam.x + cam.w - (e.x - rr), e.y + rr - cam.y, cam.y + cam.h - (e.y - rr))
+      }
+      for (let i = 0; i < steps; i++) {
+        const seq = w.enemyUidSeq
+        const ring = w.time < RING_NEAR_UNTIL ? RING_NEAR : RING_STD
+        window.__DET.run(1)
+        const pl = w.player
+        const boss = w.bossAlive && w.boss ? w.boss : null
+        for (const e of w.enemies.active) {
+          if (e.uid < seq || !e.alive || e.def.boss) continue
+          if (Math.max(Math.abs(e.x - pl.x) / ring.halfW, Math.abs(e.y - pl.y) / ring.halfH) < 0.9) continue
+          out.ring++
+          if (e.def.elite) out.elites++
+          if (boss) out.duringBoss++
+          const hit = { centered: 0, aim: 0, touch: 0 }
+          let open = 0
+          for (const touch of touches) {
+            for (let a = 0; a < AIMS.length; a++) {
+              // A 100 s update settles the eased look-ahead and fight blend.
+              cam.reset()
+              cam.update(100, pl.x, pl.y, AIMS[a][0], AIMS[a][1], touch, boss, w.arena.bounds)
+              const c = touch ? 'touch' : a === 0 ? 'centered' : 'aim'
+              hit[c] = Math.max(hit[c], depth(e))
+              // The same view with no wall clamp: what the offsets alone expose.
+              cam.reset()
+              cam.update(100, pl.x, pl.y, AIMS[a][0], AIMS[a][1], touch, boss, NO_WALLS)
+              open = Math.max(open, depth(e))
+            }
+          }
+          if (open > 0) out.visibleNoWallClamp++
+          for (const c of cls) {
+            if (hit[c] <= 0) continue
+            out.visible[c]++
+            if (hit[c] > out.maxInside[c]) {
+              const b = w.arena.bounds
+              out.maxInside[c] = Math.round(hit[c])
+              out.worst[c] = {
+                t: +w.time.toFixed(2), id: e.def.id, dx: Math.round(e.x - pl.x), dy: Math.round(e.y - pl.y), boss: !!boss,
+                wall: [Math.round(pl.y - b.y), Math.round(b.x + b.w - pl.x), Math.round(b.y + b.h - pl.y), Math.round(pl.x - b.x)],
+              }
+            }
+          }
+          if (boss && (hit.centered > 0 || hit.aim > 0 || hit.touch > 0)) out.visibleDuringBoss++
+        }
+      }
+      cam.reset()
+      cam.update(100, 0, 0, 0, 0, false, null, NO_WALLS)
+      out.view = [Math.round(cam.w), Math.round(cam.h)]
+      out.rings = { near: RING_NEAR, std: RING_STD }
+      out.time = +w.time.toFixed(1)
+      return out
+    }, Math.round(seconds * 60))
+    const pass = r.visible.centered + r.visible.aim + r.visible.touch === 0
+    console.log(JSON.stringify({ mode: 'ringview', W, H, arenaId, ...r, pass }))
+  }
+  if (pageErrors.length) console.log(JSON.stringify({ mode: 'ringview', pageErrors }))
 } else {
   // perf [charId] [arenaId]: live combat in any world (default nova/hive).
   // perf-final: the same live measure from the FINAL SWARM beat (10 s).

@@ -39,6 +39,7 @@ export class Hud {
   private bossBack = new Graphics()
   private bossFill = new Graphics()
   private bossLabel: Text
+  private bossTitle = ''
   // World title card: shown for a beat at run start so entering a world feels
   // like entering a WORLD. Pure presentation, driven by the render clock.
   private titleText: Text
@@ -196,7 +197,10 @@ export class Hud {
       this.bossBack.roundRect(bx - 2, by - 2, bw + 4, 14, 5).fill({ color: 0x000000, alpha: 0.4 })
       this.bossBack.roundRect(bx, by, bw, 10, 4).fill(0x2a0d1d)
       if (frac > 0) this.bossFill.roundRect(bx, by, bw * frac, 10, 4).fill(0xff3a8a)
-      this.bossLabel.text = '⬢ ' + world.director.bossTitle
+      if (world.director.bossTitle !== this.bossTitle) {
+        this.bossTitle = world.director.bossTitle
+        this.bossLabel.text = '⬢ ' + this.bossTitle
+      }
       this.bossLabel.position.set(cx, by - 4)
       this.bossLabel.visible = true
     } else {
