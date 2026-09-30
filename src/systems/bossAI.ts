@@ -21,6 +21,7 @@ import { HZ_CIRCLE, HZ_LANE, type Hazard } from '../game/hazard.ts'
 import { tickDown } from '../game/player.ts'
 import type { World } from '../game/world.ts'
 import { hurtPlayer } from './damage.ts'
+import { closeCall, closeCallArmed } from './dash.ts'
 import { spawnHazard } from './hazards.ts'
 import { spawnEnemy } from './spawn.ts'
 
@@ -59,6 +60,9 @@ export class BossFight {
   teleSeq = 0
   dirX = 1
   dirY = 0
+  /** Where the lunge lane starts (the boss at its telegraph start). */
+  lungeX = 0
+  lungeY = 0
   lungeHit = false
   /** Seconds until the second spore ring (0 = none pending), its aim and size. */
   ring2T = 0
@@ -195,10 +199,12 @@ function startAttack(w: World, e: Enemy, kit: BossKit): void {
     const d = Math.hypot(pl.x - e.x, pl.y - e.y) || 1
     f.dirX = (pl.x - e.x) / d
     f.dirY = (pl.y - e.y) / d
+    f.lungeX = e.x
+    f.lungeY = e.y
     h = spawnHazard(w, HZ_LANE, e.x, e.y, ROYAL_LUNGE.halfW, tele, ROYAL_LUNGE.active, 0)
     if (h) {
       h.ang = Math.atan2(f.dirY, f.dirX)
-      h.len = Math.min(ROYAL_LUNGE.speed * ROYAL_LUNGE.active, reachInCage(w, e, f.dirX, f.dirY)) + e.radius
+      h.len = Math.min(ROYAL_LUNGE.speed * ROYAL_LUNGE.active, reachInCage(w, e, f.dirX, f.dirY), reachInArena(w, e, f.dirX, f.dirY)) + e.radius
     }
   } else if (kind === ATK_EGG_CLUTCH) {
     h = spawnHazard(w, HZ_CIRCLE, e.x, e.y, EGG_CLUTCH.ringR + EGG_R, tele, 0, 0)
@@ -259,38 +265,40 @@ function recover(w: World, sec: number): void {
 }
 
 /** Royal lunge: a locked line at ROYAL_LUNGE.speed that stops at the cage edge
- *  and hits the player at most once. */
+ *  or the arena wall. It hits the player at most once, and only inside the
+ *  drawn lane: the stretch the body's front has swept, ROYAL_LUNGE.halfW wide. */
 function lungeStep(w: World, e: Enemy, dt: number, cad: number): void {
   const f = w.bossFight
-  const c = w.director.cage
   const sp = ROYAL_LUNGE.speed
-  let nx = e.x + f.dirX * sp * dt
-  let ny = e.y + f.dirY * sp * dt
-  let stop = false
-  if (c.active) {
-    const max = c.r - e.radius
-    const dx = nx - c.x
-    const dy = ny - c.y
-    const d2 = dx * dx + dy * dy
-    if (d2 > max * max) {
-      const k = max / Math.sqrt(d2)
-      nx = c.x + dx * k
-      ny = c.y + dy * k
-      stop = true
-    }
-  }
-  e.vx = (nx - e.x) / dt
-  e.vy = (ny - e.y) / dt
-  e.x = nx
-  e.y = ny
+  spot.x = e.x + f.dirX * sp * dt
+  spot.y = e.y + f.dirY * sp * dt
+  const stop = clampSpot(w, e.radius, e.radius)
+  e.vx = (spot.x - e.x) / dt
+  e.vy = (spot.y - e.y) / dt
+  e.x = spot.x
+  e.y = spot.y
   e.facing = Math.atan2(f.dirY, f.dirX)
-  const pl = w.player
-  const rr = e.radius + pl.radius
-  if (!f.lungeHit && (pl.x - e.x) ** 2 + (pl.y - e.y) ** 2 < rr * rr) {
+  if (!f.lungeHit && inSweptLane(w, e)) {
+    if (closeCallArmed(w)) closeCall(w)
     if (hurtPlayer(w, ROYAL_LUNGE.damage, 'discrete', -1, e.x, e.y, FF_RAM) > 0) f.lungeHit = true
   }
   f.stateT = tickDown(f.stateT, dt)
   if (stop || f.stateT === 0) recover(w, ROYAL_LUNGE.recover / cad)
+}
+
+/** The player's body overlaps the lane rectangle from the lunge start to the
+ *  body's front: along [0, travelled + radius], across [-halfW, halfW]. */
+function inSweptLane(w: World, e: Enemy): boolean {
+  const f = w.bossFight
+  const pl = w.player
+  const front = (e.x - f.lungeX) * f.dirX + (e.y - f.lungeY) * f.dirY + e.radius
+  const rx = pl.x - f.lungeX
+  const ry = pl.y - f.lungeY
+  const along = rx * f.dirX + ry * f.dirY
+  const across = ry * f.dirX - rx * f.dirY
+  const du = along - clamp(along, 0, front)
+  const dv = across - clamp(across, -ROYAL_LUNGE.halfW, ROYAL_LUNGE.halfW)
+  return du * du + dv * dv < pl.radius * pl.radius
 }
 
 /** How far the body can travel along (ux, uy) before it meets the cage edge. */
@@ -302,6 +310,18 @@ function reachInCage(w: World, e: Enemy, ux: number, uy: number): number {
   const b = ox * ux + oy * uy
   const disc = b * b - (ox * ox + oy * oy - r * r)
   return disc > 0 ? Math.max(0, -b + Math.sqrt(disc)) : 0
+}
+
+/** How far the body can travel along (ux, uy) before it meets an arena wall. */
+function reachInArena(w: World, e: Enemy, ux: number, uy: number): number {
+  const b = w.arena.bounds
+  const r = e.radius
+  let t = Infinity
+  if (ux > 0) t = Math.min(t, (b.x + b.w - r - e.x) / ux)
+  else if (ux < 0) t = Math.min(t, (b.x + r - e.x) / ux)
+  if (uy > 0) t = Math.min(t, (b.y + b.h - r - e.y) / uy)
+  else if (uy < 0) t = Math.min(t, (b.y + r - e.y) / uy)
+  return Math.max(0, t)
 }
 
 /** One ring of spore globs; the first flies at `aim`. */
@@ -334,21 +354,27 @@ function sporeRing(w: World, e: Enemy, aim: number, n: number): void {
 
 const spot = { x: 0, y: 0 }
 
-/** Clamp `spot` inside the cage (by `pad`) and inside the arena. */
-function clampSpot(w: World, pad: number): void {
+/** Clamp `spot` inside the cage (by `cagePad`) and inside the arena walls (by
+ *  `wallPad`). Returns whether it moved. */
+function clampSpot(w: World, cagePad: number, wallPad: number): boolean {
+  const x0 = spot.x
+  const y0 = spot.y
   const c = w.director.cage
-  const max = c.r - pad
-  const dx = spot.x - c.x
-  const dy = spot.y - c.y
-  const d2 = dx * dx + dy * dy
-  if (d2 > max * max) {
-    const k = max / Math.sqrt(d2)
-    spot.x = c.x + dx * k
-    spot.y = c.y + dy * k
+  if (c.active) {
+    const max = c.r - cagePad
+    const dx = spot.x - c.x
+    const dy = spot.y - c.y
+    const d2 = dx * dx + dy * dy
+    if (d2 > max * max) {
+      const k = max / Math.sqrt(d2)
+      spot.x = c.x + dx * k
+      spot.y = c.y + dy * k
+    }
   }
   const b = w.arena.bounds
-  spot.x = clamp(spot.x, b.x + EDGE_INSET, b.x + b.w - EDGE_INSET)
-  spot.y = clamp(spot.y, b.y + EDGE_INSET, b.y + b.h - EDGE_INSET)
+  spot.x = clamp(spot.x, b.x + wallPad, b.x + b.w - wallPad)
+  spot.y = clamp(spot.y, b.y + wallPad, b.y + b.h - wallPad)
+  return spot.x !== x0 || spot.y !== y0
 }
 
 /** Egg clutch: eggs evenly on a ring around the boss, turned by one boss draw. */
@@ -359,7 +385,7 @@ function layEggs(w: World, e: Enemy, n: number): void {
     const a = a0 + (k * TAU) / n
     spot.x = e.x + Math.cos(a) * EGG_CLUTCH.ringR
     spot.y = e.y + Math.sin(a) * EGG_CLUTCH.ringR
-    clampSpot(w, EGG_R)
+    clampSpot(w, EGG_R, EDGE_INSET)
     const egg = spawnEnemy(w, 'egg', spot.x, spot.y)
     if (egg) egg.brood = w.bossFights
   }
@@ -380,7 +406,7 @@ function mothersCall(w: World, e: Enemy): void {
     const a = away + k * step
     spot.x = c.x + Math.cos(a) * rr
     spot.y = c.y + Math.sin(a) * rr
-    clampSpot(w, unitR)
+    clampSpot(w, unitR, EDGE_INSET)
     const s = spawnEnemy(w, M.unit, spot.x, spot.y)
     if (!s) continue
     s.hp = s.maxHp = Math.round(s.maxHp * M.hpMul)
@@ -425,17 +451,13 @@ function idleMove(w: World, e: Enemy, kit: BossKit, dt: number): void {
   e.facing = Math.atan2(uy, ux)
 }
 
-/** The boss body never leaves the cage (the frenzy shrinks it around her). */
+/** The boss body never leaves the cage (the frenzy shrinks it around her) or
+ *  the arena: near a wall the ring reaches past it. */
 function keepInCage(w: World, e: Enemy): void {
-  const c = w.director.cage
-  if (!c.active) return
-  const max = c.r - e.radius
-  const dx = e.x - c.x
-  const dy = e.y - c.y
-  const d2 = dx * dx + dy * dy
-  if (d2 > max * max) {
-    const k = max / Math.sqrt(d2)
-    e.x = c.x + dx * k
-    e.y = c.y + dy * k
-  }
+  if (!w.director.cage.active) return
+  spot.x = e.x
+  spot.y = e.y
+  if (!clampSpot(w, e.radius, e.radius)) return
+  e.x = spot.x
+  e.y = spot.y
 }

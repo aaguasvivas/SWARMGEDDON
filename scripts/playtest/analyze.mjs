@@ -66,7 +66,7 @@ for (const f of files) {
     const end = ev.find((e) => e.t >= sp.t && (e.type === 'bossKill' || e.type === 'stalemate'))
     const endT = end && (!next || end.t <= next.t) ? end.t : next ? next.t : r.endTime
     const how = end && (!next || end.t <= next.t) ? (end.type === 'bossKill' ? 'kill' : 'stalemate') : next ? 'ascend' : r.dead ? 'death' : 'open'
-    return { stage: sp.stage, spawnT: sp.t, endT, len: +(endT - sp.t).toFixed(2), how, dist: sp.dist, cage: sp.cage, inCage: sp.inCage, hp: sp.hp }
+    return { stage: sp.stage, spawnT: sp.t, endT, len: +(endT - sp.t).toFixed(2), how, dist: sp.dist, cage: sp.cage, inCage: sp.inCage, inArena: sp.inArena, hp: sp.hp }
   })
   const killGaps = []
   for (let i = 0; i < fights.length - 1; i++) {
@@ -166,9 +166,9 @@ const median = (a) => {
 const allFights = out.flatMap((s) => s.fights.map((f) => ({ ...f, run: s.file })))
 if (allFights.length) {
   const dists = allFights.map((f) => f.dist)
-  const a5Bad = allFights.filter((f) => f.dist < 250 || f.dist > 340 || !f.cage || !f.inCage)
-  console.log(`A5 arrivals=${allFights.length} dist min=${Math.min(...dists)} max=${Math.max(...dists)} cage+inside=${allFights.filter((f) => f.cage && f.inCage).length} bad=${a5Bad.length} (pass: 250 to 340 u, cage active the same tick)`)
-  for (const f of a5Bad) console.log(`  A5 outlier ${f.run} ${f.stage} t=${f.spawnT} dist=${f.dist} cage=${f.cage} inCage=${f.inCage}`)
+  const a5Bad = allFights.filter((f) => f.dist < 250 || f.dist > 340 || !f.cage || !f.inCage || !f.inArena)
+  console.log(`A5 arrivals=${allFights.length} dist min=${Math.min(...dists)} max=${Math.max(...dists)} cage+inside=${allFights.filter((f) => f.cage && f.inCage).length} inArena=${allFights.filter((f) => f.inArena).length} bad=${a5Bad.length} (pass: 250 to 340 u, cage active the same tick, boss inside the walls)`)
+  for (const f of a5Bad) console.log(`  A5 outlier ${f.run} ${f.stage} t=${f.spawnT} dist=${f.dist} cage=${f.cage} inCage=${f.inCage} inArena=${f.inArena}`)
   for (const stage of ['mid1', 'mid2', 'final']) {
     const k = allFights.filter((f) => f.stage === stage && f.how === 'kill').map((f) => f.len)
     const other = allFights.filter((f) => f.stage === stage && f.how !== 'kill').map((f) => `${f.how}@${f.len}`)

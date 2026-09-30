@@ -488,29 +488,36 @@ function cageFor(world: World): void {
   cageOut.r = Math.max(CAGE_R, Math.hypot(pl.x - cageOut.x, pl.y - cageOut.y) + CAGE_PLAYER_PAD)
 }
 
-/** Where the boss emerges: BOSS_SPAWN_DIST from the player along `ang`, the
- *  arrival marker's spot. When that lies outside the cage it flips to the
- *  opposite side, and the spot is kept inside the ring either way. */
+/** Turns tried from the rolled spawn angle, in order: the roll, its opposite,
+ *  then 30 degree steps either side. Near a wall or a corner only some of them
+ *  land inside both the arena and the cage. */
+const SPAWN_TURNS = [0, 180, 30, -30, 210, 150, 60, -60, 240, 120, 90, 270].map((d) => d * DEG)
+
+/** Where the boss emerges, the arrival marker's spot: BOSS_SPAWN_DIST from the
+ *  player along the first turn of `ang` that keeps the body inside the arena
+ *  and the cage. No draws, so every tick of the marker lead agrees with the spawn. */
 function bossPoint(world: World, ang: number): void {
   cageFor(world)
   const pl = world.player
-  const inset = ENEMIES[world.script.boss.primeId]!.radius + 20
-  const cx = Math.cos(ang) * BOSS_SPAWN_DIST
-  const cy = Math.sin(ang) * BOSS_SPAWN_DIST
-  const inside = inCage(pl.x + cx, pl.y + cy, inset)
-  if (!inside && inCage(pl.x - cx, pl.y - cy, inset)) {
-    bossOut.x = pl.x - cx
-    bossOut.y = pl.y - cy
-    return
+  const r = ENEMIES[world.script.boss.primeId]!.radius
+  for (let k = 0; k < SPAWN_TURNS.length; k++) {
+    const a = ang + SPAWN_TURNS[k]!
+    bossOut.x = pl.x + Math.cos(a) * BOSS_SPAWN_DIST
+    bossOut.y = pl.y + Math.sin(a) * BOSS_SPAWN_DIST
+    if (inArena(world, bossOut.x, bossOut.y, r + EDGE_INSET) && inCage(bossOut.x, bossOut.y, r + 20)) return
   }
-  bossOut.x = pl.x + cx
-  bossOut.y = pl.y + cy
-  if (inside) return
-  const dx = bossOut.x - cageOut.x
-  const dy = bossOut.y - cageOut.y
-  const k = (cageOut.r - inset) / Math.hypot(dx, dy)
-  bossOut.x = cageOut.x + dx * k
-  bossOut.y = cageOut.y + dy * k
+  // Toward the cage center always fits: the ring clears the player by
+  // CAGE_PLAYER_PAD and its center sits CAGE_R + CAGE_WALL_PAD inside the walls.
+  const dx = cageOut.x - pl.x
+  const dy = cageOut.y - pl.y
+  const len = Math.hypot(dx, dy) || 1
+  bossOut.x = pl.x + (dx / len) * BOSS_SPAWN_DIST
+  bossOut.y = pl.y + (dy / len) * BOSS_SPAWN_DIST
+}
+
+function inArena(world: World, x: number, y: number, inset: number): boolean {
+  const b = world.arena.bounds
+  return x >= b.x + inset && x <= b.x + b.w - inset && y >= b.y + inset && y <= b.y + b.h - inset
 }
 
 function inCage(x: number, y: number, inset: number): boolean {

@@ -534,10 +534,12 @@
         if (e.def.elite) st.events.push({ t: +w.time.toFixed(2), type: 'elite', id, hp: Math.round(e.maxHp) })
         if (e.def.boss) {
           const c = w.director.cage
+          const b = w.arena.bounds
           st.events.push({
             t: +w.time.toFixed(2), type: 'bossSpawn', id, stage: w.bossFight.stage, title: w.director.bossTitle, hp: Math.round(e.maxHp),
             dist: Math.round(Math.hypot(e.x - w.player.x, e.y - w.player.y)), cage: c.active && e === w.boss, cageR: Math.round(c.r),
             inCage: Math.hypot(w.player.x - c.x, w.player.y - c.y) <= c.r,
+            inArena: e.x >= b.x + e.radius && e.x <= b.x + b.w - e.radius && e.y >= b.y + e.radius && e.y <= b.y + b.h - e.radius,
           })
         }
       }

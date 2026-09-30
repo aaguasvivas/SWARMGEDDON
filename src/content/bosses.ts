@@ -39,7 +39,7 @@ const loop = (...slots: number[]): PhaseRotation => ({ slots, loopFrom: 0 })
 /** A10.2. Overtime bosses use `mid2` with hpBase x 1.35^c (P11). */
 export const BOSS_STAGES: Readonly<Record<BossStage, BossStageDef>> = {
   mid1: {
-    hpBase: 1600,
+    hpBase: 2400,
     phases: [0.5],
     cadence: [1.0, 1.2],
     teleMul: [1.0, 1.0],
