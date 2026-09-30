@@ -15,6 +15,13 @@
 //                                  director state and all 7 RNG stream states. Default
 //                                  world: all three. Hashes MUST match across viewports,
 //                                  DPR, injected settings and reruns (hard invariant).
+//   det-death [charId] [arenaId|all] [seconds]
+//                                  real HP: the det bot (no flood) plays until it dies
+//                                  or `seconds` pass (default 600), the run ends through
+//                                  endRun ('death' after 60 death-sequence ticks, else
+//                                  'quit'), and one FNV hash covers the RunResult (all
+//                                  fields but the wall-clock date) and all 7 RNG stream
+//                                  states. Same invariant as det.
 //   det-long [charId] [arenaId|all] [seconds]
 //                                  the full run arc: invincible, no flood, move
 //                                  (cos 0.7t, sin 0.9t), aim at the nearest enemy, fire
@@ -148,19 +155,22 @@ const DET_HELPER = `(() => {
     inp.move.y = Math.sin(0.9 * w.time)
   }
   window.__DET = {
-    start(c, a, runMode, long, rerolls = -1) {
+    start(c, a, runMode, long, realHp, rerolls = -1) {
       S.loop.stop()
       if (runMode !== 'daily') S.setLoadout(c, a)
       else S.setLoadout(c, 'hive')
       S.startRun(runMode)
-      w.player.maxHp = 1e9
-      w.player.hp = 1e9
-      if (!long) S.flood(200)
-      st = { drafts: 0, bosses: 0, realUpdate: inp.update, wasBoss: false, tick: 0, rerolls, rerollsUsed: 0 }
+      st = { drafts: 0, bosses: 0, realUpdate: inp.update, wasBoss: false, tick: 0, realHp: !!realHp, rerolls, rerollsUsed: 0 }
+      if (!realHp) {
+        w.player.maxHp = 1e9
+        w.player.hp = 1e9
+        if (!long) S.flood(200)
+      }
       inp.update = long ? botLong : botShort
     },
     run(n) {
       for (let i = 0; i < n; i++) {
+        if (st.realHp && w.pendingGameOver) return true
         S.step(1)
         while (w.paused && w.draft.open) {
           st.drafts++
@@ -178,9 +188,33 @@ const DET_HELPER = `(() => {
         }
         if (w.bossAlive && !st.wasBoss) st.bosses++
         st.wasBoss = w.bossAlive
-        w.player.maxHp = 1e9
-        w.player.hp = 1e9
+        if (!st.realHp) {
+          w.player.maxHp = 1e9
+          w.player.hp = 1e9
+        }
       }
+      return st.realHp && w.pendingGameOver
+    },
+    /** det-death: end the run through endRun and hash its RunResult and the streams. */
+    finishDeath() {
+      const dead = w.pendingGameOver
+      if (dead) S.step(60)
+      S.endRun(dead ? 'death' : 'quit', 'recap')
+      inp.update = st.realUpdate
+      const r = S.lastResult
+      let h = 0x811c9dc5
+      const byte = (v) => { h ^= v & 0xff; h = Math.imul(h, 0x01000193) }
+      const mix32 = (v) => { byte(v); byte(v >>> 8); byte(v >>> 16); byte(v >>> 24) }
+      const { date, ...rest } = r
+      const canon = JSON.stringify(rest)
+      for (let i = 0; i < canon.length; i++) byte(canon.charCodeAt(i))
+      const streams = {}
+      for (const k of ['spawn', 'script', 'boss', 'loot', 'draft', 'combat', 'fx']) {
+        const s = w.rngs[k].state
+        mix32(s)
+        streams[k] = s.toString(16)
+      }
+      return { hash: (h >>> 0).toString(16), result: rest, streams, drafts: st.drafts, screen: S.screen }
     },
     finish() {
       inp.update = st.realUpdate
@@ -201,6 +235,7 @@ const DET_HELPER = `(() => {
       const dr = w.draft
       mix(dr.index); mix(dr.rerolls); mix(dr.banishes); mix(dr.sinceRare); mix(w.pendingLevelUps)
       mix(w.xpDropped); mix(w.xpCollected); mix(w.lastLevelAt)
+      mix(w.score); mix(w.killPts); mix(w.xpSum); mix(w.chain); mix(w.tier); mix(w.hits); mix(w.longestNoHit)
       for (const ch of w.weapon.id) byte(ch.charCodeAt(0))
       for (const [id, n] of w.perkStacks) { for (const ch of id) byte(ch.charCodeAt(0)); mix(n) }
       const d = w.director
@@ -233,6 +268,7 @@ const DET_HELPER = `(() => {
         dashes: w.dashes, closeCalls: w.closeCalls, damageTaken: Math.round(w.damageTaken),
         rerollsUsed: st.rerollsUsed, xpDropped: +w.xpDropped.toFixed(1), xpCollected: +w.xpCollected.toFixed(1),
         perks: Object.fromEntries(w.perkStacks),
+        score: w.score, chain: w.chain, peakTier: w.peakTier, hits: w.hits,
       }
     },
   }
@@ -351,7 +387,35 @@ if (MODE === 'shot') {
       mode: MODE, runMode: RUN_MODE, W, H, dpr: DPR, settings: SETTINGS ? applied : null, charId, arenaId: r.arena, steps,
       hash: r.hash, rerunMatch: r.hash === runs[1].hash, enemies: r.enemies, kills: r.kills, level: r.level,
       drafts: r.drafts, dashes: r.dashes, closeCalls: r.closeCalls, damageTaken: r.damageTaken,
-      pickups: r.pickups, time: r.time, bosses: r.bosses, director: r.director, streams: r.streams, byType: r.byType,
+      score: r.score, chain: r.chain, peakTier: r.peakTier, hits: r.hits, pickups: r.pickups, time: r.time, bosses: r.bosses, director: r.director, streams: r.streams, byType: r.byType,
+    }))
+  }
+  if (pageErrors.length) console.log(JSON.stringify({ mode: MODE, pageErrors }))
+} else if (MODE === 'det-death') {
+  const charId = pos[3] || 'nova'
+  const arenaArg = pos[4] || 'all'
+  const steps = Math.round(parseFloat(pos[5] || '600') * 60)
+  const arenas = RUN_MODE === 'daily' ? ['daily'] : arenaArg === 'all' ? ['hive', 'depths', 'wastes'] : [arenaArg]
+  const applied = await page.evaluate(() => window.__SWARM.settings)
+  await page.evaluate(DET_HELPER)
+  const CHUNK = 3600
+  for (const arenaId of arenas) {
+    const runs = []
+    for (let pass = 0; pass < 2; pass++) {
+      await page.evaluate((c, a, m) => window.__DET.start(c, a, m, false, true), charId, arenaId, RUN_MODE)
+      for (let done = 0; done < steps; done += CHUNK) {
+        if (await page.evaluate((n) => window.__DET.run(n), Math.min(CHUNK, steps - done))) break
+      }
+      runs.push(await page.evaluate(() => window.__DET.finishDeath()))
+    }
+    const r = runs[0]
+    const x = r.result
+    console.log(JSON.stringify({
+      mode: MODE, runMode: RUN_MODE, W, H, dpr: DPR, settings: SETTINGS ? applied : null, charId, arenaId: x.arena,
+      hash: r.hash, rerunMatch: r.hash === runs[1].hash, screen: r.screen, end: x.end, time: +x.time.toFixed(2),
+      kills: x.kills, level: x.level, score: x.score, killPts: x.killPts, xpSum: x.xpSum, bestChain: x.bestChain,
+      peakTier: x.peakTier, hits: x.hits, damageTaken: x.damageTaken, killer: x.killer, nextBeat: x.nextBeat,
+      revivesUsed: x.revivesUsed, podsEquipped: x.podsEquipped, weapons: x.weapons, drafts: r.drafts, streams: r.streams,
     }))
   }
   if (pageErrors.length) console.log(JSON.stringify({ mode: MODE, pageErrors }))
@@ -363,7 +427,7 @@ if (MODE === 'shot') {
   for (const arenaId of arenas) {
     const runs = []
     for (const rerolls of [0, 2]) {
-      await page.evaluate((a, r) => window.__DET.start('nova', a, 'endless', true, r), arenaId, rerolls)
+      await page.evaluate((a, r) => window.__DET.start('nova', a, 'endless', true, false, r), arenaId, rerolls)
       for (let done = 0; done < steps; done += 3600) await page.evaluate((n) => window.__DET.run(n), Math.min(3600, steps - done))
       runs.push(await page.evaluate(() => window.__DET.finish()))
     }

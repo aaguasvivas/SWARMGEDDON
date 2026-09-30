@@ -51,9 +51,13 @@ export interface EnemyDef {
   hatch?: { after: number; into: string; count: number }
   elite?: boolean
   boss?: boolean
+  /** Position in ENEMY_IDS: assigned when this module loads, never authored. */
+  idx: number
 }
 
-export const ENEMIES: Record<string, EnemyDef> = {
+type EnemySpec = Omit<EnemyDef, 'idx'>
+
+const SPECS: Record<string, EnemySpec> = {
   swarmer: { id: 'swarmer', displayName: 'SWARMER', sprite: 'swarmer', hp: 3, speed: 74, radius: 14, damage: 20, xp: 1, tint: COLORS.swarmer, scale: 1, behavior: 'chaser', gibColor: COLORS.gib, gibCount: 5, hpRamp: 1 / 30 },
   biter: { id: 'biter', displayName: 'BITER', sprite: 'swarmer', hp: 2, speed: 104, radius: 11, damage: 14, xp: 1, tint: 0xff7a5a, scale: 0.8, behavior: 'chaser', gibColor: 0xff8a6a, gibCount: 4, hpRamp: 1 / 40 },
   flyer: { id: 'flyer', displayName: 'FLYER', sprite: 'flyer', hp: 2, speed: 138, radius: 12, damage: 16, xp: 1, tint: 0x66e0ff, scale: 0.95, behavior: 'flyer', gibColor: 0x8fefff, gibCount: 4, hpRamp: 1 / 45 },
@@ -95,3 +99,8 @@ export const ENEMIES: Record<string, EnemyDef> = {
   emberTyrant: { id: 'emberTyrant', displayName: 'THE EMBER TYRANT', sprite: 'queen', hp: 2000, speed: 30, radius: 48, damage: 60, xp: 130, tint: 0xffeb3d, scale: 2.8, behavior: 'boss', gibColor: 0xfff25a, gibCount: 32, boss: true, hpRamp: 0 },
   emberTyrantPrime: { id: 'emberTyrantPrime', displayName: 'TYRANT PRIME', sprite: 'queen', hp: 4200, speed: 30, radius: 58, damage: 60, xp: 260, tint: 0xffd23d, scale: 3.4, behavior: 'boss', gibColor: 0xfff25a, gibCount: 38, boss: true, hpRamp: 0 },
 }
+
+/** Every enemy id in a stable order (RunResult kill tallies and the killer id). */
+export const ENEMY_IDS: readonly string[] = Object.keys(SPECS)
+export const ENEMIES: Record<string, EnemyDef> = {}
+for (let i = 0; i < ENEMY_IDS.length; i++) ENEMIES[ENEMY_IDS[i]!] = { ...SPECS[ENEMY_IDS[i]!]!, idx: i }

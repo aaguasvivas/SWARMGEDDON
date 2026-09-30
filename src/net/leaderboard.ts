@@ -1,5 +1,5 @@
 import { loadJSON, saveJSON } from '../platform/storage.ts'
-import type { RunResult } from '../state/persistence.ts'
+import type { RunResult } from '../state/runResult.ts'
 
 /**
  * Thin client for the Cloudflare Worker leaderboard (see /server). Everything is

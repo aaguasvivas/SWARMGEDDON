@@ -7,7 +7,7 @@
 // Verifies the hardening batch: forged-daily-seed rejection, float-exact scores,
 // name sanitizer (Zalgo / invisible / bidi), per-identity board dedupe, and the
 // ATOMIC rate limit (parallel burst yields exactly the cap, never more).
-// NOTE: seedFromString below MUST stay identical to src/core/rng.ts.
+// NOTE: seedFromString below MUST stay identical to src/core/rules.ts.
 function seedFromString(str) {
   let h = 1779033703 ^ str.length
   for (let i = 0; i < str.length; i++) { h = Math.imul(h ^ str.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19) }

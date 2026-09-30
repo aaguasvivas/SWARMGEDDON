@@ -312,7 +312,10 @@ function collect(world: World, p: Pickup): void {
     if (world.mods.berserker > 0) world.berserkT = BERSERK_MEDKIT.sec
     world.feel.emit(FeelKind.HealCollect, 0, pl.x, pl.y, pl.hp - before)
   } else {
+    const wi = weaponIndex(p.weaponId)
     world.equipWeapon(p.weaponId)
-    world.feel.emit(FeelKind.WeaponPickup, 0, pl.x, pl.y, 0, weaponIndex(p.weaponId))
+    world.podsEquipped++
+    world.weaponsUsed[wi] = 1
+    world.feel.emit(FeelKind.WeaponPickup, 0, pl.x, pl.y, 0, wi)
   }
 }

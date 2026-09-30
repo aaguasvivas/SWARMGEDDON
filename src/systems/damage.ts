@@ -1,5 +1,6 @@
 import { FF_ACID, FF_CONTACT, FF_DISCRETE, FeelKind } from '../effects/feelQueue.ts'
 import { GRACE } from '../config.ts'
+import { addContinuousDamage, registerHit } from '../game/scoring.ts'
 import type { World } from '../game/world.ts'
 
 export type HurtKind = 'bite' | 'discrete' | 'zone'
@@ -21,8 +22,10 @@ export function hurtPlayer(w: World, amount: number, kind: HurtKind, srcIdx: num
   if (kind === 'discrete') {
     pl.hitCd = GRACE.hit
     w.feel.emit(FeelKind.PlayerHurt, FF_DISCRETE | ff, sx, sy, rest)
+    registerHit(w)
   } else {
     w.feel.emit(FeelKind.PlayerHurt, (kind === 'bite' ? FF_CONTACT : FF_ACID) | ff, sx, sy, rest)
+    addContinuousDamage(w, rest)
   }
   return rest
 }

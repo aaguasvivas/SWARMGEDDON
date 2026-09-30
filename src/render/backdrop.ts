@@ -1,5 +1,6 @@
 import { Sprite, Texture, type BLEND_MODES } from 'pixi.js'
-import { Rng, seedFromString } from '../core/rng.ts'
+import { Rng } from '../core/rng.ts'
+import { seedFromString } from '../core/rules.ts'
 import type { ArenaTheme } from '../content/arenas.ts'
 import type { Layers } from './app.ts'
 import type { PostFX } from './postfx.ts'

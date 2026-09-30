@@ -1,14 +1,18 @@
 import { Container, Graphics, Text } from 'pixi.js'
-import { COLORS } from '../config.ts'
+import { COLORS, TIER_COLOR } from '../config.ts'
 import type { Insets } from '../platform/safeArea.ts'
 import type { World } from '../game/world.ts'
+import { DigitStrip } from './digits.ts'
 import { FONT, T, TYPE } from './tokens.ts'
+
+const CH_X = 120
 
 /**
  * Player-facing HUD: HP bar (with the number on it) + XP bar + level
- * (top-center), time/kills (top-right), weapon + ammo pill (bottom-center), and
- * the boss bar. Everything scales with the screen so it stays readable and out
- * of the way on a phone without looking oversized on a desktop.
+ * (top-center), time, score and multiplier tier (top-right), weapon + ammo pill
+ * (bottom-center), and the boss bar. Everything scales with the screen so it
+ * stays readable and out of the way on a phone without looking oversized on a
+ * desktop.
  */
 export class Hud {
   readonly view = new Container()
@@ -35,7 +39,10 @@ export class Hud {
     this.xpDisplay = 0
   }
   private levelText: Text
-  private stats: Text
+  private time = new DigitStrip(6, 14, COLORS.hudText, 1)
+  private score = new DigitStrip(13, 13, T.textPrimary, 1)
+  private tier = new DigitStrip(2, 13, TIER_COLOR[1]!, 1)
+  private shownTier = 0
   private weaponPill = new Graphics()
   private weaponLabel: Text
   private bossBack = new Graphics()
@@ -50,7 +57,7 @@ export class Hud {
   private titleFit = 1
 
   // Geometry computed in layout(), reused in update() so the two never drift.
-  private g = { cx: 0, x: 0, hpY: 0, xpY: 0, barW: 280, hpH: 16, xpH: 6, weaponY: 0, s: 1 }
+  private g = { cx: 0, x: 0, hpY: 0, xpY: 0, barW: 280, hpH: 16, xpH: 6, weaponY: 0, s: 1, rx: 0 }
   private w = 0
   private insets: Insets = { top: 0, right: 0, bottom: 0, left: 0 }
 
@@ -60,8 +67,6 @@ export class Hud {
     this.hpText.anchor.set(0.5)
     this.levelText = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 13, fontWeight: 'bold', fill: COLORS.xpBar, dropShadow: shadow } })
     this.levelText.anchor.set(1, 0.5)
-    this.stats = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 14, fill: COLORS.hudText, dropShadow: shadow } })
-    this.stats.anchor.set(1, 0)
     this.weaponLabel = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 14, fontWeight: 'bold', fill: COLORS.hudText, dropShadow: shadow } })
     this.weaponLabel.anchor.set(0.5, 0.5)
     this.bossLabel = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 12, fontWeight: 'bold', fill: 0xff6aa8, dropShadow: shadow } })
@@ -72,7 +77,7 @@ export class Hud {
     this.titleSub = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 14, fill: T.textMuted, letterSpacing: 2, dropShadow: shadow } })
     this.titleSub.anchor.set(0.5)
     this.titleSub.alpha = 0
-    this.view.addChild(this.back, this.hpGhostFill, this.hpFill, this.xpFill, this.hpText, this.levelText, this.stats, this.weaponPill, this.weaponLabel, this.bossBack, this.bossFill, this.bossLabel, this.titleText, this.titleSub)
+    this.view.addChild(this.back, this.hpGhostFill, this.hpFill, this.xpFill, this.hpText, this.levelText, this.time.view, this.score.view, this.tier.view, this.weaponPill, this.weaponLabel, this.bossBack, this.bossFill, this.bossLabel, this.titleText, this.titleSub)
   }
 
   /** Flash the world's name (in its color) + brood tagline at run start. */
@@ -105,12 +110,17 @@ export class Hud {
     const hpY = insets.top + Math.round(12 * s)
     const xpY = hpY + hpH + 3
     const weaponY = h - insets.bottom - Math.round(18 * s)
-    this.g = { cx, x, hpY, xpY, barW, hpH, xpH, weaponY, s }
+    const rx = w - insets.right - 14
+    this.g = { cx, x, hpY, xpY, barW, hpH, xpH, weaponY, s, rx }
 
     const px = (base: number): number => Math.max(TYPE.label, Math.round(base * s))
     this.hpText.style.fontSize = px(12)
     this.levelText.style.fontSize = px(13)
-    this.stats.style.fontSize = px(14)
+    const timePx = px(14)
+    const scorePx = px(13)
+    this.time.setSize(timePx)
+    this.score.setSize(scorePx)
+    this.tier.setSize(scorePx)
     this.weaponLabel.style.fontSize = px(14)
 
     this.back.clear()
@@ -120,7 +130,12 @@ export class Hud {
 
     this.hpText.position.set(cx, hpY + hpH / 2)
     this.levelText.position.set(x - 10, hpY + hpH / 2)
-    this.stats.position.set(w - insets.right - 14, insets.top + Math.round(10 * s))
+    // Time sits beside the bars; the score line (tier badge, then score) sits
+    // below them, where a long score never reaches the bars on a narrow phone.
+    this.time.view.position.set(rx, insets.top + Math.round(10 * s) + timePx / 2)
+    const lineY = xpY + xpH + 6 + scorePx / 2
+    this.score.view.position.set(rx, lineY)
+    this.tier.view.position.set(rx, lineY)
     this.weaponLabel.position.set(cx, weaponY)
     this.titleText.style.fontSize = Math.round(34 * s)
     this.titleSub.style.fontSize = px(14)
@@ -171,8 +186,15 @@ export class Hud {
       this.levelText.style.fill = pending > 0 ? T.accentGold : COLORS.xpBar
     }
 
-    const secs = Math.floor(world.time)
-    this.stats.text = `${Math.floor(secs / 60)}:${(secs % 60).toString().padStart(2, '0')}   kills ${world.kills}`
+    this.time.setTime(world.time)
+    this.score.setInt(world.score, true)
+    if (world.tier !== this.shownTier) {
+      this.shownTier = world.tier
+      this.tier.setInt(world.tier, false, CH_X)
+      this.tier.setTint(TIER_COLOR[world.tier]!)
+      this.tier.view.visible = world.tier >= 2
+    }
+    this.tier.view.x = this.g.rx - this.score.width - 6
 
     // World title card envelope: quick fade-in, hold, gentle fade-out + drift.
     if (this.titleT > 0) {

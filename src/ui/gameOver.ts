@@ -4,9 +4,11 @@ import { COLORS } from '../config.ts'
 import { leaderboardEnabled } from '../net/leaderboard.ts'
 import { characterById } from '../content/characters.ts'
 import { arenaById } from '../content/arenas.ts'
-import type { RunResult, WorldBestGains } from '../state/persistence.ts'
+import { WORLD_SCRIPTS } from '../content/runScripts.ts'
+import type { WorldBestGains } from '../state/persistence.ts'
+import type { RunResult } from '../state/runResult.ts'
 import { Button } from './button.ts'
-import { FONT } from './tokens.ts'
+import { FONT, T } from './tokens.ts'
 
 /** Taps are ignored this long after the screen appears, so a tap meant for the
  *  game cannot land on RETRY. */
@@ -88,15 +90,6 @@ export class GameOver {
     this.relayout()
   }
 
-  /** Replace the OVERRUN header: a clear shows the world's win text, a
-   *  stalemate its escape line. */
-  setHeadline(text: string, color: number): void {
-    this.title.text = text
-    this.title.style.fill = color
-    this.glow.color = color
-    this.relayout()
-  }
-
   /** The score never reached the leaderboard; say so instead of silence. */
   setSubmitFailed(): void {
     if (this.hasUnlockBanner || !leaderboardEnabled()) return
@@ -149,22 +142,29 @@ export class GameOver {
     }
   }
 
-  show(result: RunResult, isHigh: boolean, gains: WorldBestGains): void {
-    this.title.text = 'OVERRUN'
-    this.title.style.fill = COLORS.hurtFlash
-    this.glow.color = COLORS.hurtFlash
-    // Prefer the per-world record callout (what the player is chasing now); fall
-    // back to the score-based global best.
-    this.best.text =
-      gains.time && gains.kills
+  show(result: RunResult, gains: WorldBestGains): void {
+    const text = WORLD_SCRIPTS[result.arena]!.text
+    const [head, color]: [string, number] =
+      result.end === 'clear'
+        ? [text.win, T.accentGold]
+        : result.end === 'stalemate'
+          ? [text.stalemate, T.accentDanger]
+          : result.end === 'death'
+            ? ['OVERRUN', COLORS.hurtFlash]
+            : ['RUN ENDED', T.textPrimary]
+    this.title.text = head
+    this.title.style.fill = color
+    this.glow.color = color
+    // The world best score leads; time and kills records follow.
+    this.best.text = gains.score
+      ? '★ NEW BEST SCORE ★'
+      : gains.time && gains.kills
         ? '★ BEST TIME + MOST KILLS ★'
         : gains.time
           ? '★ NEW BEST TIME ★'
           : gains.kills
             ? '★ MOST KILLS ★'
-            : isHigh
-              ? '★ NEW BEST ★'
-              : ''
+            : ''
     this.rank.text = '' // filled in async by setRank() once the submit returns
     this.hasUnlockBanner = false
     this.rank.style.fill = 0x57c8ff
@@ -173,7 +173,7 @@ export class GameOver {
       `${characterById(result.character).name} · ${arenaById(result.arena).name}\n` +
       `survived  ${fmtTime(result.time)}\n` +
       `kills  ${result.kills}     level  ${result.level}\n` +
-      `score  ${result.score}`
+      `score  ${result.score.toLocaleString('en-US')}     peak  x${result.peakTier}`
     this.relayout()
     this.view.visible = true
     this.readyAt = performance.now() + INPUT_LOCK_MS

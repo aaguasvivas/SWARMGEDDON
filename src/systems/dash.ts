@@ -1,7 +1,9 @@
 import { ADRENAL_WAKE, DASH } from '../config.ts'
+import { CLOSE_CALL_CHAIN } from '../core/rules.ts'
 import type { Vec2 } from '../core/vec.ts'
 import { FeelKind } from '../effects/feelQueue.ts'
 import { tickDown } from '../game/player.ts'
+import { addChain } from '../game/scoring.ts'
 import type { World } from '../game/world.ts'
 
 /** The slice of the per-tick input sample the dash reads. */
@@ -70,6 +72,7 @@ export function closeCall(w: World): void {
   w.closeCallSeq = w.dashSeq
   w.dashRecharge = Math.max(0, w.dashRecharge - DASH.closeCallRefund)
   w.closeCalls++
+  addChain(w, CLOSE_CALL_CHAIN)
   // Adrenal Wake: a Close Call stretches this dash's window to closeCallSec.
   if (w.adrenalT > 0) w.adrenalT += ADRENAL_WAKE.closeCallSec - ADRENAL_WAKE.sec
   const pl = w.player

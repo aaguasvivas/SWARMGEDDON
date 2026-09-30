@@ -280,7 +280,7 @@ function lungeStep(w: World, e: Enemy, dt: number, cad: number): void {
   e.facing = Math.atan2(f.dirY, f.dirX)
   if (!f.lungeHit && inSweptLane(w, e)) {
     if (closeCallArmed(w)) closeCall(w)
-    if (hurtPlayer(w, ROYAL_LUNGE.damage, 'discrete', -1, e.x, e.y, FF_RAM) > 0) f.lungeHit = true
+    if (hurtPlayer(w, ROYAL_LUNGE.damage, 'discrete', e.def.idx, e.x, e.y, FF_RAM) > 0) f.lungeHit = true
   }
   f.stateT = tickDown(f.stateT, dt)
   if (stop || f.stateT === 0) recover(w, ROYAL_LUNGE.recover / cad)
@@ -343,6 +343,7 @@ function sporeRing(w: World, e: Enemy, aim: number, n: number): void {
     p.life = N.life
     p.pierce = 0
     p.leavesAcid = false
+    p.ownerIdx = e.def.idx
     const s = p.sprite
     s.visible = true
     s.alpha = 1

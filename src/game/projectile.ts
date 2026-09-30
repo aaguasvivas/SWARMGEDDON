@@ -35,6 +35,8 @@ export class Projectile implements Poolable {
    *  piercing bullet damages each enemy once. */
   readonly hitUids = new Int32Array(8)
   hitN = 0
+  /** EnemyDef.idx of the enemy that fired this shot (-1 for the player's own). */
+  ownerIdx = -1
 
   constructor(readonly sprite: Sprite) {}
 }

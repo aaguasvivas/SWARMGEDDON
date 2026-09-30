@@ -48,6 +48,7 @@ import { WEAPONS } from '../content/weapons.ts'
 import { spawnPoof } from '../effects/fx.ts'
 import { AlertKind, FF_BOSS, FF_ELITE, FeelKind } from '../effects/feelQueue.ts'
 import type { Enemy } from '../game/enemy.ts'
+import { scoreClear } from '../game/scoring.ts'
 import { HZ_CIRCLE, type Hazard } from '../game/hazard.ts'
 import type { World } from '../game/world.ts'
 import { cancelBossTelegraph } from './bossAI.ts'
@@ -357,6 +358,7 @@ function win(world: World, e: Enemy): void {
   d.runState = 'won'
   d.clearTime = world.time
   world.cleared = true
+  scoreClear(world)
   world.player.grantInvuln(GRACE.win, 2)
   d.purgeT = 0
   d.purgeX = e.x
