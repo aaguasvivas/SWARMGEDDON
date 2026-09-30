@@ -52,10 +52,7 @@ export const PICKUP_RESERVE = { xp: 200, bank: 1, health: 40, weapon: 4, core: 4
 export const MAX_ACID = 64
 export const MAX_ENEMY_PROJECTILES = 300
 
-/** Pickups / XP. */
-export const BASE_MAGNET_RADIUS = 125 // px; scaled by the Magnetic perk. Generous
-// so XP gems visibly zip to the player on a kill, which makes them obviously collectible.
-export const GEM_LIFETIME = 12 // seconds before an uncollected XP gem fades
+/** Weapon pods. */
 export const WEAPON_DROP_INTERVAL = 13 // seconds between weapon pod drops
 export const WEAPON_DROP_LIFETIME = 24
 
@@ -67,7 +64,6 @@ export const WEAPON_DROP_LIFETIME = 24
 export const HEALTH_DROP_CHANCE = 0.07
 export const HEALTH_HEAL = 5
 export const HEALTH_HEAL_ELITE = 14
-export const HEALTH_LIFETIME = 10
 
 /** Spatial-hash cell size (world units). ~3-4x an enemy diameter is a good ratio. */
 export const HASH_CELL = 72
@@ -179,3 +175,24 @@ export const BOSS_SPAWN_MIN_DIST = 160
 export const DEFER_AFTER_KILL = 10
 export const DEFER_GAP = 12
 export const DEFER_DROP_LATE = 60
+
+// P5: draft, perks, XP flow (A2.3, A6)
+export const DRAFT = {
+  rareBase: 0.15, rareStep: 0.06, rareMax: 0.55, ownedBias: 0.55, fusionRepeat: 0.35,
+  familyStep: 0.5, familyMax: 2.5, startRerolls: 2, startBanishes: 1, maxRerolls: 5, maxBanishes: 3,
+  skipHealFrac: 0.2, minGap: 12, lockFullMs: 450, lockShortMs: 300, fullCeremonies: 3,
+  /** The Keystone draft never opens before this sim time (s). */
+  firstOpenAt: 6,
+} as const
+/** Fallback cards: SHARPEN damage per pick, FIELD REPAIR heal fraction. */
+export const FALLBACK = { sharpenMul: 1.04, repairFrac: 0.35 } as const
+export const XP = { firstLevelCost: 6, a: 5, b: 6, c: 1.2, surgeAfter: 40, surgeMul: 2,
+  gemSoftCap: 200, captureRadius: 125, homeStart: 260, homeMax: 900, homeRamp: 0.35, medkitLife: 10 } as const
+/** Berserker's medkit burst (A2): fire rate bonus and its length in seconds. */
+export const BERSERK_MEDKIT = { fireRate: 0.4, sec: 3 } as const
+/** Adrenal Wake: the fire-rate window after a dash, doubled by a Close Call. */
+export const ADRENAL_WAKE = { sec: 2, closeCallSec: 4 } as const
+/** Arc Rounds hops: damage fraction of the hit and hop range (world units). */
+export const ARC_ROUNDS = { dmgFrac: 0.5, range: 150 } as const
+/** Cryo slow cap on bosses. */
+export const BOSS_SLOW_CAP = 0.3

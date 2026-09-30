@@ -308,26 +308,26 @@ function simChecks() {
   w.resumeFromDraft()
   out.draftGrace = { invuln: pl.invuln, src: pl.invulnSrc, pass: pl.invuln === 0.75 && pl.invulnSrc === 2 }
 
-  // 9. A chained draft whose next roll is empty still resumes with draft grace
-  //    and drops a dash press made during the draft.
+  // 9. A pick with a second level pending resumes at once with draft grace
+  //    (the next draft waits for the 12 s gap, never chain-opens) and drops a
+  //    dash press made during the draft.
   fresh()
   ctl.mx = 0
+  w.time = 6 // the Keystone draft opens from 6 s (DRAFT.firstOpenAt)
   w.pendingLevelUps = 2
   S.step(1)
-  const opened = w.paused && w.draftCards.length > 0
-  w.rollDraft = () => 0
+  const opened = w.paused && w.draft.open
   inp.pressDash()
   const dashesBefore = w.dashes
-  S.pickPerk(w.draftCards[0].id)
-  delete w.rollDraft
+  S.pickCard(0)
   const resumed = { paused: w.paused, pending: w.pendingLevelUps, invuln: pl.invuln, src: pl.invulnSrc }
   S.step(1)
   const dashed = w.dashes - dashesBefore
-  out.chainedEmptyDraft = {
+  out.pendingDraft = {
     opened,
     ...resumed,
     dashed,
-    pass: opened && !resumed.paused && resumed.pending === 0 && resumed.invuln === 0.75 && resumed.src === 2 && dashed === 0,
+    pass: opened && !resumed.paused && resumed.pending === 1 && resumed.invuln === 0.75 && resumed.src === 2 && dashed === 0,
   }
 
   // 10. Time ramp and bite cap at 5:00 with NOVA's real 100 HP. The det bots

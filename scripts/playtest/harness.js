@@ -2,10 +2,14 @@
 // SWG_URL, default http://localhost:5176) and driven through window.__SWARM.
 // Stops the rAF loop so ONLY our step(1) calls advance the sim, replaces
 // input.update with a bot, and records events. Drafts open through the game's
-// own single path (stepSim hand-off, cards cached on world.draftCards) and are
-// answered through S.pickPerk, exactly like a tap (so the pick also applies
-// world.resumeFromDraft() grace). Never calls endRun (so nothing is submitted
-// to the leaderboard). With cfg.dash the bot also dashes out of danger.
+// own single path (stepSim hand-off, cards cached on world.draft.cards) and
+// are answered through S.pickCard / reroll / banish / skip, exactly like a tap
+// (so the pick also applies world.resumeFromDraft() grace). Draft policies
+// (cfg.perkPolicy): first (card 1), priority (fusions, then fusion parents,
+// then PRIORITY), random (seeded: rerolls, banishes, skips, random cards),
+// evolve (the held weapon's pair perk first, then priority). Never calls
+// endRun (so nothing is submitted to the leaderboard). With cfg.dash the bot
+// also dashes out of danger.
 (() => {
   const DT = 1 / 60
   const FEEL_PLAYER_HURT = 5
@@ -14,7 +18,10 @@
   const FF_ACID = 64
   const FF_RAM = 128
   const ALERT_KIND = ['', 'boss', 'final', 'event', 'elite', 'lull', 'debut']
-  const xpForLevel = (l) => Math.floor(5 + l * 4 + l * l * 0.55)
+  const xpForLevel = (l) => (l === 1 ? 6 : Math.floor(5 + 6 * l + 1.2 * l * l))
+  const TAG_FUSION_FIRST = 4
+  const TAG_COMPLETES_FUSION = 8
+  const TAG_EVOLVES_HELD = 32
 
   function xpTotal(w) {
     let s = w.xp
@@ -172,6 +179,11 @@
           } else if (p.kind === 'health') {
             if (!wantHp || d > 600) continue
             d *= 0.6
+          } else if (p.kind === 'bank' && mode === 'roam') {
+            // The crimson bank gem holds the XP past the gem cap: the
+            // invincible roam bot makes the trip (the others treat it as a gem).
+            if (d > 1200) continue
+            d *= 0.4
           } else {
             if (d > 450) continue
           }
@@ -265,8 +277,12 @@
       chunks: [],
       firstSeen: {},
       maxEnemies: 0,
-      xpExpired: 0,
-      xpExpiredChunk: 0,
+      rand: mulberry(cfg.seed ^ 0x2545f491),
+      firstDraftAt: null,
+      firstFusionAt: null,
+      rerollsUsed: 0,
+      banishesUsed: 0,
+      skips: 0,
       dmg: 0,
       dmgChunk: 0,
       heal: 0,
@@ -315,26 +331,78 @@
     return { seed: w.seed, arena: w.arenaTheme.id, char: w.character.id, hp: w.player.hp }
   }
 
-  const PRIORITY = ['twin_shot', 'heavy_rounds', 'adrenaline', 'piercing', 'vitality', 'bulwark', 'regrowth', 'vampiric', 'second_wind', 'explosive_rounds', 'deadeye', 'fleet_footed', 'executioner', 'magnetic', 'phase_step', 'hollow_point', 'giant_slayer', 'cryo_rounds', 'scavenger', 'velocity', 'long_barrel', 'steady_aim', 'ricochet', 'thorns', 'overpressure', 'berserker', 'glass_cannon']
-  function handleDraft(S, w, st) {
-    while (w.paused && w.pendingLevelUps > 0 && w.draftCards.length > 0) {
-      const d = w.draftCards.slice()
-      let pick = d[0]
-      if (st.cfg.perkPolicy === 'priority') {
-        let bi = 1e9
-        for (const p of d) {
-          const i = PRIORITY.indexOf(p.id)
-          const r = i < 0 ? 500 : i
-          if (r < bi) {
-            bi = r
-            pick = p
-          }
+  function mulberry(seed) {
+    let a = seed >>> 0
+    return () => {
+      a = (a + 0x6d2b79f5) | 0
+      let t = Math.imul(a ^ (a >>> 15), 1 | a)
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+  }
+
+  const PRIORITY = ['twin_shot', 'heavy_rounds', 'adrenaline', 'piercing', 'vitality', 'bulwark', 'regrowth', 'vampiric', 'second_wind', 'explosive_rounds', 'deadeye', 'fleet_footed', 'executioner', 'magnetic', 'phase_step', 'hollow_point', 'giant_slayer', 'cryo_rounds', 'scavenger', 'arc_rounds', 'long_barrel', 'ricochet', 'thorns', 'shock_step', 'slipstream', 'adrenal_wake', 'incendiary', 'overpressure', 'quartermaster', 'berserker', 'glass_cannon']
+  function rank(w, c) {
+    if (c.kind === 'fusion') return -100
+    if (c.tags & TAG_COMPLETES_FUSION) return -50
+    if (c.kind === 'fallback') return c.id === 'field_repair' && w.player.hp < w.player.maxHp * 0.6 ? 400 : c.id === 'sharpen' ? 600 : 700
+    const i = PRIORITY.indexOf(c.id)
+    return i < 0 ? 500 : i
+  }
+  function best(cards, score) {
+    let bi = 0
+    for (let i = 1; i < cards.length; i++) if (score(cards[i]) < score(cards[bi])) bi = i
+    return bi
+  }
+  /** Index of the card the policy takes, after any reroll / banish / skip it does (-1 = skipped). */
+  function answer(S, w, st) {
+    const d = w.draft
+    const policy = st.cfg.perkPolicy
+    const cards = () => d.cards.slice(0, d.count)
+    if (policy === 'random') {
+      const r = st.rand
+      if (d.rerolls > 0 && r() < 0.15) {
+        S.reroll()
+        st.rerollsUsed++
+      }
+      if (d.banishes > 0 && r() < 0.1) {
+        const i = Math.floor(r() * d.count)
+        if (d.cards[i].kind !== 'fallback') {
+          S.banish(i)
+          st.banishesUsed++
         }
       }
-      S.pickPerk(pick.id)
-      st.perks.push(pick.id)
+      if (r() < 0.05) return -1
+      return Math.floor(r() * d.count)
+    }
+    if (policy === 'priority') return best(cards(), (c) => rank(w, c))
+    if (policy === 'evolve') {
+      const held = w.weapon.id !== w.baseWeaponId ? w.weapon : null
+      return best(cards(), (c) => (c.tags & TAG_EVOLVES_HELD ? -200 : held && held.pair === c.id ? -150 : rank(w, c)))
+    }
+    return 0
+  }
+  function handleDraft(S, w, st) {
+    while (w.paused && w.draft.open) {
+      const d = w.draft
+      if (st.firstDraftAt === null) st.firstDraftAt = +w.time.toFixed(2)
+      const offered = d.cards.slice(0, d.count).map((c) => c.id)
+      const i = answer(S, w, st)
+      const after = d.cards.slice(0, d.count).map((c) => c.id)
+      if (i < 0) {
+        S.skip()
+        st.skips++
+        st.events.push({ t: +w.time.toFixed(2), type: 'levelup', level: w.level - w.pendingLevelUps, perk: null, offered, after })
+      } else {
+        const c = d.cards[i]
+        const id = c.id
+        const fusion = c.kind === 'fusion'
+        S.pickCard(i)
+        if (fusion && st.firstFusionAt === null) st.firstFusionAt = +w.time.toFixed(2)
+        st.perks.push(id)
+        st.events.push({ t: +w.time.toFixed(2), type: 'levelup', level: w.level - w.pendingLevelUps, perk: id, offered, after })
+      }
       st.levelUpsChunk++
-      st.events.push({ t: +w.time.toFixed(2), type: 'levelup', level: w.level - w.pendingLevelUps, perk: pick.id, offered: d.map((p) => p.id) })
     }
   }
 
@@ -345,13 +413,7 @@
     const inv = st.cfg.invincible
     let calls = 0
     while (w.time < untilTime - 1e-9 && !st.dead && calls < maxCalls) {
-      // Gems that will expire if this step runs the sim.
-      let expiring = 0
       const pk = w.pickups.active
-      for (let i = 0; i < pk.length; i++) {
-        const p = pk[i]
-        if (p.alive && p.kind === 'xp' && p.life <= DT + 1e-9) expiring += p.xp
-      }
       const t0 = w.time
       const hp0 = w.player.hp
       const dropTimer0 = w.weaponDropTimer
@@ -427,7 +489,7 @@
         st.lastHalfHpT = w.time
       }
 
-      if (w.paused && w.pendingLevelUps > 0) {
+      if (w.paused && w.draft.open) {
         handleDraft(S, w, st)
         if (inv) {
           w.player.maxHp = 1e9
@@ -440,8 +502,6 @@
         continue
       }
       st.simStepsChunk++
-      st.xpExpired += expiring
-      st.xpExpiredChunk += expiring
       if (!inv && w.time >= st.nextHpSample) {
         st.hpHist.push([Math.round(w.time), Math.round(w.player.hp), Math.round(w.player.maxHp), w.enemies.size])
         st.nextHpSample += 1
@@ -556,7 +616,9 @@
       hp: st.cfg.invincible ? null : Math.round(w.player.hp),
       maxHp: st.cfg.invincible ? null : Math.round(w.player.maxHp),
       levelUps: st.levelUpsChunk,
-      xpExpired: st.xpExpiredChunk,
+      xpDropped: +w.xpDropped.toFixed(1),
+      xpCollected: +w.xpCollected.toFixed(1),
+      pendingLevelUps: w.pendingLevelUps,
       dmgTaken: Math.round(st.dmgChunk),
       healed: Math.round(st.healChunk),
       gemsOnField: gems,
@@ -580,7 +642,6 @@
     }
     st.killsPrev = w.kills
     st.levelUpsChunk = 0
-    st.xpExpiredChunk = 0
     st.dmgChunk = 0
     st.healChunk = 0
     st.capStepsChunk = 0
@@ -603,6 +664,11 @@
   window.__PT_final = () => {
     const w = window.__SWARM.world
     const st = window.__PT
+    // XP dropped 30 s or more before the end that is still uncollected: gems
+    // from the last seconds (a boss kill) have not had time to home in.
+    let settled = null
+    for (const c of st.chunks) if (c.t <= w.time - 30 + 1e-6) settled = c
+    const xpCollectFrac30 = settled ? +(1 - Math.max(0, settled.xpDropped - w.xpCollected) / Math.max(1, settled.xpDropped)).toFixed(4) : null
     return {
       cfg: st.cfg,
       endTime: +w.time.toFixed(2),
@@ -615,8 +681,16 @@
       capSteps: st.capSteps,
       podFails: st.podFails,
       pickupCapSteps: st.pickupCapSteps,
-      xpExpired: st.xpExpired,
       xpTotal: +xpTotal(w).toFixed(1),
+      xpDropped: +w.xpDropped.toFixed(1),
+      xpCollected: +w.xpCollected.toFixed(1),
+      xpCollectFrac: +(w.xpCollected / Math.max(1, w.xpDropped)).toFixed(4),
+      xpCollectFrac30,
+      firstDraftAt: st.firstDraftAt,
+      firstFusionAt: st.firstFusionAt,
+      rerollsUsed: st.rerollsUsed,
+      banishesUsed: st.banishesUsed,
+      skips: st.skips,
       dmgTaken: Math.round(st.dmg),
       healed: Math.round(st.heal),
       dashes: w.dashes,

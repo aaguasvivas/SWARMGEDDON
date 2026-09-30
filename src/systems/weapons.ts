@@ -1,17 +1,21 @@
+import { BERSERK_MEDKIT } from '../config.ts'
 import { weaponIndex } from '../content/weapons.ts'
 import { TRACER_STRETCH_SPEED, spawnMuzzle } from '../effects/fx.ts'
 import { FeelKind } from '../effects/feelQueue.ts'
 import type { InputManager } from '../input/input.ts'
+import { tickDown } from '../game/player.ts'
 import type { World } from '../game/world.ts'
 
 /**
  * Player firing. Effective stats = weapon base * perk modifiers. Ammo depletes
  * per shot; an empty finite mag reverts to the pilot's infinite base weapon.
- * Berserker scales fire rate by missing HP. Crit/explosion/chain resolve at
- * hit time.
+ * Berserker scales fire rate by missing HP and bursts after a medkit; Adrenal
+ * Wake speeds it up after a dash. Crit/explosion/chain resolve at hit time.
  */
 export function weaponSystem(world: World, dt: number, input: InputManager): void {
   world.fireCooldown -= dt
+  world.adrenalT = tickDown(world.adrenalT, dt)
+  world.berserkT = tickDown(world.berserkT, dt)
 
   if (!input.firing) {
     if (world.fireCooldown < 0) world.fireCooldown = 0
@@ -23,10 +27,9 @@ export function weaponSystem(world: World, dt: number, input: InputManager): voi
 
   const m = world.mods
   let fireRate = world.weapon.fireRate * m.fireRateMul
-  if (m.berserker > 0) {
-    const missing = 1 - world.player.hp / world.player.maxHp
-    fireRate *= 1 + missing * 0.8
-  }
+  if (m.berserker > 0) fireRate *= 1 + (1 - world.player.hp / world.player.maxHp) * m.berserker
+  if (world.berserkT > 0) fireRate *= 1 + BERSERK_MEDKIT.fireRate
+  if (world.adrenalT > 0) fireRate *= 1 + m.adrenalWake
   const interval = 1 / fireRate
   let guard = 0
   while (world.fireCooldown <= 0 && guard++ < 14) {
@@ -66,9 +69,10 @@ function fire(world: World, ax: number, ay: number): void {
 
   // Explosion: from the weapon, or granted by the Explosive Rounds perk. Both
   // scale with the damage perks.
-  const explodeRadius = w.explodeRadius ?? (m.explosiveRounds > 0 ? 60 : 0)
-  const explodeDamage =
-    w.explodeDamage !== undefined ? w.explodeDamage * m.damageMul : m.explosiveRounds > 0 ? damage * 0.5 * m.explosiveRounds : 0
+  const explodeRadius = w.explodeRadius ?? m.explodeRadius
+  const explodeDamage = w.explodeDamage !== undefined ? w.explodeDamage * m.damageMul : damage * m.explodeFrac
+  // Arc Rounds on a chain weapon adds hops instead of its proc.
+  const chain = w.chain ? w.chain + (m.arcHops > 0 ? m.arcHops - 1 : 0) : 0
 
   const rng = world.rngs.combat
   for (let i = 0; i < count; i++) {
@@ -84,10 +88,10 @@ function fire(world: World, ax: number, ay: number): void {
     p.knockback = knockback
     p.pierce = pierce
     p.life = life
-    p.bounces = m.bounces
+    p.bounces = m.seekBounces
     p.explodeRadius = explodeRadius
     p.explodeDamage = explodeDamage
-    p.chain = w.chain ?? 0
+    p.chain = chain
     p.chainRange = w.chainRange ?? 0
     p.hitN = 0
     const s = p.sprite

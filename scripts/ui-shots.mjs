@@ -269,6 +269,7 @@ async function runSize(browser, size) {
     await page.evaluate(() => {
       const w = window.__SWARM.world
       w.player.hp = w.character.maxHp * 0.8
+      w.draft.reset() // the next draft is the run's Keystone draft
       w.paused = false
       w.addXp(w.xpToNext + 1)
     })
@@ -277,8 +278,40 @@ async function runSize(browser, size) {
     await page.evaluate(() => {
       const S = window.__SWARM
       const w = S.world
-      if (w.paused && w.draftCards.length) S.pickPerk(w.draftCards[0].id)
+      if (w.paused && w.draft.open) S.pickCard(0)
     })
+    await sleep(300)
+  })
+  // A built draft: a first fusion offer, a fusion completer, an evolution tag
+  // and an owned perk (LV a to b); then banish mode; then the fallback fill.
+  const draftWith = (owned, pool, weapon) =>
+    page.evaluate((owned, pool, weapon) => {
+      const S = window.__SWARM
+      const w = S.world
+      for (const id of owned) w.choosePerk(id)
+      if (weapon) S.give(weapon)
+      w.perkPool = w.perkPool.filter((p) => pool.includes(p.id))
+      w.draft.lastOpenAt = w.time - 100
+      w.player.hp = w.player.maxHp * 0.8
+      w.paused = false
+      w.addXp(w.xpToNext + 1)
+    }, owned, pool, weapon)
+  await step('08b-levelup-build', async () => {
+    await draftWith(['cryo_rounds', 'giant_slayer', 'deadeye', 'heavy_rounds', 'heavy_rounds'], ['explosive_rounds', 'deadeye', 'heavy_rounds'], 'railgun')
+    await sleep(1100)
+    await shot('08b-levelup-build')
+    await page.keyboard.press('b')
+    await sleep(300)
+    await shot('08c-levelup-banish')
+    await page.keyboard.press('b')
+    await page.evaluate(() => window.__SWARM.pickCard(0))
+    await sleep(300)
+  })
+  await step('08d-levelup-fallback', async () => {
+    await draftWith([], ['vitality'], null)
+    await sleep(1100)
+    await shot('08d-levelup-fallback')
+    await page.evaluate(() => window.__SWARM.pickCard(0))
     await sleep(300)
   })
   await step('09-gameover', async () => {

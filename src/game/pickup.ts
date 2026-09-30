@@ -1,11 +1,11 @@
 import type { Sprite } from 'pixi.js'
 import type { Poolable } from '../core/pool.ts'
 
-export type PickupKind = 'xp' | 'weapon' | 'health'
+export type PickupKind = 'xp' | 'bank' | 'weapon' | 'health'
 
 /** Pool reservation slot per kind, in PICKUP_RESERVE order (xp, bank, health,
- *  weapon, core, bonus). Bank, core and bonus slots belong to later kinds. */
-export const PICKUP_SLOT: Readonly<Record<PickupKind, number>> = { xp: 0, health: 2, weapon: 3 }
+ *  weapon, core, bonus). Core and bonus slots belong to later kinds. */
+export const PICKUP_SLOT: Readonly<Record<PickupKind, number>> = { xp: 0, bank: 1, health: 2, weapon: 3 }
 export const PICKUP_SLOTS = 6
 
 /**
@@ -32,6 +32,10 @@ export class Pickup implements Poolable {
   life = 0
   /** Spin/bob phase for idle animation. */
   phase = 0
+  /** Gems and medkits: once inside the capture radius they home in for good. */
+  captured = false
+  /** Seconds since capture (the homing speed ramps over XP.homeRamp). */
+  homeT = 0
 
   constructor(readonly sprite: Sprite) {}
 }

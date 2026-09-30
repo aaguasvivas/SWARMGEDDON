@@ -562,7 +562,7 @@ Constants in A6. Rules:
 - **Gem value:** `def.xp x row.xpScale` for non-elite, non-boss kills. Elite and boss XP is not scaled.
 - **SURGE:** after 40 s with no level-up, collected XP counts x2 until the next level-up.
 - **No XP gem expiry.**
-- **Bank gem:** over 200 gems on the field, new XP merges into one crimson bank gem.
+- **Bank gem:** at 200 gems on the field, the uncaptured gem farthest from the player merges into one crimson bank gem and is reused for the new drop, so new XP still lands at the kill. With no uncaptured gem, or while the bank gem is homing in, the new XP merges into the bank gem.
 - **Homing:** a gem that enters `125 x magnetMul` is captured and homes at 260 to 900 u/s. It never releases.
 - **VACUUM** captures every gem and medkit.
 - **Pickup pool reservation:** XP 200 + 1 bank gem, medkits 40, pods 4, cores 4, bonuses 2. MAX 400.
@@ -1746,6 +1746,8 @@ export const DASH_BTN = {
 
 The start pool is the 21 perks without a Lock entry, including all 10 keystones.
 
+Per-stack forms of the listed values (P5): Explosive Rounds radius `45 + 15s`, burst `0.5s` of the hit; Overpressure stagger `0.04 + 0.04s` s; Shock Step radius `70 + 20s` u, damage `10 + 15s`; Arc Rounds hops at 50% of the hit within 150 u; Cryo slow lasts 1.2 s. The kill-heal cap starts at 6 HP/s (so Vampiric 2 reads `max 14 HP/s`). The Berserker medkit burst is +40% fire rate for 3 s. A card for an owned perk shows `stat(s) → stat(s + 1)` with the shared words once.
+
 ### A2.3 Draft constants
 
 ```ts
@@ -1753,16 +1755,21 @@ export const DRAFT = {
   rareBase: 0.15, rareStep: 0.06, rareMax: 0.55, ownedBias: 0.55, fusionRepeat: 0.35,
   familyStep: 0.5, familyMax: 2.5, startRerolls: 2, startBanishes: 1, maxRerolls: 5, maxBanishes: 3,
   skipHealFrac: 0.2, minGap: 12, lockFullMs: 450, lockShortMs: 300, fullCeremonies: 3,
+  firstOpenAt: 6,
 } as const
 ```
 
+`firstOpenAt` (P5): the Keystone draft never opens before 6 s. The P4 opening (minute-0 minAlive 16/14/14, first kill near 0.6 s) reaches L2 at 2.1 to 2.9 s for every bot, so without the gate the first draft would interrupt Pack A instead of landing at 6 to 12 s.
+
 ### A2.4 Fallbacks
 
-| id | Name | Effect | stat |
-|---|---|---|---|
-| sharpen | Sharpen | damageMul *= 1.04 per pick, unlimited | `damage x1.04 (total x1.12)` |
-| field_repair | Field Repair | heal 35% of max HP | `heal 35 HP` |
-| spare_parts | Spare Parts | +1 reroll (cap 5) | `rerolls 2 → 3` |
+| id | Name | Effect | stat | Desc |
+|---|---|---|---|---|
+| sharpen | Sharpen | damageMul *= 1.04 per pick, unlimited | `damage x1.04 (total x1.12)` | A little more damage. Take it as often as you like. |
+| field_repair | Field Repair | heal 35% of max HP | `heal 35 HP` | Patch the hull right now. |
+| spare_parts | Spare Parts | +1 reroll (cap 5) | `rerolls 2 → 3` | One more reroll for later drafts. |
+
+Fallbacks cannot be banished, so a draft always shows 3 cards.
 
 ## A3. Fusions
 
@@ -1780,6 +1787,21 @@ All fusions: rarity fusion, max 1, need 1+ stack of each parent, and never cost 
 | f_ram | RAM | phase_step + thorns | During dash ticks, each enemy within radius + 30 takes 6x thorns dps x damageMul, once per enemy per dash (`e.ramStamp = dashSeq`). Non-elites are pushed 40 u sideways. |
 | f_salvo | SALVO STEP | adrenal_wake + twin_shot | Every dash start fires a ring of 12 shots of the current weapon at 60% damage, with no ammo cost. |
 | f_cold_blood | COLD BLOOD | cryo_rounds + giant_slayer | Slowed elites and bosses take +30% damage. Hits on elites and bosses always apply the full Cryo slow (bosses capped at 30%). |
+
+Card desc (the draft card shows the two parents as its tag line):
+
+| id | Desc |
+|---|---|
+| f_shatter | Enemies that die while slowed burst. |
+| f_firestorm | Arcs ignite. Burning targets take +50% arc damage. |
+| f_pinball | Each seek bounce restores pierce and adds 15% damage. |
+| f_headhunter | Crits ignore front armor. Crit kills burst. |
+| f_guillotine | Executioner also culls elites. Culls drop double XP. |
+| f_bloodrush | Below 50% HP: double kill healing, faster movement. |
+| f_living_armor | Overhealing becomes a shield, up to 25% of max HP. |
+| f_ram | Dashing through enemies deals heavy thorns damage. |
+| f_salvo | Every dash fires a ring of 12 shots. |
+| f_cold_blood | Slowed elites and bosses take +30% damage. |
 
 Blast queue: `BLAST_CAP 64`, `Float32Array(64 * 6)` holding x, y, r, dmg, readyAt and flags (`NO_BONUS 1`, `KNOCK 2`, `CRIT 4`). It drains at the end of `collisionSystem`, and entries pushed during a drain wait for the next tick.
 
@@ -1874,7 +1896,7 @@ export const PICKUP_RESERVE = { xp: 200, bank: 1, health: 40, weapon: 4, core: 4
 
 Cumulative XP by level: 6 to reach L2, 108 to reach L5, 647 to reach L10, 1906 to reach L15, 4185 to reach L20, 7784 to reach L25.
 
-Bank gem: tint #ff4a6a, scale `min(2.4, 1.2 + 0.25 x log2(1 + xp / 20))`.
+Bank gem: tint #ff4a6a, scale `min(2.4, 1.2 + 0.25 x log2(1 + xp / 20))`. It appears where the first merged gem lay and never expires. (P5: merging the new XP instead left a bank gem far from the fight once stale gems filled the cap; a hive smart+P bot collected 1 of 763 XP over a minute.)
 
 ## A7. Run scripts
 

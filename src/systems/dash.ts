@@ -1,4 +1,4 @@
-import { DASH } from '../config.ts'
+import { ADRENAL_WAKE, DASH } from '../config.ts'
 import type { Vec2 } from '../core/vec.ts'
 import { FeelKind } from '../effects/feelQueue.ts'
 import { tickDown } from '../game/player.ts'
@@ -55,6 +55,7 @@ export function dashSystem(w: World, input: DashInput, dt: number): void {
   pl.grantInvuln(w.mods.dashIframes, 1)
   w.dashSeq++
   w.dashes++
+  if (w.mods.adrenalWake > 0) w.adrenalT = ADRENAL_WAKE.sec
   w.feel.emit(FeelKind.Dash, 0, pl.x, pl.y, pl.dashDirX, pl.dashDirY)
 }
 
@@ -69,6 +70,8 @@ export function closeCall(w: World): void {
   w.closeCallSeq = w.dashSeq
   w.dashRecharge = Math.max(0, w.dashRecharge - DASH.closeCallRefund)
   w.closeCalls++
+  // Adrenal Wake: a Close Call stretches this dash's window to closeCallSec.
+  if (w.adrenalT > 0) w.adrenalT += ADRENAL_WAKE.closeCallSec - ADRENAL_WAKE.sec
   const pl = w.player
   w.feel.emit(FeelKind.CloseCall, 0, pl.x, pl.y)
 }

@@ -72,7 +72,7 @@ for (const { mode, dash, seed, minutes, char, perkPolicy, threat, ot } of config
     const r = await page.evaluate((u) => window.__PT_run(u, 1e7), t)
     const c = await page.evaluate(() => window.__PT_chunk())
     console.error(
-      `[${arena}/${mode}${dash ? '+dash' : ''}/${seed}] t=${c.t} L${c.level} kills=${c.kills} (+${c.killsDelta}) en=${c.enemies} mean=${c.aliveMean} max=${c.maxEnemiesChunk} wpn=${c.weapon} boss=${c.bossAlive}${c.bossHp != null ? '(' + c.bossHp + ')' : ''} hp=${c.hp} lv+${c.levelUps} xpExp=${c.xpExpired} dash=${c.dashes}/cc${c.closeCalls} alerts=${c.alerts} wall=${((Date.now() - t0) / 1000).toFixed(0)}s`,
+      `[${arena}/${mode}${dash ? '+dash' : ''}/${seed}] t=${c.t} L${c.level} kills=${c.kills} (+${c.killsDelta}) en=${c.enemies} mean=${c.aliveMean} max=${c.maxEnemiesChunk} wpn=${c.weapon} boss=${c.bossAlive}${c.bossHp != null ? '(' + c.bossHp + ')' : ''} hp=${c.hp} lv+${c.levelUps} pend=${c.pendingLevelUps} xp=${c.xpCollected}/${c.xpDropped} dash=${c.dashes}/cc${c.closeCalls} alerts=${c.alerts} wall=${((Date.now() - t0) / 1000).toFixed(0)}s`,
     )
     if (r.dead) break
   }
@@ -81,6 +81,6 @@ for (const { mode, dash, seed, minutes, char, perkPolicy, threat, ot } of config
   fin.wallSeconds = (Date.now() - t0) / 1000
   const file = join(OUT, `${arena}_${mode}${dash ? '_dash' : ''}_${seed}${char !== 'nova' ? '_' + char : ''}${perkPolicy !== 'first' ? '_' + perkPolicy : ''}${threat ? '_t' + threat : ''}${ot ? '_ot' : ''}.json`)
   writeFileSync(file, JSON.stringify(fin, null, 1))
-  console.log(JSON.stringify({ file, arena, mode, dash, seed, endTime: fin.endTime, dead: fin.dead, fromHalfHp: fin.death?.fromHalfHp ?? null, level: fin.level, kills: fin.kills, dashes: fin.dashes, closeCalls: fin.closeCalls, maxEnemies: fin.maxEnemies, wall: fin.wallSeconds }))
+  console.log(JSON.stringify({ file, arena, mode, dash, seed, perkPolicy, endTime: fin.endTime, dead: fin.dead, firstDraftAt: fin.firstDraftAt, firstFusionAt: fin.firstFusionAt, xpCollectFrac: fin.xpCollectFrac, xpCollectFrac30: fin.xpCollectFrac30, fromHalfHp: fin.death?.fromHalfHp ?? null, level: fin.level, kills: fin.kills, dashes: fin.dashes, closeCalls: fin.closeCalls, maxEnemies: fin.maxEnemies, wall: fin.wallSeconds }))
 }
 await browser.close()
