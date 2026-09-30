@@ -231,11 +231,13 @@ export class World {
   /** The run's THREAT level (world.threat), read once in beginRun. */
   threatDef: ThreatLevel = THREAT_LEVELS[0]!
   /** Enemy HP, the threat x OVERTIME damage multiplier (authored boss and
-   *  hazard damage takes only this; dmgMul adds the time ramp), and the min
-   *  and max alive multiplier. The director sets them per OVERTIME cycle. */
+   *  hazard damage takes only this; dmgMul adds the time ramp), the min and
+   *  max alive multiplier, and the OVERTIME multiplier of non-boss spawn
+   *  speed and the speed ceiling. The director sets them per OVERTIME cycle. */
   hpMul = 1
   runDmgMul = 1
   aliveMul = 1
+  speedMul = 1
 
   constructor(
     readonly arena: Arena,

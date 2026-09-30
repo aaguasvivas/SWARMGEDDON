@@ -78,6 +78,8 @@ const DEG = Math.PI / 180
 /** Spawn points stay this far inside the arena wall. */
 const EDGE_INSET = 24
 const NEW_BUG = 'NEW BUG'
+/** Sub of the OT boss's retreat alert (A15); its title is the script's stalemate line. */
+const RETREAT_SUB = 'THE SWARM RETURNS'
 
 /**
  * Run-arc state (docs/NEXT-LEVEL.md 4.1, A7.3). Allocated once with the World
@@ -96,6 +98,9 @@ export class Director {
   readonly beatAng = new Float32Array(BEAT_DRAW_SLOTS)
   /** Affix mask per elite, at the same slot as that elite's side in beatAng. */
   readonly beatAffix = new Uint8Array(BEAT_DRAW_SLOTS)
+  /** Per beat: the elites it brings, fixed when it warns (an OVERTIME beat
+   *  held into the next cycle keeps the count its draws were rolled for). */
+  readonly eliteN = new Uint8Array(MAX_BEATS)
   /** Boss beat waiting for its arrival (-1 = none), its beat time, and
    *  whether its alert played. */
   bossBeat = -1
@@ -158,6 +163,7 @@ export class Director {
     this.rowIndex = 0
     this.beatAng.fill(0)
     this.beatAffix.fill(0)
+    this.eliteN.fill(0)
     this.bossBeat = -1
     this.bossAt = 0
     this.bossWarned = false
@@ -201,6 +207,7 @@ export function applyRunMuls(world: World): void {
   world.hpMul = T.hpMul * Math.pow(OVERTIME.hpMul, c)
   world.runDmgMul = T.dmgMul * Math.pow(OVERTIME.dmgMul, c)
   world.aliveMul = T.aliveMul * Math.pow(OVERTIME.aliveMul, c)
+  world.speedMul = Math.pow(OVERTIME.speedMul, Math.max(0, c - 1))
   d.otXpMul = Math.pow(OVERTIME.xpMul, c)
 }
 
@@ -388,6 +395,7 @@ function warnBeat(world: World, i: number): void {
     case 'elite': {
       const pool = world.script.affixPool
       const count = eliteCount(d, b)
+      d.eliteN[i] = count
       for (let k = 0; k < count; k++) {
         d.beatAng[off + k] = sideAngle(world, rng.angle())
         let mask = 0
@@ -594,12 +602,13 @@ function scheduleHeld(world: World, t: number): void {
   }
 }
 
-/** An OT boss still alive when the next one is due retreats: it leaves with
- *  no credit and the cage drops, so a fight the player cannot finish never
- *  holds the swarm out for more than one cycle. The boss due now is skipped. */
+/** An OT boss still alive OVERTIME.bossStay s after it arrived retreats: it
+ *  leaves with no credit and the cage drops, so a fight the player cannot
+ *  finish never keeps the swarm out for long. */
 function retreat(world: World): void {
   const d = world.director
   const boss = world.boss
+  const pl = world.player
   cancelBossTelegraph(world)
   if (boss) {
     boss.alive = false
@@ -609,6 +618,7 @@ function retreat(world: World): void {
   world.boss = null
   d.cage.active = false
   d.lastBossKillAt = world.time
+  world.alerts.push(world.feel, AlertKind.Boss, world.script.text.stalemate, RETREAT_SUB, 0, 0, world.time, pl.x, pl.y)
   scheduleHeld(world, world.time)
 }
 
@@ -651,12 +661,16 @@ function tickWin(world: World, dt: number): void {
   if (!world.pendingWin && world.time >= d.clearTime + WIN_PANEL_DELAY) world.pendingWin = true
 }
 
-/** FRENZY steps and the PRIME's stalemate. */
+/** FRENZY steps, the PRIME's stalemate and the OT boss's retreat. */
 function tickFight(world: World): void {
   const d = world.director
   const boss = world.boss
   if (!world.bossAlive || !boss) return
   const t = world.time
+  if (world.bossFight.stage === 'overtime' && t >= d.fightStart + OVERTIME.bossStay) {
+    retreat(world)
+    return
+  }
   if (world.bossFight.stage === 'final' && t >= d.fightStart + STALEMATE_AFTER) {
     cancelBossTelegraph(world)
     boss.alive = false
@@ -688,14 +702,7 @@ function tickBossArrival(world: World): void {
   if (d.bossBeat < 0) return
   const b = beatOf(world.script, d.bossBeat)
   if (b.kind !== 'boss') return
-  if (world.bossAlive && b.stage !== 'final') {
-    if (b.stage === 'overtime' && world.bossFight.stage === 'overtime' && world.time >= d.bossAt) {
-      retreat(world)
-      d.firedAt[d.bossBeat] = -1
-      d.bossBeat = -1
-    }
-    return
-  }
+  if (world.bossAlive && b.stage !== 'final') return
   const t = world.time
   const arrive = Math.max(d.bossAt, d.lastBossKillAt + BOSS_MIN_GAP)
   if (b.stage === 'mid2' && arrive > MID2_LATEST) {
@@ -834,8 +841,12 @@ function ascend(world: World): boolean {
 
 function beginFight(world: World, boss: Enemy, stage: BossStage): void {
   const d = world.director
-  const hpBase = BOSS_STAGES[stage].hpBase * (stage === 'overtime' ? Math.pow(OVERTIME.bossHpMul, d.otCycle) : 1)
-  boss.hp = boss.maxHp = Math.round(hpBase * world.script.boss.worldMul * buildHpScale(world) * world.hpMul)
+  const ot = stage === 'overtime'
+  const hpBase = BOSS_STAGES[stage].hpBase * (ot ? Math.pow(OVERTIME.bossHpMul, d.otCycle) : 1)
+  // bossHpMul^c is the OT boss's whole OVERTIME growth (A10.2): it takes the
+  // THREAT level's HP multiplier, not the swarm's hpMul^c on top.
+  const hpMul = ot ? world.threatDef.hpMul : world.hpMul
+  boss.hp = boss.maxHp = Math.round(hpBase * world.script.boss.worldMul * buildHpScale(world) * hpMul)
   boss.submerged = true
   world.beginBossFight()
   world.bossFight.begin(stage)
@@ -935,7 +946,7 @@ function fireElites(world: World, i: number): void {
   const d = world.director
   const off = world.script.drawOff[i]!
   const half = world.time < RING_NEAR_UNTIL ? RING_NEAR : RING_STD
-  const count = eliteCount(d, b)
+  const count = d.eliteN[i]!
   for (let k = 0; k < count; k++) {
     ringPointAt(world, d.beatAng[off + k]!, half)
     const e = spawnInside(world, world.script.eliteId, ringOut.x, ringOut.y)
@@ -967,11 +978,10 @@ function sideAngle(world: World, ang: number): number {
  *  tag, or the elite's name and the count when several come at once. */
 function pushEliteAlert(world: World, i: number): void {
   const d = world.director
-  const b = beatOf(world.script, i)
   const off = world.script.drawOff[i]!
   const ang = d.beatAng[off]!
   const def = ENEMIES[world.script.eliteId]!
-  const count = eliteCount(d, b)
+  const count = d.eliteN[i]!
   const title = count > 1 ? def.displayName + ' x' + count : tagTitle(def.idx, d.beatAffix[off]!)
   world.alerts.push(world.feel, AlertKind.Elite, title, FROM_WORD[quadrant(ang)]!, Math.cos(ang), Math.sin(ang), world.time, world.player.x, world.player.y)
 }

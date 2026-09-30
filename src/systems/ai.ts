@@ -39,6 +39,7 @@ export function aiSystem(world: World, dt: number): void {
   const buf = world.queryBuf
   const cage = world.director.cage
   const fight = world.bossFights
+  const speedCeil = ENEMY_SPEED_CEIL * world.speedMul
   let brood = 0
 
   // Aura + warper + gravity-well pass. Well pull is a pure function of
@@ -238,7 +239,7 @@ export function aiSystem(world: World, dt: number): void {
     if (e.slow > 0) spd *= 1 - e.slowFactor
     if (e.buffed > 0) spd *= e.buffedMul
     if (def.behavior === 'burrower' && e.submerged && def.burrow) spd *= def.burrow.underSpeedMul
-    if (spd > ENEMY_SPEED_CEIL && !(def.behavior === 'charger' && e.phase === 2)) spd = ENEMY_SPEED_CEIL
+    if (spd > speedCeil && !(def.behavior === 'charger' && e.phase === 2)) spd = speedCeil
     // Overpressure stagger stops the body in place, facing kept; its timers
     // keep running.
     if (e.staggerT > 0) {

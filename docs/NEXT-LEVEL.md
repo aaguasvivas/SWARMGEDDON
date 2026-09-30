@@ -291,6 +291,7 @@ export interface RunRngs { spawn: Rng; script: Rng; boss: Rng; loot: Rng; draft:
 | Damage mul | `1.2^c` |
 | minAlive and maxAlive | `x1.1^c`, maxAlive capped at PRACTICAL_CAP |
 | xpScale | `x0.8^c` |
+| Non-boss spawn speed and the 240 u/s ceiling | `x1.3^(c-1)`: cycle 1 unchanged, cycle 2 x1.3, cycle 3 x1.69 (P11 review) |
 
 Beats per cycle:
 - +20 s: EVENT 1, plus a mirror copy at +28 s when c >= 2.
@@ -302,9 +303,10 @@ Death is the only end.
 
 Built in P11 (constants `OVERTIME` in `src/config.ts`):
 - `startOvertime()` sets `runState = 'overtime'`, `otCycle = 1` and `otStart = t`, so the first cycle already runs at `c = 1` (HP x1.5, damage x1.2), and opens a 10 s lull at the row's minAlive x0.5. Cycle minute 0, 1 and 2 use world rows 8, 9 and 10. Beats still held at the win are dropped.
-- The HP multiplier is `world.hpMul` (THREAT x `1.5^c`), so the OT boss has `2600 x 1.35^c x worldMul x buildScale^0.75 x world.hpMul`. It fights with mid2's phases, cadence and rotations, and its alert reuses mid2's lines (`THE QUEEN / RETURNS`).
-- **Retreat (P11 decision).** An OT boss still alive when the next cycle's OT boss is due (its +160 s) retreats: it leaves with no credit, the cage drops, the held beats are scheduled as after a kill (no lull), and that cycle's OT boss is skipped. Measured without it (Hive smart+P, 5 runs into OVERTIME): the cycle 2 OT boss (18,885 HP) outgrew the bot's damage, and 2 bots sat in its cage (swarm held outside, no pulses) from 18:05 to past 25:00 taking almost no damage, so the run could not end. With it, a cage lasts at most 180 s and the swarm of the next cycles reaches the player.
-- The elite beat brings `2 + c` elites (plus HUNTERS' +1 from THREAT 1), at most 8, with 2 affixes each.
+- Every spawn takes `world.hpMul` (THREAT x `1.5^c`). The OT boss grows by its own `1.35^c` instead (A10.2): `2600 x 1.35^c x worldMul x buildScale^0.75 x THREAT hpMul`, so at THREAT 0 it has 3510, 4739 and 6397 base HP in cycles 1 to 3 (the PRIME has 4200). (P11 review: the first build also multiplied in `1.5^c`, which gave `2.025^c`: 18,885 HP at cycle 2 on T0 and 25,908 at cycle 3 on T2.) It fights with mid2's phases, cadence and rotations, and its alert reuses mid2's lines (`THE QUEEN / RETURNS`).
+- **Speed (P11 review).** From cycle 2, every non-boss spawn moves `x1.3^(c-1)` faster, and the 240 u/s ceiling (A11) rises by the same factor (`world.speedMul`, `OVERTIME.speedMul`). Stream units keep their authored speed. Without it a kiting ship outlives OVERTIME: NOVA runs at 285 u/s (308 with one Fleet Footed stack), faster than the capped swarm, and a Hive smart+P bot held 450 enemies at full HP through cycles 3 to 5. The term leaves cycle 1 as designed and passes the kiter's speed in cycle 2 (flyers 312 u/s). Measurements in the A12 and A13 note (section 11).
+- **Retreat (P11 decision, bound set in the P11 review).** An OT boss still alive `OVERTIME.bossStay` (90 s) after it arrives retreats: it leaves with no credit, the cage drops, the held beats are scheduled as after a kill (no lull), and the alert `THE QUEEN ESCAPED / THE SWARM RETURNS` (the script's stalemate title) plays. The next OT boss comes on time. Inside the cage the swarm is held outside and pulses stop, so the cage is the safest place in OVERTIME: with a stay of up to 180 s (the first rule: retreat when the next OT boss is due) the default bot, which shoots the swarm at the fence, spent up to 64% of its OVERTIME caged, and the runs that lived past 20:00 were the caged ones.
+- The elite beat brings `2 + c` elites (plus HUNTERS' +1 from THREAT 1), at most 8, with 2 affixes each. The count is fixed when the beat warns (`Director.eliteN`), so a beat held by a cage into the next cycle brings the elites its draws were rolled for. (P11 review: the count read at fire time added one elite with no side draw and no affixes.)
 - The EVENT 1 mirror plays from cycle 2 (every cycle at THREAT 2 and up), and at THREAT 2 and up EVENT 3 mirrors too (A11).
 - `RunResult.overtimeSec = time - clearTime` for a run that went on into OVERTIME.
 
@@ -1661,7 +1663,7 @@ node scripts/measure.mjs 390 844 perf ; node scripts/measure.mjs 390 844 perf-fi
 | A8 | Median survival | smart 5:30 or more; smart+P 8:00 or more; crude 2:30 or more; Hive crude median at least that of Depths and Wastes |
 | A9 | Level curve (smart+P median) | L9 to 12 at 3:00; L18 to 23 at 8:00; L23 to 28 at 11:00; no gap over 60 s after 1:00 |
 | A10 | Readable deaths | from the last HP at 50% or more to death: median 3.0 s or more, minimum 1.2 s or more |
-| A11 | Speed | no enemy over 240 u/s outside stream, charger dash and lunge |
+| A11 | Speed | no enemy over 240 u/s outside stream, charger dash and lunge (before OVERTIME; its cycles raise the ceiling, section 4.1) |
 | A12 | Ladder | T4 win rate at most 15%; T1 at most T0 |
 | A13 | Overtime | 90% or more dead by 20:00; none past 24:00 |
 | A14 | Determinism | identical hash across 3 viewports, a rerun, extreme settings, and a fresh vs unlocked save (Daily) |
@@ -1717,10 +1719,13 @@ node scripts/measure.mjs 390 844 perf ; node scripts/measure.mjs 390 844 perf-fi
 
 **A12 and A13 note (P11).** Hive, `smart:SEED:14:nova:priority:T`, seeds 1001 x 1 to 10 (OVERTIME runs: `:25:nova:priority:T:ot`).
 - A12 passes: wins T0 5/10, T1 3/10, T2 4/10, T3 1/10, T4 0/10. T4 is at most 15% and below T0, and T1 is at most T0. Median end: T0 10:27, T4 5:16.
-- **A13 fails.** 13 runs went on into OVERTIME (Hive, T0 to T3). 10 died by 20:00 (77%, pass 90%); 3 were alive at 24:00 (T0 seeds 6006 and 9009 alive at 25:00, T2 seed 9009 dead at 24:34). Most deaths come in cycle 1 or 2 (12:02 to 19:11).
-- Cause: the surviving bots kite. From cycle 2 on they hold 450 enemies (the PRACTICAL_CAP, HP x3.4 to x5, damage x1.7 to x2.1) and take 0 to 56 HP per 30 s, because nothing reaches them: enemy speed stops at the 240 u/s ceiling and NOVA runs at 285 u/s or more. The OVERTIME table scales HP, damage and counts, but no term reaches a ship that outruns the swarm.
-- Before the retreat rule (section 4.1) the same 2 bots also sat in an OT boss cage from 18:05 to past 25:00. With it they still live, uncaged, through cycles 3 and 4.
-- Experiment (not shipped): enemy spawn speed and the 240 u/s ceiling x1.1^c in OVERTIME. All 5 Hive T0 runs then died, 4 of them within 2 minutes of OVERTIME (12:05 to 13:58) and seed 6006 at 18:54. A speed term decides A13; its size and first cycle are a P19 or owner decision (A11 or the `OVERTIME` block).
+- First P11 build, **A13 failed**: 13 runs went on into OVERTIME (Hive, T0 to T3), 10 died by 20:00 (77%, pass 90%), and T0 seeds 6006 and 9009 were alive at 25:00. The surviving bots kite: from cycle 2 on they hold 450 enemies (the PRACTICAL_CAP, HP x3.4 to x5, damage x1.7 to x2.1) and take 0 to 56 HP per 30 s, because enemy speed stops at the 240 u/s ceiling and NOVA runs at 285 u/s or more.
+- **P11 review** (the OT boss at `1.35^c` x THREAT, the elite count fixed at warn time). A13 runs: `smart:SEED:25:nova:priority:T:ot`, T0 seeds 1001 x 1 to 30 and T1 to T3 seeds 1001 x 1 to 10 (set 1: 16 runs into OVERTIME), plus T0 1001 x 31 to 60 and T1 to T3 1001 x 11 to 20 (set 2: 12 runs). Nothing before the win changes, so every arm has the same 16 winners on set 1 (T0 8/30, and T1 to T3 match the P11 A12 numbers above). Set 1 per arm, dead by 20:00 and alive past 24:00:
+  - No speed term, retreat when the next OT boss is due: 13/16 (81%), T2 seed 9009 alive at 25:00 at full HP with 450 enemies. Median time in OVERTIME 220 s.
+  - Speed `x1.1^c` from cycle 1, same retreat: 14/16 (88%), none past 24:00, but the median time in OVERTIME fell to 51 s: flyers at 264 u/s catch most bots in the first minute of cycle 1.
+  - Speed from cycle 2 only (`x1.15^(c-1)`), same retreat: 12/16 (75%), 2 past 24:00. The long runs were caged for 54 to 64% of their OVERTIME: the default bot shoots the swarm at the fence, so an OT boss often lived until the next one was due.
+  - Retreat after 90 s (`bossStay`) with `x1.1^(c-1)`, `x1.15^(c-1)`, `x1.2^(c-1)`: 13/16, 14/16, 13/16 (81 to 88%), none past 24:00. The late deaths came at 20:04 to 22:54, in cycle 3 or 4: in cycle 2 the kiters (NOVA with one Fleet Footed stack, 308 u/s) still outrun a swarm at x1.2 (flyers 288 u/s).
+  - **Shipped: `x1.3^(c-1)` and a 90 s stay.** Set 1: 15/16 (94%), none past 24:00, last death 20:36, median time in OVERTIME 236 s; the reviewer's T0 seeds 4004, 5005, 6006, 7007 and 9009 die at 16:09, 15:54, 19:39, 13:31 and 19:57. Set 2: 11/12 (92%), none past 24:00, last death 20:21. Both sets: 26/28 (93%). Long runs spend at most 47% of their OVERTIME caged. Deaths in cycle 1 (14 to 138 s into OVERTIME) are the same as without the term. P19 may retune `speedMul` and `bossStay` against A13.
 
 **A16 and section 3.2 note (W3 integration).**
 - A16 passes: a 10 s `perf-final` trace (Hive) has 23 minor GCs and no major GC. The longest pause was 1.81 to 1.90 ms in the integrator's runs and 1.05 ms in the fix re-run, so the margin under 2 ms is small.
@@ -2153,6 +2158,7 @@ beatAng = new Float32Array(96); beatAffix = new Uint8Array(96); scratch = new Fl
 firedAt = new Float32Array(32)   // P7: fire time per beat (NaN not yet, -1 dropped or skipped); A3 reads it
 cage = { active, x, y, r, formingFrom }; bossesAlive, fightIndex, fightStart, nextFrenzyAt, frenzy
 lastBossKillAt, bossStageNext; deferred = new Int16Array(12); deferredAt = new Float32Array(12); warned = new Uint8Array(32)
+eliteN = new Uint8Array(32)   // P11 review: elites per beat, fixed at warn time
 events = [EventRun x5]; runState, clearTime, purgeT, purgeX, purgeY, otCycle, otStart, otWarn, otFire, otXpMul
 broodCount, bossesKilled, elitesKilled
 ```
@@ -2217,7 +2223,7 @@ P7 rules (`src/content/affixes.ts`): the outline is a ring on the floor at the b
 | mid1 | 2400 | [0.5] | 1.0 / 1.2 | 1.0 / 1.0 |
 | mid2 | 2600 | [0.66, 0.33] | 1.0 / 1.2 / 1.35 | 1.0 / 1.0 / 0.8 |
 | final (PRIME) | 4200 | [0.66, 0.33] | 1.0 / 1.2 / 1.35 | 1.0 / 1.0 / 0.75 |
-| overtime c | 2600 x 1.35^c | as mid2 | as mid2 | as mid2 |
+| overtime c | 2600 x 1.35^c (x THREAT hpMul, not OVERTIME's 1.5^c) | as mid2 | as mid2 | as mid2 |
 
 Idle gap: queen 0.9 s, matron 0.7 s, tyrant 1.1 s. Cadence divides idleGap and recover. THREAT 3+ multiplies base cadence by 1.2, and FRENZY stacks on top.
 
@@ -2429,6 +2435,7 @@ Callout lane: center y = `max(T + plateBottom + 56, 0.30H)` in portrait and `0.3
 | worldIntro | 1 | 2.2 s | world name | `vs ACID HIVE` / `vs PSYCHIC BROOD` / `vs CINDER SWARM` | borderGlow |
 | dailyIntro | 1 | 2.4 s | `DAILY #142` | `VIOLET DEPTHS · SAME RUN FOR EVERYONE` | gold |
 | alert boss / final | 3 | 3.0 s | script title | script sub | #ff6aa8 |
+| alert OT boss retreat (P11) | 3 | 3.0 s | script stalemate (`THE QUEEN ESCAPED`) | `THE SWARM RETURNS` | #ff6aa8 |
 | alert event | 2 | 3.0 s | event title | event sub | #ff5a6e |
 | alert elite | 2 | 2.0 s | elite name tag (several elites: `GUARDIAN x2`) | `FROM THE EAST` | gold |
 | alert lull / debut | 1 | 2.0 s | `FINAL SWARM` / enemy name | `IN 20 SECONDS` / `NEW BUG` | text.primary |
