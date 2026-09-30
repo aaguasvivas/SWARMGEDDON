@@ -1,6 +1,7 @@
 import { MAX_ENEMY_PROJECTILES } from '../config.ts'
 import { clamp } from '../core/vec.ts'
 import { spawnPoof } from '../effects/fx.ts'
+import { FF_BOSS, FeelKind } from '../effects/feelQueue.ts'
 import { spawnEnemy } from './spawn.ts'
 import type { Enemy } from '../game/enemy.ts'
 import type { World } from '../game/world.ts'
@@ -98,6 +99,7 @@ export function aiSystem(world: World, dt: number): void {
             e.phase = 1
             e.stateTimer = ch.windup
             e.phaseDir = Math.atan2(uy, ux)
+            world.feel.emit(FeelKind.ChargerWindup, 0, e.x, e.y, e.phaseDir, 0, e)
           }
         } else if (e.phase === 1) {
           mx = 0
@@ -204,8 +206,7 @@ export function aiSystem(world: World, dt: number): void {
         separate = false
         if (def.enrageAt && !e.enraged && e.hp <= e.maxHp * def.enrageAt) {
           e.enraged = true
-          world.audio.play('boss')
-          world.juice.addTrauma(0.6)
+          world.feel.emit(FeelKind.BossPhase, FF_BOSS, e.x, e.y, 0, 0, def)
         }
         e.fireTimer -= dt
         if (e.fireTimer <= 0 && def.brood) {
@@ -285,6 +286,7 @@ function teleport(world: World, e: Enemy, range: number): void {
   e.x = e.prevX = clamp(world.player.x + Math.cos(a) * r, b.x + e.radius, b.x + b.w - e.radius)
   e.y = e.prevY = clamp(world.player.y + Math.sin(a) * r, b.y + e.radius, b.y + b.h - e.radius)
   spawnPoof(world, e.x, e.y, e.def.tint, 12)
+  world.feel.emit(FeelKind.Teleport, 0, e.x, e.y, 0, 0, e.def)
 }
 
 /** Queen spawns a brood burst of random offspring around herself. */
@@ -323,4 +325,5 @@ function fireEnemyShot(world: World, e: Enemy, ux: number, uy: number): void {
   // orange); others keep their body tint. Presentation only.
   s.tint = def.leavesAcid ? world.arenaTheme.hazardTint : def.tint
   s.scale.set(1)
+  world.feel.emit(FeelKind.EnemyShot, 0, p.x, p.y, p.facing, 0, def)
 }

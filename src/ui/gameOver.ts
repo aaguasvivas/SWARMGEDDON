@@ -8,6 +8,9 @@ import type { RunResult, WorldBestGains } from '../state/persistence.ts'
 import { Button } from './button.ts'
 
 const MONO = 'ui-monospace, Menlo, Consolas, monospace'
+/** Taps are ignored this long after the screen appears, so a tap meant for the
+ *  game cannot land on RETRY. */
+const INPUT_LOCK_MS = 450
 
 function fmtTime(s: number): string {
   const m = Math.floor(s / 60)
@@ -33,6 +36,7 @@ export class GameOver {
   private board: Button
   private w = 0
   private h = 0
+  private readyAt = 0
 
   constructor() {
     this.title = new Text({ text: 'OVERRUN', style: { fontFamily: MONO, fontSize: 40, fontWeight: 'bold', fill: COLORS.hurtFlash, letterSpacing: 3 } })
@@ -51,16 +55,20 @@ export class GameOver {
     this.menu = new Button('MENU', 180, 52, COLORS.hudDim)
     this.share = new Button('SHARE RUN', 136, 46, 0x57c8ff, 14)
     this.board = new Button('LEADERS', 136, 46, 0xffc24a, 14)
-    this.retry.onClick = () => this.onRetry()
-    this.menu.onClick = () => this.onMenu()
-    this.share.onClick = () => this.onShare()
-    this.board.onClick = () => this.onLeaderboard()
+    this.retry.onClick = () => this.acceptsInput() && this.onRetry()
+    this.menu.onClick = () => this.acceptsInput() && this.onMenu()
+    this.share.onClick = () => this.acceptsInput() && this.onShare()
+    this.board.onClick = () => this.acceptsInput() && this.onLeaderboard()
 
     this.view.addChild(this.backdrop, this.title, this.best, this.rank, this.stats, this.retry.view, this.menu.view, this.share.view, this.board.view)
     this.view.visible = false
   }
 
   private hasUnlockBanner = false
+
+  acceptsInput(): boolean {
+    return performance.now() >= this.readyAt
+  }
 
   /** Show the player's global rank once the async submit comes back. */
   setRank(rank: number): void {
@@ -149,6 +157,7 @@ export class GameOver {
       `score  ${result.score}`
     this.relayout()
     this.view.visible = true
+    this.readyAt = performance.now() + INPUT_LOCK_MS
   }
 
   hide(): void {

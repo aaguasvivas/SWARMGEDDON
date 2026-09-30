@@ -121,7 +121,7 @@ if (MODE === 'shot') {
     // Freeze for the shot: pause the live loop's sim and clear the hurt
     // vignette (an invincible probe being chewed saturates it maroon).
     w.paused = true
-    w.hurtFlash = 0
+    S.feel.hurtFlash = 0
   }, charId, arenaId, simSeconds)
   await new Promise((r) => setTimeout(r, 450))
   await page.screenshot({ path: outfile, type: 'jpeg', quality: 62 })

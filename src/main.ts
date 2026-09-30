@@ -15,6 +15,8 @@ import { Vignette } from './render/vignette.ts'
 import { BackdropSystem } from './render/backdrop.ts'
 import { AudioEngine } from './audio/audio.ts'
 import { announce } from './effects/fx.ts'
+import { FeelDirector } from './effects/feelDirector.ts'
+import { DEATH_BEAT_MS, DEATH_RECAP_MS, DEATH_SKIP_MS, TimePreset } from './effects/timeDirector.ts'
 import { Arena, type DecorSpeck } from './game/arena.ts'
 import { Player } from './game/player.ts'
 import { World, type RunMode } from './game/world.ts'
@@ -90,7 +92,7 @@ async function boot(): Promise<void> {
   layers.ichor.addChild(ichor.view)
 
   const player = new Player()
-  const world = new World(arena, player, ichor, audio, layers, texReg)
+  const world = new World(arena, player, ichor, layers, texReg)
   // Camera window (world-space top-left + CSS px size). Presentation only: the
   // sim never reads it.
   const cam = { x: 0, y: 0, w: 1280, h: 720 }
@@ -103,6 +105,7 @@ async function boot(): Promise<void> {
 
   const input = new InputManager(app.canvas)
   input.setEnabled(false)
+  const feel = new FeelDirector(world, audio, input)
   const vignette = new Vignette()
   // Per-world atmosphere: ambient motes (world-space) + screen-space overlay +
   // the color grade/tinted vignette. Bakes its textures once; only tints per world.
@@ -139,6 +142,10 @@ async function boot(): Promise<void> {
   // One-time "collect for XP" label on the first gem a new player ever sees.
   let showGemHint = !loadJSON('seenGemHint', false)
   let levelFlash = 0
+  // Death sequence camera punch (zoom added on the wreck) and whether the
+  // wreck visuals have landed this death.
+  let deathZoom = 0
+  let deathBeat = false
 
   // --- settings ---
   let settings = loadSettings()
@@ -151,6 +158,7 @@ async function boot(): Promise<void> {
     backdrop.setQuality(s.glow) // lean fallback for the Glow-off tier (next run)
     input.autoFire = s.autoFire
     setHapticsEnabled(s.haptics)
+    feel.time.reduceMotion = s.reduceMotion
   }
   applySettings(settings)
 
@@ -215,6 +223,10 @@ async function boot(): Promise<void> {
   function startRun(mode: RunMode): void {
     const { char, theme } = resolveLoadout(mode)
     world.beginRun(runSeed(mode), mode, char, theme)
+    audio.setTheme(theme.music)
+    feel.reset()
+    deathZoom = 0
+    deathBeat = false
     backdrop.setTheme(theme, arena.glowSpots) // motes/atmosphere/grade/vignette/glows
     applyCamera(player.x, player.y) // seed the camera before the first sim step
     hud.reset() // don't let last run's dying bars sweep across the fresh run
@@ -243,6 +255,7 @@ async function boot(): Promise<void> {
       arena: world.arenaTheme.id,
     }
     lastResult = result
+    feel.time.reset()
     const isHigh = recordRun(result)
     const gains = recordWorldBest(result) // per-world best time / most kills
     gameOver.show(result, isHigh, gains)
@@ -254,8 +267,6 @@ async function boot(): Promise<void> {
     }
     screen = 'gameover'
     input.setEnabled(false)
-    buzz(150)
-    input.rumble(320, 0.9)
     // Submit to the global leaderboard (no-op if unconfigured). The token pins
     // the async response to THIS run: a slow response from run N must never
     // stamp its rank (or overwrite the rank) on run N+1's death screen.
@@ -271,6 +282,9 @@ async function boot(): Promise<void> {
   function toMenu(): void {
     screen = 'menu'
     input.setEnabled(false)
+    feel.reset()
+    deathZoom = 0
+    deathBeat = false
     gameOver.hide()
     settingsPanel.hide()
     leaderboard.hide()
@@ -338,6 +352,7 @@ async function boot(): Promise<void> {
     else {
       modal.close()
       world.paused = false
+      feel.time.play(TimePreset.Resume)
     }
   }
   modal.onPick = pickPerk
@@ -349,6 +364,7 @@ async function boot(): Promise<void> {
     const insets = getInsets()
     cam.w = w
     cam.h = h
+    feel.shake.resize(w, h)
     hud.layout(w, h, insets)
     debug?.layout(insets)
     touchHint.layout(w, h, insets)
@@ -411,7 +427,7 @@ async function boot(): Promise<void> {
       if (e.key === 'Escape') toMenu()
       else if (e.key === 'r' || e.key === 'R') startRun(world.mode)
     } else if (screen === 'gameover') {
-      if (e.key === 'Enter') startRun(world.mode)
+      if (e.key === 'Enter' && gameOver.acceptsInput()) startRun(world.mode)
       else if (e.key === 'Escape') toMenu()
     } else if (screen === 'menu' && e.key === 'Enter' && !settingsPanel.isOpen()) {
       startRun('endless')
@@ -428,11 +444,29 @@ async function boot(): Promise<void> {
     cam.y = b.h <= h ? b.y - (h - b.h) / 2 : clamp(py - h / 2, b.y, b.y + b.h - h)
   }
 
-  // One fixed simulation step (extracted so dev tooling can drive it). After a
-  // death the sim holds still; the render loop ends the run once the death
-  // hit-stop has played out.
+  function sweepPools(): void {
+    world.enemies.sweep()
+    world.projectiles.sweep()
+    world.enemyProjectiles.sweep()
+    world.particles.sweep()
+    world.floaters.sweep()
+    world.pickups.sweep()
+    world.acid.sweep()
+  }
+
+  // One fixed simulation step (extracted so dev tooling can drive it).
   function stepSim(dt: number): void {
-    if (screen !== 'playing' || world.paused || world.pendingGameOver) return
+    if (screen !== 'playing' || world.paused) return
+    if (world.pendingGameOver) {
+      // Death sequence: the swarm keeps moving over the wreck while time,
+      // kills and level stay frozen. Particles keep integrating so debris
+      // settles instead of hanging in the air.
+      buildEnemyHash(world)
+      aiSystem(world, dt)
+      particleSystem(world, dt)
+      sweepPools()
+      return
+    }
 
     world.time += dt
     // Aim is cursor-relative to the player's SCREEN position, using the camera
@@ -454,45 +488,27 @@ async function boot(): Promise<void> {
       player.hp = Math.min(player.maxHp, player.hp + world.mods.regenPerSec * dt)
     }
 
-    world.enemies.sweep()
-    world.projectiles.sweep()
-    world.enemyProjectiles.sweep()
-    world.particles.sweep()
-    world.floaters.sweep()
-    world.pickups.sweep()
-    world.acid.sweep()
+    sweepPools()
 
     // Hand-off: a level earned this tick opens the draft (death outranks it, so
     // a pick is never applied posthumously).
     if (world.pendingLevelUps > 0 && !world.pendingGameOver) openDraft()
   }
 
-  /** Impact feedback for elite kills, which lands only when the kill is on
-   *  screen (judged against the last rendered camera window). */
-  function drainEliteKills(): void {
-    const xy = world.eliteKillXY
-    for (let i = 0; i < world.eliteKillN; i++) {
-      const x = xy[i * 2]!
-      const y = xy[i * 2 + 1]!
-      const onScreen = x > cam.x - 90 && x < cam.x + cam.w + 90 && y > cam.y - 90 && y < cam.y + cam.h + 90
-      world.juice.addTrauma(onScreen ? 0.2 : 0.05)
-      if (onScreen) world.juice.addHitstop(0.05)
-    }
-    world.eliteKillN = 0
-  }
+  // Leaving the death sequence early: a fresh tap after the skip beat, or the
+  // app going to the background, goes straight to the recap.
+  app.canvas.addEventListener('pointerdown', () => {
+    if (screen === 'playing' && world.pendingGameOver && feel.time.deathMs >= DEATH_SKIP_MS) endRun()
+  })
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && screen === 'playing' && world.pendingGameOver) endRun()
+  })
 
   let warpAmt = 0
-  let prevHurt = 0
   // Ambient render clock: advanced by the CLAMPED render delta (never lurches
   // after a backgrounded tab), decoupled from the sim accumulator so backdrop
   // motion can't judder against the fixed step or feed the sim.
   let renderClock = 0
-  // True when the previous render left a hit-stop running, so this frame's real
-  // time was withheld from the sim. Only such a frame is charged against the
-  // hit-stop: a freeze raised during this frame's steps starts with the next one.
-  // The freeze rounds to whole frames (a remainder under half a frame ends it),
-  // so frame-time jitter cannot add a frame: 50 ms is 3 frames at 60 Hz.
-  let hitstopHeld = false
   const loop = new GameLoop(
     FIXED_DT,
     MAX_FRAME_TIME,
@@ -501,17 +517,22 @@ async function boot(): Promise<void> {
       const fd = loop.frameMs / 1000
       renderClock += fd
 
-      // Hit-stop runs on the render clock: it pauses how fast real time feeds
-      // the sim, never the sim step itself.
-      const j = world.juice
-      if (hitstopHeld) {
-        j.hitstop -= fd
-        if (j.hitstop < fd * 0.5) j.hitstop = 0
+      // Time effects run on the render clock: they scale how fast real time
+      // feeds the sim, never the sim step itself.
+      const time = feel.time
+      time.advance(loop.frameMs)
+      feel.drain(renderClock * 1000, cam)
+      if (screen === 'playing' && world.pendingGameOver) {
+        time.startDeath()
+        if (!deathBeat && time.deathMs >= DEATH_BEAT_MS) {
+          deathBeat = true
+          deathZoom = settings.reduceMotion ? 0 : 0.25
+          postFX.shiftSaturation(-0.6)
+          vignette.view.alpha = 0.85
+        }
+        if (time.deathMs >= DEATH_RECAP_MS) endRun()
       }
-      drainEliteKills()
-      hitstopHeld = j.hitstop > 0
-      loop.timeScale = hitstopHeld ? 0 : 1
-      if (screen === 'playing' && world.pendingGameOver && j.hitstop <= 0) endRun()
+      loop.timeScale = time.scale(world.paused)
       const playing = screen === 'playing'
 
       if (playing && showGemHint && world.firstGemAt >= 0) {
@@ -548,13 +569,9 @@ async function boot(): Promise<void> {
       touchHint.view.visible = showTouchHint
       if (showTouchHint) touchHint.update(fd, touchMoveUsed, touchAimUsed)
 
-      // Rumble on a discrete hit (hurtFlash jumps); contact's gradual drain won't trigger.
-      if (playing && world.hurtFlash - prevHurt > 0.15) input.rumble(120, 0.5)
-      prevHurt = world.hurtFlash
-      world.hurtFlash = Math.max(0, world.hurtFlash - fd * 2.2)
-
       // Hurt vignette + a low-HP danger pulse so you feel the pressure.
-      let red = world.hurtFlash * 0.45
+      feel.update(fd)
+      let red = feel.hurtFlash * 0.45
       if (playing) {
         const frac = world.player.hp / world.player.maxHp
         if (frac < 0.32) {
@@ -568,13 +585,18 @@ async function boot(): Promise<void> {
       levelFlash = Math.max(0, levelFlash - fd * 3.5)
       flashOverlay.alpha = levelFlash * 0.4
 
-      // Follow camera (smooth, from the interpolated player position) + shake.
-      world.juice.updateShake(fd)
-      applyCamera(player.view.x, player.view.y)
-      layers.world.position.set(
-        -cam.x + world.juice.offsetX * shakeMul,
-        -cam.y + world.juice.offsetY * shakeMul,
-      )
+      // Follow camera (from the interpolated player position) + shake. The
+      // transform pivots on the ship so rotation and the death zoom center on it.
+      const sh = feel.shake
+      sh.update(fd, renderClock)
+      const px = player.view.x
+      const py = player.view.y
+      applyCamera(px, py)
+      const lw = layers.world
+      lw.pivot.set(px, py)
+      lw.position.set(px - cam.x + sh.offsetX * shakeMul, py - cam.y + sh.offsetY * shakeMul)
+      lw.scale.set(1 + deathZoom)
+      lw.rotation = sh.rotation * shakeMul
 
       // Ambient backdrop (motes + atmosphere). AFTER the camera write above, so
       // camera-bounded mote recycling uses this frame's window (no edge popping).
@@ -655,6 +677,7 @@ async function boot(): Promise<void> {
       app,
       audio,
       input,
+      feel,
       hud,
       loop,
       perfReset: () => loop.resetStats(),

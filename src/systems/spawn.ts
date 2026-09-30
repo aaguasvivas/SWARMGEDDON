@@ -2,7 +2,7 @@ import { MAX_ENEMIES } from '../config.ts'
 import { clamp } from '../core/vec.ts'
 import { ENEMIES } from '../content/enemies.ts'
 import { pickEnemy, spawnBatch, spawnInterval } from '../content/waveDirector.ts'
-import { announce } from '../effects/fx.ts'
+import { AlertKind, FF_BOSS, FF_ELITE, FeelKind } from '../effects/feelQueue.ts'
 import type { Enemy } from '../game/enemy.ts'
 import type { World } from '../game/world.ts'
 
@@ -45,8 +45,10 @@ export function spawnSystem(world: World, dt: number): void {
       } else {
         world.eliteTimer = cfg.elite.interval
         const n = 1 + Math.floor((t - cfg.elite.first) / cfg.elite.packEvery)
-        for (let i = 0; i < n; i++) spawnFromEdge(world, cfg.elite.id)
-        world.juice.addTrauma(0.3)
+        for (let i = 0; i < n; i++) {
+          const e = spawnFromEdge(world, cfg.elite.id)
+          if (e) world.feel.emit(FeelKind.EliteSpawn, FF_ELITE, e.x, e.y, 0, 0, e.def)
+        }
       }
     }
   }
@@ -135,9 +137,12 @@ function spawnBoss(world: World): void {
   world.beginBossFight()
   world.bossAlive = true
   world.boss = boss
-  world.audio.play('boss')
-  world.juice.addTrauma(0.8)
-  announce(world, cfg.boss.announce, world.player.x, world.player.y - 40, world.broodTint(boss.def.tint))
+  const pl = world.player
+  const dx = boss.x - pl.x
+  const dy = boss.y - pl.y
+  const d = Math.hypot(dx, dy) || 1
+  world.feel.emit(FeelKind.BossSpawn, FF_BOSS, boss.x, boss.y, 0, 0, boss.def)
+  world.alerts.push(world.feel, AlertKind.Boss, cfg.boss.announce, '', dx / d, dy / d, world.time, pl.x, pl.y)
 }
 
 /**

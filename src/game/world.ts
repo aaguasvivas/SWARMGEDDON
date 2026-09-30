@@ -1,5 +1,5 @@
 import type { Texture } from 'pixi.js'
-import { HASH_CELL, SHAKE_DECAY, SHAKE_MAX_OFFSET } from '../config.ts'
+import { HASH_CELL } from '../config.ts'
 import { Pool } from '../core/pool.ts'
 import { RunRngs, SALT, hash32 } from '../core/rng.ts'
 import { hueShiftHex } from '../core/color.ts'
@@ -9,8 +9,7 @@ import { waveConfigFor, type WaveConfig } from '../content/waveDirector.ts'
 import { PERKS, baseModifiers, perkById, type Modifiers, type PerkDef } from '../content/perks.ts'
 import { CHARACTERS, type CharacterDef } from '../content/characters.ts'
 import { ARENAS, type ArenaTheme } from '../content/arenas.ts'
-import type { AudioEngine } from '../audio/audio.ts'
-import { Juice } from '../effects/juice.ts'
+import { FeelKind, FeelQueue, RunAlertRing } from '../effects/feelQueue.ts'
 import type { Layers } from '../render/app.ts'
 import type { IchorLayer } from '../render/ichorLayer.ts'
 import type { TextureRegistry } from '../render/textures.ts'
@@ -26,7 +25,7 @@ import { Projectile } from './projectile.ts'
 export type RunMode = 'endless' | 'daily'
 
 /**
- * Central run state: entity pools, broad-phase hash, juice, ichor, weapon+ammo,
+ * Central run state: entity pools, broad-phase hash, the FeelQueue, ichor, weapon+ammo,
  * the perk/Modifiers build, XP/level progression, and boss/run bookkeeping.
  * `beginRun(seed, mode)` (re)seeds and resets everything leak-free.
  */
@@ -40,7 +39,6 @@ export class World {
   readonly acid: Pool<AcidPool>
 
   readonly hash = new SpatialHash<Enemy>(HASH_CELL)
-  readonly juice = new Juice(SHAKE_MAX_OFFSET, SHAKE_DECAY)
   /** Primary + nested scratch buffers (nested queries run inside the projectile loop). */
   readonly queryBuf: Enemy[] = []
   readonly queryBuf2: Enemy[] = []
@@ -78,7 +76,6 @@ export class World {
   weaponDropTimer = 0
   eliteTimer = 0
   bossTimer = 0
-  hurtFlash = 0
 
   bossAlive = false
   boss: Enemy | null = null
@@ -103,10 +100,6 @@ export class World {
   firstGemAt = -1
   firstGemX = 0
   firstGemY = 0
-  /** Elite kill positions (x, y pairs) not yet drained by presentation, which
-   *  decides on-screen impact feedback. Capped; overflow is dropped. */
-  readonly eliteKillXY = new Float32Array(16)
-  eliteKillN = 0
   /** Drafts opened this run; each open reseeds the draft stream from it. */
   draftIndex = 0
   /** Cards of the open draft, rolled once per open and reused until the pick. */
@@ -116,11 +109,18 @@ export class World {
   /** Live pickups per PICKUP_SLOT, for the per-kind pool reservation. */
   readonly pickupN = new Int16Array(PICKUP_SLOTS)
 
+  // P2: presentation boundary
+  /** The sim's only output to presentation; drained once per render frame. */
+  readonly feel = new FeelQueue()
+  readonly alerts = new RunAlertRing()
+  /** Velocity of the last projectile that hit an enemy (kill direction). */
+  lastHitVx = 0
+  lastHitVy = 0
+
   constructor(
     readonly arena: Arena,
     readonly player: Player,
     readonly ichor: IchorLayer,
-    readonly audio: AudioEngine,
     layers: Layers,
     readonly texReg: TextureRegistry,
   ) {
@@ -178,7 +178,6 @@ export class World {
     this.tintCache.clear()
     this.waveCfg = waveConfigFor(this.arenaTheme.id)
     this.arena.setTheme(this.arenaTheme)
-    this.audio.setTheme(this.arenaTheme.music)
     this.ichor.stampTintA = this.arenaTheme.ichorA
     this.ichor.stampTintB = this.arenaTheme.ichorB
     this.player.paint(this.character.colors, this.character.shape)
@@ -201,7 +200,6 @@ export class World {
     this.bossTimer = this.waveCfg.boss.first
     this.pullX = 0
     this.pullY = 0
-    this.hurtFlash = 0
     this.bossAlive = false
     this.boss = null
     this.warperActive = false
@@ -209,10 +207,13 @@ export class World {
     this.pendingGameOver = false
     this.enemyUidSeq = 1
     this.firstGemAt = -1
-    this.eliteKillN = 0
     this.draftIndex = 0
     this.draftCards.length = 0
     this.bossFights = 0
+    this.feel.clear()
+    this.alerts.reset()
+    this.lastHitVx = 0
+    this.lastHitVy = 0
 
     const b = this.arena.bounds
     this.player.spawn(b.x + b.w / 2, b.y + b.h / 2)
@@ -250,6 +251,7 @@ export class World {
       this.level++
       this.xpToNext = xpForLevel(this.level)
       this.pendingLevelUps++
+      this.feel.emit(FeelKind.LevelUp, 0, this.player.x, this.player.y, this.level)
     }
   }
 
@@ -309,14 +311,6 @@ export class World {
   beginBossFight(): void {
     this.rngs.boss.reseed(hash32(this.seed, SALT.boss, this.bossFights))
     this.bossFights++
-  }
-
-  /** Hand an elite kill position to presentation (bounded; cosmetic only). */
-  noteEliteKill(x: number, y: number): void {
-    if (this.eliteKillN >= 8) return
-    this.eliteKillXY[this.eliteKillN * 2] = x
-    this.eliteKillXY[this.eliteKillN * 2 + 1] = y
-    this.eliteKillN++
   }
 }
 

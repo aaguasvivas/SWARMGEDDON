@@ -258,7 +258,7 @@ async function runSize(browser, size) {
       w.time = 754
       w.pendingLevelUps = 0
       w.paused = true
-      w.hurtFlash = 0
+      S.feel.hurtFlash = 0
     })
     await sleep(900)
     await shot('07-combat-boss')

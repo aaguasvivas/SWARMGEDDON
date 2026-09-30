@@ -21,7 +21,8 @@ export interface WeaponDef {
   projectileRadius: number
   tint: number
   ammo: number // -1 = infinite (Sidearm)
-  shake: number // per-shot trauma
+  /** Screen kick per trigger pull, px, against the aim. */
+  kickPx: number
   sfx: SfxName
   /** Explosive: AoE on impact. */
   explodeRadius?: number
@@ -37,64 +38,64 @@ export const WEAPONS: Record<string, WeaponDef> = {
   pistol: {
     id: 'pistol', name: 'Sidearm', fireRate: 5.5, damage: 16, projectileSpeed: 780,
     spread: 0.02, projectilesPerShot: 1, pierce: 0, knockback: 130, projectileLife: 0.8,
-    projectileRadius: 4, tint: COLORS.bullet, ammo: -1, shake: 0.05, sfx: 'pistol',
+    projectileRadius: 4, tint: COLORS.bullet, ammo: -1, kickPx: 1.5, sfx: 'pistol',
   },
   smg: {
     id: 'smg', name: 'Splatter SMG', fireRate: 13, damage: 7, projectileSpeed: 840,
     spread: 0.1, projectilesPerShot: 1, pierce: 0, knockback: 90, projectileLife: 0.6,
-    projectileRadius: 3.5, tint: COLORS.bullet, ammo: 260, shake: 0.03, sfx: 'smg',
+    projectileRadius: 3.5, tint: COLORS.bullet, ammo: 260, kickPx: 1.0, sfx: 'smg',
   },
   shotgun: {
     id: 'shotgun', name: 'Boomstick', fireRate: 2.1, damage: 6, projectileSpeed: 720,
     spread: 0.32, projectilesPerShot: 9, pierce: 0, knockback: 280, projectileLife: 0.36,
-    projectileRadius: 4, tint: 0xffd27a, ammo: 48, shake: 0.16, sfx: 'shotgun',
+    projectileRadius: 4, tint: 0xffd27a, ammo: 48, kickPx: 6, sfx: 'shotgun',
   },
   minigun: {
     id: 'minigun', name: 'Hive Ripper', fireRate: 20, damage: 6, projectileSpeed: 900,
     spread: 0.14, projectilesPerShot: 1, pierce: 0, knockback: 60, projectileLife: 0.55,
-    projectileRadius: 3.5, tint: 0xffe08a, ammo: 480, shake: 0.025, sfx: 'smg',
+    projectileRadius: 3.5, tint: 0xffe08a, ammo: 480, kickPx: 0.8, sfx: 'smg',
   },
   plasma: {
     id: 'plasma', name: 'Ion Lance', fireRate: 7, damage: 18, projectileSpeed: 980,
     spread: 0.03, projectilesPerShot: 1, pierce: 3, knockback: 70, projectileLife: 0.9,
-    projectileRadius: 5.5, tint: 0xb98cff, ammo: 110, shake: 0.06, sfx: 'plasma',
+    projectileRadius: 5.5, tint: 0xb98cff, ammo: 110, kickPx: 2, sfx: 'plasma',
   },
   railgun: {
     id: 'railgun', name: 'Rail Spike', fireRate: 1.5, damage: 90, projectileSpeed: 1700,
     spread: 0.004, projectilesPerShot: 1, pierce: 8, knockback: 320, projectileLife: 0.6,
-    projectileRadius: 5, tint: 0x86f7ff, ammo: 28, shake: 0.22, sfx: 'heavy',
+    projectileRadius: 5, tint: 0x86f7ff, ammo: 28, kickPx: 9, sfx: 'heavy',
   },
   flamethrower: {
     id: 'flamethrower', name: 'Pyre', fireRate: 22, damage: 4.5, projectileSpeed: 460,
     spread: 0.26, projectilesPerShot: 2, pierce: 2, knockback: 14, projectileLife: 0.32,
-    projectileRadius: 6, tint: 0xff9a3c, ammo: 420, shake: 0.02, sfx: 'beam',
+    projectileRadius: 6, tint: 0xff9a3c, ammo: 420, kickPx: 0.4, sfx: 'beam',
   },
   rocket: {
     id: 'rocket', name: 'Bile Mortar', fireRate: 1.4, damage: 26, projectileSpeed: 560,
     spread: 0.02, projectilesPerShot: 1, pierce: 0, knockback: 200, projectileLife: 1.6,
-    projectileRadius: 7, tint: 0xa6ff7a, ammo: 26, shake: 0.2, sfx: 'heavy',
+    projectileRadius: 7, tint: 0xa6ff7a, ammo: 26, kickPx: 5, sfx: 'heavy',
     explodeRadius: 92, explodeDamage: 44,
   },
   lightning: {
     id: 'lightning', name: 'Arc Lash', fireRate: 6, damage: 16, projectileSpeed: 1050,
     spread: 0.05, projectilesPerShot: 1, pierce: 0, knockback: 40, projectileLife: 0.6,
-    projectileRadius: 4.5, tint: 0x9be7ff, ammo: 130, shake: 0.05, sfx: 'beam',
+    projectileRadius: 4.5, tint: 0x9be7ff, ammo: 130, kickPx: 1.5, sfx: 'beam',
     chain: 4, chainRange: 150,
   },
   beam: {
     id: 'beam', name: 'Photon Beam', fireRate: 24, damage: 5, projectileSpeed: 1500,
     spread: 0.008, projectilesPerShot: 1, pierce: 5, knockback: 8, projectileLife: 0.5,
-    projectileRadius: 3, tint: 0xff6cf0, ammo: 600, shake: 0.015, sfx: 'beam',
+    projectileRadius: 3, tint: 0xff6cf0, ammo: 600, kickPx: 0.3, sfx: 'beam',
   },
   vortex: {
     id: 'vortex', name: 'Vortex Cannon', fireRate: 2.2, damage: 22, projectileSpeed: 430,
     spread: 0.02, projectilesPerShot: 1, pierce: 12, knockback: 360, projectileLife: 1.3,
-    projectileRadius: 9, tint: 0x9b7aff, ammo: 64, shake: 0.13, sfx: 'plasma',
+    projectileRadius: 9, tint: 0x9b7aff, ammo: 64, kickPx: 5, sfx: 'plasma',
   },
   hailstorm: {
     id: 'hailstorm', name: 'Hailstorm', fireRate: 9, damage: 5, projectileSpeed: 780,
     spread: 0.22, projectilesPerShot: 3, pierce: 1, knockback: 50, projectileLife: 0.5,
-    projectileRadius: 3, tint: 0x86f7ff, ammo: 360, shake: 0.04, sfx: 'smg',
+    projectileRadius: 3, tint: 0x86f7ff, ammo: 360, kickPx: 1.2, sfx: 'smg',
   },
 
   // --- pilot base weapons (infinite ammo, never drop) -------------------------
@@ -103,13 +104,21 @@ export const WEAPONS: Record<string, WeaponDef> = {
   scorcher: {
     id: 'scorcher', name: 'Scorcher', fireRate: 3.4, damage: 26, projectileSpeed: 760,
     spread: 0.03, projectilesPerShot: 1, pierce: 0, knockback: 210, projectileLife: 0.75,
-    projectileRadius: 5, tint: 0xffb066, ammo: -1, shake: 0.07, sfx: 'heavy',
+    projectileRadius: 5, tint: 0xffb066, ammo: -1, kickPx: 2.5, sfx: 'heavy',
   },
   stiletto: {
     id: 'stiletto', name: 'Stiletto', fireRate: 7.5, damage: 11, projectileSpeed: 900,
     spread: 0.015, projectilesPerShot: 1, pierce: 1, knockback: 70, projectileLife: 0.7,
-    projectileRadius: 3.5, tint: 0xc9a0ff, ammo: -1, shake: 0.04, sfx: 'beam',
+    projectileRadius: 3.5, tint: 0xc9a0ff, ammo: -1, kickPx: 1.2, sfx: 'beam',
   },
+}
+
+/** Every weapon in a fixed order; the FeelQueue carries weapons by index. */
+export const WEAPON_LIST: readonly WeaponDef[] = Object.values(WEAPONS)
+
+export function weaponIndex(id: string): number {
+  for (let i = 0; i < WEAPON_LIST.length; i++) if (WEAPON_LIST[i]!.id === id) return i
+  return -1
 }
 
 /** Weapon ids that can drop as field pickups. Infinite-ammo weapons are the

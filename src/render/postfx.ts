@@ -76,6 +76,11 @@ export class PostFX {
     if (g.tintStrength > 0) this.grade.tint(lerpHex(0xffffff, g.tint, g.tintStrength), true)
   }
 
+  /** Saturation shift on top of the current grade; the next setGrade clears it. */
+  shiftSaturation(amount: number): void {
+    this.grade.saturate(amount, true)
+  }
+
   private apply(): void {
     this.target.filters = this.intensity > 0.02 ? [this.grade, this.bloom] : []
   }

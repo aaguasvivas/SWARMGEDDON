@@ -2,15 +2,14 @@ import { HEALTH_DROP_CHANCE, HEALTH_HEAL, HEALTH_HEAL_ELITE } from '../config.ts
 import { distSq } from '../core/vec.ts'
 import { PICKUP_WEAPON_IDS } from '../content/weapons.ts'
 import {
-  announce,
   spawnChainArc,
-  spawnDamageNumber,
   spawnExplosion,
   spawnGibs,
   spawnHitSpark,
   spawnImpact,
   spawnRing,
 } from '../effects/fx.ts'
+import { FF_AOE, FF_BOSS, FF_CONTACT, FF_CRIT, FF_DISCRETE, FF_ELITE, FF_RAM, FeelKind } from '../effects/feelQueue.ts'
 import { spawnAcidPool } from './acid.ts'
 import { dropGem, dropHealth, spawnWeaponDrop } from './pickups.ts'
 import { spawnEnemy } from './spawn.ts'
@@ -75,16 +74,16 @@ export function collisionSystem(world: World, dt: number): void {
       if (e.def.behavior === 'charger' && (e.phase === 1 || e.phase === 2)) {
         if (e.phase === 2 && !e.dashHit) {
           e.dashHit = true
-          pl.hp -= e.damage * (1 - m.damageReduction)
-          world.hurtFlash = Math.min(0.85, world.hurtFlash + 0.28)
-          world.juice.addTrauma(0.2)
+          const ram = e.damage * (1 - m.damageReduction)
+          pl.hp -= ram
+          world.feel.emit(FeelKind.PlayerHurt, FF_DISCRETE | FF_RAM, e.x, e.y, ram, 0, e.def)
           if (m.thorns > 0) dealDamage(world, e, m.thorns)
         }
         continue
       }
-      pl.hp -= e.damage * dt * (1 - m.damageReduction)
-      world.hurtFlash = Math.min(0.7, world.hurtFlash + e.damage * dt * 0.05)
-      world.juice.addTrauma(0.02)
+      const bite = e.damage * dt * (1 - m.damageReduction)
+      pl.hp -= bite
+      world.feel.emit(FeelKind.PlayerHurt, FF_CONTACT, e.x, e.y, bite, 0, e.def)
       if (m.thorns > 0) dealDamage(world, e, m.thorns * dt)
     }
   }
@@ -100,9 +99,9 @@ export function collisionSystem(world: World, dt: number): void {
         p.alive = false
         continue
       }
-      pl.hp -= p.damage * (1 - m.damageReduction)
-      world.hurtFlash = Math.min(0.85, world.hurtFlash + 0.3)
-      world.juice.addTrauma(0.08)
+      const hit = p.damage * (1 - m.damageReduction)
+      pl.hp -= hit
+      world.feel.emit(FeelKind.PlayerHurt, FF_DISCRETE, p.x, p.y, hit)
       if (p.leavesAcid) spawnAcidPool(world, p.x, p.y)
       p.alive = false
     }
@@ -117,6 +116,10 @@ function hasHit(p: Projectile, uid: number): boolean {
   const h = p.hitUids
   for (let i = 0; i < n; i++) if (h[i] === uid) return true
   return false
+}
+
+function rankFlags(e: Enemy): number {
+  return e.def.boss ? FF_BOSS : e.def.elite ? FF_ELITE : 0
 }
 
 /** Giant Slayer's multiplier applies to every damage source on elites and bosses. */
@@ -153,8 +156,14 @@ function applyHit(world: World, e: Enemy, p: Projectile): boolean {
   }
 
   spawnHitSpark(world, p.x, p.y, p.vx, p.vy)
-  spawnDamageNumber(world, e.x, e.y, dmg, crit)
-  world.audio.play('hit')
+  // Damage-number jitter comes from the fx stream here, drawn on every hit,
+  // so the stream never depends on how presentation caps or skips numbers.
+  const fx = world.rngs.fx
+  const jx = fx.range(-6, 6)
+  const rise = fx.range(46, 74)
+  world.feel.emit(FeelKind.Hit, (crit ? FF_CRIT : 0) | rankFlags(e), e.x + jx, e.y, dmg, rise, e)
+  world.lastHitVx = p.vx
+  world.lastHitVy = p.vy
 
   dealDamage(world, e, dmg)
 
@@ -221,8 +230,7 @@ function explode(world: World, x: number, y: number, radius: number, dmg: number
   spawnExplosion(world, x, y, radius)
   spawnRing(world, x, y, 0xffd27a, radius / 22)
   world.ichor.queueStamp(x, y, world.rngs.fx)
-  world.juice.addTrauma(0.18)
-  world.audio.play('heavy')
+  world.feel.emit(FeelKind.Explosion, FF_AOE, x, y, radius)
   const buf2 = world.queryBuf2
   const n = world.hash.query(x, y, radius, buf2)
   for (let k = 0; k < n; k++) {
@@ -240,23 +248,13 @@ function killEnemy(world: World, e: Enemy): void {
 
   world.ichor.queueStamp(e.x, e.y, world.rngs.fx)
   spawnGibs(world, e.x, e.y, def.gibCount, e.gibTint)
-  world.audio.play('kill')
+  world.feel.emit(FeelKind.Kill, rankFlags(e), e.x, e.y, world.lastHitVx, world.lastHitVy, def)
 
-  // Death-pop shockwave ring (+ a punchy hit-stop on the big ones). Skip the
-  // xp-1 chaff so a swarm wipe stays clean and cheap. Elite impact (shake and
-  // hit-stop) depends on whether the kill is on screen, which only
-  // presentation knows, so the sim just reports where it happened.
-  if (def.boss) {
-    world.juice.addTrauma(0.6)
-    spawnRing(world, e.x, e.y, e.gibTint, 5.5)
-    world.juice.addHitstop(0.12)
-  } else if (def.elite) {
-    spawnRing(world, e.x, e.y, e.gibTint, 3)
-    world.noteEliteKill(e.x, e.y)
-  } else {
-    world.juice.addTrauma(0.05)
-    if (def.xp >= 2) spawnRing(world, e.x, e.y, e.gibTint, 1.4)
-  }
+  // Death-pop shockwave ring. Skip the xp-1 chaff so a swarm wipe stays clean
+  // and cheap.
+  if (def.boss) spawnRing(world, e.x, e.y, e.gibTint, 5.5)
+  else if (def.elite) spawnRing(world, e.x, e.y, e.gibTint, 3)
+  else if (def.xp >= 2) spawnRing(world, e.x, e.y, e.gibTint, 1.4)
 
   if (world.mods.lifestealPerKill > 0) {
     world.player.hp = Math.min(world.player.maxHp, world.player.hp + world.mods.lifestealPerKill)
@@ -300,13 +298,12 @@ function killEnemy(world: World, e: Enemy): void {
     world.bossAlive = false
     world.boss = null
     explode(world, e.x, e.y, 140, 0)
-    world.juice.addTrauma(1)
     spawnWeaponDrop(world, e.x, e.y, loot.pick(PICKUP_WEAPON_IDS))
     for (let i = 0; i < 6; i++) {
       const a = loot.angle()
       dropGem(world, e.x + Math.cos(a) * 24, e.y + Math.sin(a) * 24, 20)
     }
-    announce(world, world.arenaTheme.slainText, e.x, e.y - 36, 0xffe066)
+    world.feel.emit(FeelKind.BossKill, FF_BOSS, e.x, e.y, 0, 0, def)
   } else if (def.elite && loot.bool(0.5)) {
     spawnWeaponDrop(world, e.x, e.y, loot.pick(PICKUP_WEAPON_IDS))
   }
@@ -320,10 +317,7 @@ function handleDeath(world: World): void {
   if (world.mods.revives > world.revivesUsed) {
     world.revivesUsed++
     pl.hp = pl.maxHp * 0.5
-    world.hurtFlash = 1
-    world.juice.addTrauma(0.8)
-    world.audio.play('levelup')
-    announce(world, 'SECOND WIND', pl.x, pl.y - 30, 0x7dffd6)
+    world.feel.emit(FeelKind.Revive, 0, pl.x, pl.y)
     // Shove nearby enemies back so the revive isn't instant death.
     const enemies = world.enemies.active
     for (let i = 0; i < enemies.length; i++) {
@@ -340,9 +334,6 @@ function handleDeath(world: World): void {
   }
 
   pl.hp = 0
-  world.hurtFlash = 1
-  world.juice.addTrauma(1)
-  world.juice.addHitstop(0.16)
-  world.audio.play('death')
+  world.feel.emit(FeelKind.PlayerDeath, 0, pl.x, pl.y)
   world.pendingGameOver = true
 }

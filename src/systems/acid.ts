@@ -1,6 +1,7 @@
 import { MAX_ACID } from '../config.ts'
 import { distSq } from '../core/vec.ts'
 import { spawnAcidSplash } from '../effects/fx.ts'
+import { FF_ACID, FeelKind } from '../effects/feelQueue.ts'
 import type { World } from '../game/world.ts'
 
 /** Drop a lingering acid pool (spitter projectile landed). Also stamps the
@@ -40,8 +41,9 @@ export function acidSystem(world: World, dt: number): void {
     }
     const rr = ap.radius + pl.radius * 0.4
     if (distSq(ap.x, ap.y, pl.x, pl.y) < rr * rr) {
-      pl.hp -= ap.damage * dt * (1 - world.mods.damageReduction)
-      world.hurtFlash = Math.min(0.6, world.hurtFlash + ap.damage * dt * 0.04)
+      const burn = ap.damage * dt * (1 - world.mods.damageReduction)
+      pl.hp -= burn
+      world.feel.emit(FeelKind.PlayerHurt, FF_ACID, ap.x, ap.y, burn)
     }
   }
 }

@@ -1,4 +1,6 @@
+import { weaponIndex } from '../content/weapons.ts'
 import { spawnMuzzle } from '../effects/fx.ts'
+import { FeelKind } from '../effects/feelQueue.ts'
 import type { InputManager } from '../input/input.ts'
 import type { World } from '../game/world.ts'
 
@@ -32,7 +34,14 @@ export function weaponSystem(world: World, dt: number, input: InputManager): voi
     fire(world, ax, ay)
     if (world.ammo > 0) {
       world.ammo--
-      if (world.ammo <= 0) world.equipWeapon(world.baseWeaponId)
+      const pl = world.player
+      if (world.ammo <= 0) {
+        world.feel.emit(FeelKind.WeaponEmpty, 0, pl.x, pl.y, 0, weaponIndex(world.weapon.id))
+        world.equipWeapon(world.baseWeaponId)
+      } else {
+        const low = world.weapon.ammo * 0.2
+        if (world.ammo < low && world.ammo + 1 >= low) world.feel.emit(FeelKind.LowAmmo, 0, pl.x, pl.y, world.ammo)
+      }
     }
   }
 }
@@ -88,6 +97,5 @@ function fire(world: World, ax: number, ay: number): void {
   }
 
   spawnMuzzle(world, mx, my, baseAng)
-  world.audio.play(w.sfx)
-  world.juice.addTrauma(w.shake)
+  world.feel.emit(FeelKind.Shot, 0, mx, my, baseAng, weaponIndex(w.id))
 }

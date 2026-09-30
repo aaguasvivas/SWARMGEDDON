@@ -14,6 +14,8 @@ export interface Settings {
   glow: number
   autoFire: boolean
   haptics: boolean
+  /** Softer time effects (no hit-stop, gentler slow motion) and no camera punch. */
+  reduceMotion: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -25,6 +27,15 @@ export const DEFAULT_SETTINGS: Settings = {
   glow: 1,
   autoFire: false, // off by default (hold-to-fire); opt in via Settings for trackpad/touch
   haptics: true,
+  reduceMotion: prefersReducedMotion(),
+}
+
+function prefersReducedMotion(): boolean {
+  try {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  } catch {
+    return false
+  }
 }
 
 export function loadSettings(): Settings {

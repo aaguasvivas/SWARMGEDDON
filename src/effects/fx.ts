@@ -4,9 +4,10 @@ import type { World } from '../game/world.ts'
 
 /**
  * Particle / floating-text emitters. All respect the population caps
- * (skip-when-full) so worst-case combat can't blow the budget. Scatter draws
- * from the cosmetic `fx` stream, so runs stay reproducible and no emitter can
- * shift a sim stream.
+ * (skip-when-full) so worst-case combat can't blow the budget. Particle
+ * scatter draws from the cosmetic `fx` stream inside the sim tick, so runs stay
+ * reproducible and no emitter can shift a sim stream. Floating text is spawned
+ * only by presentation (FeelDirector and main) and draws nothing.
  */
 
 function begin(p: Particle, x: number, y: number, tint: number): void {
@@ -215,18 +216,14 @@ export function spawnChainArc(world: World, x1: number, y1: number, x2: number, 
   }
 }
 
-/** Floating damage number (capped). Crits are larger and gold. */
-export function spawnDamageNumber(world: World, x: number, y: number, dmg: number, crit: boolean): void {
-  // Draw before the cap check: presentation also fills this pool (the one-time
-  // gem hint depends on the save), so a cap-gated draw would make the fx
-  // stream depend on save state.
-  const jx = world.rngs.fx.range(-6, 6)
-  const vy = world.rngs.fx.range(46, 74)
+/** Floating damage number (capped). Crits are larger and gold. The sim draws
+ *  the jitter (`x` and `rise`) from the fx stream when it emits the hit. */
+export function spawnDamageNumber(world: World, x: number, y: number, dmg: number, crit: boolean, rise: number): void {
   if (world.floaters.size >= MAX_FLOATERS) return
   const f = world.floaters.acquire()
-  f.x = x + jx
+  f.x = x
   f.y = f.prevY = y - 8
-  f.vy = -vy
+  f.vy = -rise
   f.life = f.maxLife = crit ? 0.7 : 0.5
   f.text.text = crit ? `${Math.round(dmg)}!` : String(Math.round(dmg))
   f.text.style.fontSize = crit ? 20 : 14

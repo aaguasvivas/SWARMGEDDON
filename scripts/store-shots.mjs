@@ -56,7 +56,7 @@ async function combatShot(charId, arenaId, simS, kills, hpFrac, file) {
     w.player.hp = Math.max(1, Math.round(realMax * hf))
     w.kills = k
     w.paused = true
-    w.hurtFlash = 0
+    S.feel.hurtFlash = 0
   }, charId, arenaId, simS, kills, hpFrac)
   await new Promise((r) => setTimeout(r, 700)) // HP bar lerp settles + title fades
   await page.screenshot({ path: `${OUT}/${file}`, type: 'jpeg', quality: 82 })

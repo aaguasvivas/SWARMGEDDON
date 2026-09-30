@@ -73,11 +73,6 @@ export const HEALTH_LIFETIME = 10
 /** Spatial-hash cell size (world units). ~3-4x an enemy diameter is a good ratio. */
 export const HASH_CELL = 72
 
-/** Juice. */
-export const SHAKE_MAX_OFFSET = 22 // px at full trauma
-export const SHAKE_DECAY = 1.7 // trauma units per second
-export const HITSTOP_MAX = 0.08 // hard cap on a single freeze (seconds)
-
 /**
  * Ichor (signature persistent terrain). Stamps accumulate into one render
  * texture at constant draw cost. `INTENSITY` scales per-stamp alpha (the

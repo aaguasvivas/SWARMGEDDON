@@ -8,8 +8,8 @@ import {
   WEAPON_DROP_INTERVAL,
   WEAPON_DROP_LIFETIME,
 } from '../config.ts'
-import { PICKUP_WEAPON_IDS, WEAPONS } from '../content/weapons.ts'
-import { announce } from '../effects/fx.ts'
+import { PICKUP_WEAPON_IDS, WEAPONS, weaponIndex } from '../content/weapons.ts'
+import { FeelKind } from '../effects/feelQueue.ts'
 import { PICKUP_SLOT, PICKUP_SLOTS, type Pickup, type PickupKind } from '../game/pickup.ts'
 import type { World } from '../game/world.ts'
 
@@ -117,6 +117,7 @@ export function spawnWeaponDrop(world: World, x: number, y: number, weaponId: st
   s.tint = WEAPONS[weaponId]!.tint
   s.alpha = 1
   s.scale.set(1)
+  world.feel.emit(FeelKind.PodSpawn, 0, x, y, 0, weaponIndex(weaponId))
 }
 
 /**
@@ -178,18 +179,16 @@ export function pickupSystem(world: World, dt: number): void {
 }
 
 function collect(world: World, p: Pickup): void {
+  const pl = world.player
   if (p.kind === 'xp') {
     world.addXp(p.xp * world.mods.xpMul)
-    world.audio.play('pickup')
+    world.feel.emit(FeelKind.GemCollect, 0, p.x, p.y, p.xp)
   } else if (p.kind === 'health') {
-    const before = world.player.hp
-    world.player.hp = Math.min(world.player.maxHp, world.player.hp + p.heal)
-    const gained = Math.round(world.player.hp - before)
-    world.audio.play('pickup')
-    if (gained > 0) announce(world, `+${gained}`, world.player.x, world.player.y - 24, COLORS.health)
+    const before = pl.hp
+    pl.hp = Math.min(pl.maxHp, pl.hp + p.heal)
+    world.feel.emit(FeelKind.HealCollect, 0, pl.x, pl.y, pl.hp - before)
   } else {
     world.equipWeapon(p.weaponId)
-    world.audio.play('weapon')
-    announce(world, WEAPONS[p.weaponId]!.name, world.player.x, world.player.y - 26, WEAPONS[p.weaponId]!.tint)
+    world.feel.emit(FeelKind.WeaponPickup, 0, pl.x, pl.y, 0, weaponIndex(p.weaponId))
   }
 }
