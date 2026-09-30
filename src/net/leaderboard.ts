@@ -124,7 +124,7 @@ function saveSent(sent: Sent, today: string): void {
 }
 
 /** Whether `r` qualifies for a post (no request is made to decide). */
-function eligible(r: PostableRun): boolean {
+export function willPost(r: PostableRun): boolean {
   if (!BASE || !CAN_POST || optInState() !== true || !playerId()) return false
   if (r.time < MIN_POST_S || r.score <= 0) return false
   if (r.mode === 'daily' && !r.ranked) return false
@@ -136,7 +136,7 @@ function eligible(r: PostableRun): boolean {
 /** Post one run: the ranked Daily once, a Standard run when it beats this week's
  *  sent score. Never practice runs, runs under 10 s, or runs that scored nothing. */
 export async function submitRun(r: PostableRun): Promise<SubmitOutcome> {
-  if (!eligible(r)) return { kind: 'off' }
+  if (!willPost(r)) return { kind: 'off' }
   if (offline) return { kind: offline }
   const today = dayOf(Date.now())
   const body = {

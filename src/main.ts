@@ -35,7 +35,7 @@ import { SettingsPanel } from './ui/settingsPanel.ts'
 import { Leaderboard } from './ui/leaderboard.ts'
 import { dismissNamePrompt, namePromptOpen, promptName } from './ui/namePrompt.ts'
 import { ConfirmSheet } from './ui/confirmSheet.ts'
-import { getPlayerName, markAsked, optIn, optInState, optOut, setPlayerName, shouldAskOptIn, submitRun, type SubmitOutcome } from './net/leaderboard.ts'
+import { getPlayerName, markAsked, optIn, optInState, optOut, setPlayerName, shouldAskOptIn, submitRun, willPost, type SubmitOutcome } from './net/leaderboard.ts'
 import { TouchHint } from './ui/touchHint.ts'
 import { Toast, type ToastSlot } from './ui/toast.ts'
 import { bakeIcons } from './ui/icons.ts'
@@ -47,8 +47,8 @@ import { loadSettings, saveSettings, type Settings } from './state/settings.ts'
 import { recordWorldBest, loadWorldBest } from './state/persistence.ts'
 import { buildRunResult, type RunEnd, type RunMeta, type RunResult } from './state/runResult.ts'
 import {
-  CHECKPOINT_EVERY_S, clearCheckpoint, loadCheckpoint, loadDay, markRankedStarted, postable, pruneDays, rankedAvailable,
-  rankedRun, recordDailyEnd, saveCheckpoint, todayUtc,
+  CHECKPOINT_EVERY_S, clearCheckpoint, holdRankedLock, loadDay, lostCheckpoint, markRankedStarted, postable, pruneDays,
+  rankedAvailable, rankedRun, recordDailyEnd, releaseRankedLock, saveCheckpoint, todayUtc,
 } from './state/daily.ts'
 import { updateLifetime } from './state/stats.ts'
 import { evaluateFeats } from './state/feats.ts'
@@ -332,7 +332,10 @@ async function boot(): Promise<void> {
   function startRun(mode: RunMode, date = todayUtc()): void {
     const cfg = buildRunConfig(mode, date)
     // The ranked attempt is spent before the first sim step, whatever ends it.
-    if (cfg.ranked) markRankedStarted(cfg.date)
+    if (cfg.ranked) {
+      markRankedStarted(cfg.date)
+      holdRankedLock()
+    }
     world.beginRun(cfg)
     nextCkptAt = CHECKPOINT_EVERY_S
     const theme = cfg.theme
@@ -385,6 +388,7 @@ async function boot(): Promise<void> {
    *  stalemate, a page closed mid-run): the run is recorded exactly once, then
    *  the player moves on to the recap, the menu or a fresh run. */
   function endRun(end: RunEnd, after: AfterRun = 'recap'): void {
+    releaseRankedLock()
     pauseReason = 'none'
     winPanel.hide()
     const result = buildRunResult(world, end, runMeta())
@@ -423,11 +427,13 @@ async function boot(): Promise<void> {
    *  async answer to THIS recap: a slow answer from run N never lands on run N+1's. */
   async function postRun(r: RunResult, recap: boolean): Promise<void> {
     const token = ++submitToken
-    const out = await submitRun(postable(r))
+    const run = postable(r)
+    if (recap && willPost(run)) gameOver.expectRankLine()
+    const out = await submitRun(run)
     if (out.kind === 'posted' && out.renamed) showToast(`That name is not allowed. Posted as ${out.name}.`)
     if (!recap || token !== submitToken || screen !== 'gameover') return
     const line = rankLine(r, out)
-    if (line) gameOver.setRankLine(line[0], line[1])
+    gameOver.setRankLine(line ? line[0] : '', line ? line[1] : 'muted')
   }
 
   /** The recap's leaderboard line (A15). */
@@ -453,18 +459,18 @@ async function boot(): Promise<void> {
     }
   }
 
-  /** CHOOSE A NAME: the prompt, then posting turns on and the recap's run plus
-   *  today's ranked Daily post. Resolves false when the player cancels. */
-  async function joinLeaderboard(): Promise<boolean> {
+  /** CHOOSE A NAME or JOIN: the prompt, then posting turns on and the recap's
+   *  run plus today's ranked Daily post. Resolves null when the player cancels,
+   *  else as soon as posting is on, with the posts (they settle when both have
+   *  their answer). */
+  async function joinLeaderboard(): Promise<{ posts: Promise<unknown> } | null> {
     const name = await promptName(getPlayerName())
-    if (name === null) return false
+    if (name === null) return null
     optIn(name)
     const ranked = rankedRun(todayUtc())
     const current = screen === 'gameover' ? lastResult : null
-    if (current) void postRun(current, true)
     const same = current && current.mode === 'daily' && current.ranked && ranked && current.date === ranked.date
-    if (ranked && !same) void submitRun(ranked)
-    return true
+    return { posts: Promise.all([current ? postRun(current, true) : null, ranked && !same ? submitRun(ranked) : null]) }
   }
 
   /** The screen a toast shows over decides where it may sit. */
@@ -544,12 +550,11 @@ async function boot(): Promise<void> {
   gameOver.optIn.onDecline = () => {
     optOut()
     gameOver.setOptInVisible(false)
-    showToast('You can turn this on in Settings.')
+    // Until the Settings ACCOUNT rows ship (P17), JOIN on LEADERS is the way back.
+    showToast('You can join later from LEADERS.')
   }
   leaderboard.onBack = toMenu
-  leaderboard.onJoin = async () => {
-    await joinLeaderboard()
-  }
+  leaderboard.onJoin = joinLeaderboard
   leaderboard.onEditName = async () => {
     const name = await promptName(getPlayerName())
     if (name !== null && optInState() === true) setPlayerName(name)
@@ -655,7 +660,7 @@ async function boot(): Promise<void> {
   }
   layout()
   toMenu()
-  const recovered = recoverCheckpoint()
+  const recovered = await recoverCheckpoint()
   const bootToast = [recovered, welcome].filter((t) => t !== null).join('\n')
   if (bootToast) showToast(bootToast, 6)
   // Bind to the renderer's own resize event (authoritative: it fires exactly when
@@ -835,8 +840,8 @@ async function boot(): Promise<void> {
 
   /** A ranked Daily the app lost (killed in the background) becomes that day's
    *  ranked result at the next boot. Returns the toast, or null. */
-  function recoverCheckpoint(): string | null {
-    const r = loadCheckpoint()
+  async function recoverCheckpoint(): Promise<string | null> {
+    const r = await lostCheckpoint()
     if (!r) return null
     clearCheckpoint()
     if (loadDay(r.date).ranked) return null

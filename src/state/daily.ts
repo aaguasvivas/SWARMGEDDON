@@ -122,8 +122,45 @@ export function clearCheckpoint(): void {
   removeKey('daily:ckpt')
 }
 
-/** A ranked run the app lost without ending it (killed in the background). */
-export function loadCheckpoint(): RunResult | null {
+/** A ranked run the app lost without ending it (killed in the background). A
+ *  checkpoint that another tab or window is still writing is not lost. */
+export async function lostCheckpoint(): Promise<RunResult | null> {
   const r = loadJSON<RunResult | null>('daily:ckpt', null)
-  return r && typeof r === 'object' && r.mode === 'daily' && r.ranked && typeof r.date === 'string' ? r : null
+  if (!r || typeof r !== 'object' || r.mode !== 'daily' || !r.ranked || typeof r.date !== 'string') return null
+  return (await rankedRunLiveElsewhere()) ? null : r
+}
+
+// The page whose ranked run is live holds this Web Lock; the browser drops it
+// with the page. Without Web Locks (WebViews before iOS 15.4, which run one
+// page) a leftover checkpoint always counts as lost.
+const RANKED_LOCK = 'swarmgeddon:ranked-run'
+let releaseLock: (() => void) | null = null
+
+function lockManager(): LockManager | null {
+  return (navigator.locks as LockManager | undefined) ?? null
+}
+
+export function holdRankedLock(): void {
+  const locks = lockManager()
+  if (!locks || releaseLock) return
+  const held = new Promise<void>((resolve) => {
+    releaseLock = resolve
+  })
+  locks.request(RANKED_LOCK, () => held).catch(() => {})
+}
+
+export function releaseRankedLock(): void {
+  releaseLock?.()
+  releaseLock = null
+}
+
+async function rankedRunLiveElsewhere(): Promise<boolean> {
+  const locks = lockManager()
+  if (!locks) return false
+  try {
+    const q = await locks.query()
+    return (q.held ?? []).some((l) => l.name === RANKED_LOCK)
+  } catch {
+    return false
+  }
 }

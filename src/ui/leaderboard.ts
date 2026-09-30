@@ -27,8 +27,9 @@ const TABS: { key: Tab; label: string }[] = [
 export class Leaderboard {
   readonly view = new Container()
   onBack: () => void = () => {}
-  /** JOIN (not posting yet): name prompt and opt-in; resolves when done. */
-  onJoin: () => Promise<void> = async () => {}
+  /** JOIN (not posting yet): name prompt and opt-in. Resolves null when the
+   *  player cancels, else once posting is on, with the posts it started. */
+  onJoin: () => Promise<{ posts: Promise<unknown> } | null> = async () => null
   /** Tap on the name while posting: edit it; resolves when done. */
   onEditName: () => Promise<void> = async () => {}
 
@@ -48,6 +49,8 @@ export class Leaderboard {
   private tab: Tab = 'daily'
   private worldId = KNOWN_WORLDS[0]!
   private reqId = 0
+  /** The posts a JOIN started: a board loads after they land, so it shows them. */
+  private posting: Promise<unknown> = Promise.resolve()
   /** Top of the world row, the list column and the rows that fit. */
   private worldY = 0
   private listX = 0
@@ -94,7 +97,9 @@ export class Leaderboard {
     }
 
     this.join = new Button('JOIN', JOIN_W, 44, 'primary', 14)
-    this.join.onClick = () => void this.onJoin().then(() => {
+    this.join.onClick = () => void this.onJoin().then((joined) => {
+      if (!joined) return
+      this.posting = joined.posts
       this.refreshName()
       void this.load()
     })
@@ -219,6 +224,9 @@ export class Leaderboard {
     this.status.text = 'LOADING'
     this.placeMe()
     const id = ++this.reqId
+    await this.posting
+    if (id !== this.reqId || !this.view.visible) return
+    this.refreshName() // a post can come back renamed
     const res = await fetchBoard(daily ? { board: 'daily', day: spec.date, limit: ROWS } : { board: 'endless', world: this.worldId, period: this.tab === 'week' ? 'week' : 'all', limit: ROWS })
     if (id !== this.reqId || !this.view.visible) return // a newer tab switch superseded this fetch
     this.show(res)

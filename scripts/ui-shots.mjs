@@ -71,6 +71,7 @@ function installMocks() {
     if (url.includes('/api/v2/run')) {
       window.__apiCalls.push(['run', url])
       await new Promise((r) => setTimeout(r, 150))
+      window.__apiCalls.push(['run:done', url])
       const daily = String(init && init.body).includes('"mode":"daily"')
       const ranks = daily ? { day: { rank: 37, of: 412 } } : { week: { rank: 42, of: 318 }, all: { rank: 140, of: 2118 } }
       return new Response(JSON.stringify({ ok: true, score: 98765, name: 'TESTER', renamed: false, ranks }), { status: 200, headers: { 'content-type': 'application/json' } })
@@ -474,6 +475,35 @@ async function runSize(browser, size) {
     await page.keyboard.press('Enter')
     await sleep(900)
     await shot('18-recap-rank')
+    const d = meta.shots['18-recap-rank']
+    if (!d.texts.some((t) => t.t.includes('THIS WEEK'))) throw new Error('18: no rank line on the recap')
+  })
+  // The first ranked Daily completes DAYBREAK (#18): its rank line and the
+  // unlock banner both show.
+  await step('18b-daily-rank-unlock', async () => {
+    await page.evaluate(() => {
+      const S = window.__SWARM
+      const today = new Date().toISOString().slice(0, 10)
+      S.saveJSON('daily:' + today, { rankedStarted: false })
+      S.saveJSON('lb:sent', {})
+      const f = S.loadJSON('feats', { done: {}, prog: {} })
+      delete f.done.daybreak
+      S.saveJSON('feats', f)
+      S.startDaily(today)
+      S.step(30)
+      const w = S.world
+      w.kills = 180
+      w.time = 312.5
+      w.score = w.killPts = 36400
+      w.xpSum = 700
+      S.endRun('quit')
+    })
+    await sleep(900)
+    await shot('18b-daily-rank-unlock')
+    const d = meta.shots['18b-daily-rank-unlock']
+    const rank = d.texts.some((t) => t.t.includes('RANK 37 OF 412 TODAY'))
+    const banner = d.texts.some((t) => /UNLOCKED|FEATS? DONE/.test(t.t))
+    if (!rank || !banner) throw new Error(`18b: the rank line (${rank}) and the unlock banner (${banner}) must both show`)
   })
   await step('19-leaderboard', async () => {
     await page.evaluate(() => window.__SWARM.toLeaderboard())
@@ -484,6 +514,54 @@ async function runSize(browser, size) {
     await shot('20-leaderboard-all')
     await tap(page, size, 'BACK')
     await sleep(300)
+  })
+  // JOIN on LEADERS posts today's ranked Daily; the board reloads after the post lands.
+  await step('21-leaderboard-join', async () => {
+    const before = await page.evaluate(() => {
+      const S = window.__SWARM
+      S.saveJSON('lb:optIn', null)
+      S.saveJSON('lb:sent', {})
+      S.toLeaderboard()
+      return window.__apiCalls.length
+    })
+    await sleep(900)
+    await shot('21-leaderboard-join')
+    await tap(page, size, 'JOIN')
+    await sleep(500)
+    await page.keyboard.press('Enter')
+    await sleep(1200)
+    await shot('22-leaderboard-joined')
+    const calls = (await page.evaluate(() => window.__apiCalls)).slice(before).map((c) => c[0])
+    const posted = calls.indexOf('run:done')
+    const board = calls.lastIndexOf('board')
+    if (posted < 0 || board < posted) throw new Error('22: the board loaded before the post landed: ' + calls.join(','))
+    await tap(page, size, 'BACK')
+    await sleep(300)
+  })
+  // NO THANKS on the recap's opt-in card: the toast names a control that exists
+  // and sits on screen.
+  await step('23-recap-nothanks', async () => {
+    await page.evaluate(() => {
+      const S = window.__SWARM
+      const w = S.world
+      S.saveJSON('lb:optIn', null)
+      S.saveJSON('lb:asked', 0)
+      S.setLoadout('nova', 'hive')
+      S.startRun('endless')
+      S.step(30)
+      w.kills = 40
+      w.time = 95.5
+      w.score = w.killPts = 5200
+      w.xpSum = 120
+      S.endRun('quit')
+    })
+    await sleep(900)
+    await tap(page, size, 'NO THANKS')
+    await sleep(400)
+    await shot('23-recap-nothanks')
+    const d = meta.shots['23-recap-nothanks']
+    const t = d.texts.find((x) => x.t.includes('You can join later from LEADERS.'))
+    if (!t || t.y < 0 || t.y + t.h > d.H) throw new Error('23: the NO THANKS toast is missing or off screen')
   })
 
   meta.apiCalls = await page.evaluate(() => window.__apiCalls)

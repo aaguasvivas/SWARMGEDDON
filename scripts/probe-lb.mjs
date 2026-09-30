@@ -16,7 +16,9 @@
 //           404): one request per run, no retry, a recap line, the recap still takes
 //           input, and the board shows its offline line
 //   ckpt    a ranked Daily lost without ending (storage copied mid-run) is filed at
-//           the next boot with end 'interrupted' and a toast
+//           the next boot with end 'interrupted' and a toast; a second page opened
+//           while the ranked run lives files nothing, and the live page's own
+//           result is the ranked one
 // Server origins: env SWG_URL (default http://localhost:5176) and LB_URL
 // (default http://127.0.0.1:8788). Exits 1 when a check fails.
 import puppeteer from 'puppeteer-core'
@@ -145,7 +147,8 @@ async function findText(page, needle) {
   }, needle)
 }
 
-/** Every feat done, so no unlock banner takes the recap's rank line. */
+/** Every feat done, so the recap shows the rank line alone (ui-shots 18b covers
+ *  it beside an unlock banner). */
 const featsDone = (page) =>
   page.evaluate(async () => {
     const { FEATS } = await import('/src/content/feats.ts')
@@ -383,6 +386,46 @@ async function ckpt(browser) {
   check('the menu then offers practice', !!label && label.text.includes('PRACTICE'), label && label.text)
   check('ckpt: no page errors', a.st.pageErrors.length + b.st.pageErrors.length === 0, [...a.st.pageErrors, ...b.st.pageErrors])
   await b.ctx.close()
+
+  // A second tab or window on the origin while the ranked run lives.
+  const c = await open(browser, { save: { 'meta:v': 2 } })
+  await c.page.evaluate((d) => {
+    const S = window.__SWARM
+    const w = S.world
+    S.startDaily(d)
+    for (let i = 0; i < 12 * 60; i++) {
+      w.player.hp = w.player.maxHp = 1e9
+      S.step(1)
+      while (w.paused && w.draft.open) S.pickCard(0)
+    }
+  }, today)
+  await sleep(400)
+  const second = await c.ctx.newPage()
+  const secondErrors = []
+  second.on('pageerror', (e) => secondErrors.push(e.message))
+  await second.setViewport({ width: 375, height: 667, deviceScaleFactor: 2, isMobile: true, hasTouch: true })
+  await second.goto(ORIGIN + '/?touch=1', { waitUntil: 'networkidle0', timeout: 45000 })
+  await second.waitForFunction('!!window.__SWARM', { timeout: 20000 })
+  await sleep(700)
+  const liveToast = await findText(second, 'when the app closed')
+  const liveDay = await store(second, 'daily:' + today)
+  const liveCk = await store(second, 'daily:ckpt')
+  check('a second page opened while the ranked run lives files nothing',
+    !liveToast && !(liveDay && liveDay.ranked) && !!liveCk,
+    { toast: liveToast && liveToast.text, ranked: liveDay && liveDay.ranked && liveDay.ranked.end, ckpt: !!liveCk })
+  await second.close()
+  const end = await c.page.evaluate(async (d) => {
+    const S = window.__SWARM
+    S.endRun('quit')
+    await new Promise((r) => setTimeout(r, 100))
+    const q = await navigator.locks.query()
+    const day = S.loadJSON('daily:' + d, {})
+    return { ranked: day.ranked && day.ranked.end, time: day.ranked && day.ranked.time, held: (q.held || []).map((l) => l.name) }
+  }, today)
+  check('the live page files its own run as the ranked one and releases the lock',
+    end.ranked === 'quit' && end.time >= 12 && !end.held.includes('swarmgeddon:ranked-run'), end)
+  check('ckpt (two pages): no page errors', c.st.pageErrors.length + secondErrors.length === 0, [...c.st.pageErrors, ...secondErrors])
+  await c.ctx.close()
 }
 
 await acquireChromeLock('probe-lb')
