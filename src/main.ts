@@ -1,5 +1,5 @@
 import { Container, Graphics, Rectangle, Text } from 'pixi.js'
-import { COLORS, DEFAULT_SEED, FIXED_DT, MAX_FRAME_TIME } from './config.ts'
+import { COLORS, DASH, DEFAULT_SEED, FIXED_DT, MAX_FRAME_TIME } from './config.ts'
 import { clamp } from './core/vec.ts'
 import { GameLoop } from './core/time.ts'
 import { Rng, seedFromString } from './core/rng.ts'
@@ -46,6 +46,7 @@ import { projectileSystem, enemyProjectileSystem } from './systems/projectiles.t
 import { pickupSystem } from './systems/pickups.ts'
 import { collisionSystem } from './systems/collision.ts'
 import { acidSystem } from './systems/acid.ts'
+import { dashSystem } from './systems/dash.ts'
 import { particleSystem } from './systems/particles.ts'
 
 type Screen = 'menu' | 'playing' | 'gameover' | 'leaderboard'
@@ -352,6 +353,8 @@ async function boot(): Promise<void> {
     else {
       modal.close()
       world.paused = false
+      world.resumeFromDraft()
+      input.cancelDashPress()
       feel.time.play(TimePreset.Resume)
     }
   }
@@ -366,6 +369,7 @@ async function boot(): Promise<void> {
     cam.h = h
     feel.shake.resize(w, h)
     hud.layout(w, h, insets)
+    input.touch.layoutDash(w, h, insets)
     debug?.layout(insets)
     touchHint.layout(w, h, insets)
     vignette.resize(w, h)
@@ -476,6 +480,7 @@ async function boot(): Promise<void> {
     spawnSystem(world, dt)
     buildEnemyHash(world)
     aiSystem(world, dt)
+    dashSystem(world, input, dt)
     weaponSystem(world, dt, input)
     projectileSystem(world, dt)
     enemyProjectileSystem(world, dt)
@@ -543,9 +548,19 @@ async function boot(): Promise<void> {
 
       renderEntities(world, alpha)
       player.render(alpha)
+      // i-frames: the ship blinks at 15 Hz.
+      player.view.alpha = player.invuln > 0 && (Math.floor(renderClock * 30) & 1) === 1 ? 0.35 : 1
       ichor.flush()
 
-      input.touch.view.visible = playing && input.lastType === 'touch'
+      // Touch UI (sticks + DASH) on touch devices until a mouse or pad takes
+      // over; hidden while a draft pauses the run.
+      const touchUI = playing && !world.paused && (input.lastType === 'touch' || (isTouchDevice && !input.hasPointer && input.lastType !== 'gamepad'))
+      input.touch.view.visible = touchUI
+      if (touchUI) {
+        const maxCharges = world.maxDashCharges
+        const cd = DASH.cooldown * world.mods.dashCooldownMul
+        input.touch.updateDash(world.dashCharges, maxCharges, world.dashCharges < maxCharges ? 1 - world.dashRecharge / cd : 1, fd)
+      }
       const showCrosshair = playing && input.lastType === 'kbm' && input.hasPointer
       crosshair.visible = showCrosshair
       if (showCrosshair) crosshair.position.set(input.pointerX, input.pointerY)
@@ -565,7 +580,7 @@ async function boot(): Promise<void> {
           saveJSON('seenTouchControls', true)
         }
       }
-      const showTouchHint = playing && isTouchDevice && !input.hasPointer && !touchLearned
+      const showTouchHint = playing && isTouchDevice && !input.hasPointer && !touchLearned && !world.bossAlive
       touchHint.view.visible = showTouchHint
       if (showTouchHint) touchHint.update(fd, touchMoveUsed, touchAimUsed)
 

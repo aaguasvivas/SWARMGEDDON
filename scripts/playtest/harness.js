@@ -3,10 +3,16 @@
 // Stops the rAF loop so ONLY our step(1) calls advance the sim, replaces
 // input.update with a bot, and records events. Drafts open through the game's
 // own single path (stepSim hand-off, cards cached on world.draftCards) and are
-// answered through S.pickPerk, exactly like a tap. Never calls endRun (so
-// nothing is submitted to the leaderboard).
+// answered through S.pickPerk, exactly like a tap (so the pick also applies
+// world.resumeFromDraft() grace). Never calls endRun (so nothing is submitted
+// to the leaderboard). With cfg.dash the bot also dashes out of danger.
 (() => {
   const DT = 1 / 60
+  const FEEL_PLAYER_HURT = 5
+  const FF_DISCRETE = 16
+  const FF_CONTACT = 32
+  const FF_ACID = 64
+  const FF_RAM = 128
   const xpForLevel = (l) => Math.floor(5 + l * 4 + l * l * 0.55)
 
   function xpTotal(w) {
@@ -203,6 +209,44 @@
     }
     inp.move.x = mx
     inp.move.y = my
+    if (st.cfg.dash && w.dashCharges > 0 && pl.dashTicks === 0 && inDanger(w, pl)) inp.pressDash()
+  }
+
+  // Dash policy: dash (along the bot's move, else its facing) when a hit is
+  // about to land: a shot arriving within 0.2 s, a charging charger on a line
+  // through us, an elite or boss body at contact, or 3+ bodies touching.
+  function inDanger(w, pl) {
+    const eps = w.enemyProjectiles.active
+    for (let i = 0; i < eps.length; i++) {
+      const p = eps[i]
+      if (!p.alive) continue
+      const dx = pl.x - p.x
+      const dy = pl.y - p.y
+      const sp = Math.hypot(p.vx, p.vy) || 1
+      const along = (p.vx * dx + p.vy * dy) / sp
+      if (along <= 0) continue
+      const perp = Math.abs((p.vx * dy - p.vy * dx) / sp)
+      const rr = p.radius + pl.radius + 4
+      if (perp < rr && along < sp * 0.2 + rr) return true
+    }
+    const act = w.enemies.active
+    let touching = 0
+    for (let i = 0; i < act.length; i++) {
+      const e = act[i]
+      if (!e.alive || e.submerged) continue
+      const dx = pl.x - e.x
+      const dy = pl.y - e.y
+      const d = Math.hypot(dx, dy)
+      const rr = e.radius + pl.radius
+      if (e.def.behavior === 'charger' && (e.phase === 2 || (e.phase === 1 && e.stateTimer < 0.12)) && d < 200) {
+        const perp = Math.abs(Math.cos(e.phaseDir) * dy - Math.sin(e.phaseDir) * dx)
+        const ahead = Math.cos(e.phaseDir) * dx + Math.sin(e.phaseDir) * dy
+        if (ahead > 0 && perp < rr + 10) return true
+      }
+      if ((e.def.elite || e.def.boss) && d < rr + 20) return true
+      if (d < rr + 6 && ++touching >= 3) return true
+    }
+    return false
   }
 
   window.__PT_init = (cfg) => {
@@ -240,6 +284,8 @@
       levelUpsChunk: 0,
       dead: false,
       death: null,
+      lastHalfHpT: 0,
+      hurts: [],
       podsSeen: 0,
       podsSeenChunk: 0,
       podFails: 0,
@@ -259,7 +305,7 @@
     return { seed: w.seed, arena: w.arenaTheme.id, char: w.character.id, hp: w.player.hp }
   }
 
-  const PRIORITY = ['twin_shot', 'heavy_rounds', 'adrenaline', 'piercing', 'vitality', 'bulwark', 'regrowth', 'vampiric', 'second_wind', 'explosive_rounds', 'deadeye', 'fleet_footed', 'executioner', 'magnetic', 'dodge', 'hollow_point', 'giant_slayer', 'cryo_rounds', 'scavenger', 'velocity', 'long_barrel', 'steady_aim', 'ricochet', 'thorns', 'overpressure', 'berserker', 'glass_cannon']
+  const PRIORITY = ['twin_shot', 'heavy_rounds', 'adrenaline', 'piercing', 'vitality', 'bulwark', 'regrowth', 'vampiric', 'second_wind', 'explosive_rounds', 'deadeye', 'fleet_footed', 'executioner', 'magnetic', 'phase_step', 'hollow_point', 'giant_slayer', 'cryo_rounds', 'scavenger', 'velocity', 'long_barrel', 'steady_aim', 'ricochet', 'thorns', 'overpressure', 'berserker', 'glass_cannon']
   function handleDraft(S, w, st) {
     while (w.paused && w.pendingLevelUps > 0 && w.draftCards.length > 0) {
       const d = w.draftCards.slice()
@@ -303,6 +349,17 @@
       calls++
       const ran = w.time > t0
       const hp1 = w.player.hp
+      // The loop is stopped, so nothing drains the FeelQueue: read the player
+      // damage from it here, then empty it.
+      const q = w.feel
+      for (let i = 0; i < q.n; i++) {
+        if (q.kind[i] !== FEEL_PLAYER_HURT) continue
+        const f = q.flags[i]
+        const kind = f & FF_ACID ? 'acid' : f & FF_CONTACT ? 'bite' : f & FF_RAM ? 'ram' : f & FF_DISCRETE ? 'shot' : 'other'
+        st.hurts.push([w.time, kind, q.a[i]])
+      }
+      q.clear()
+      while (st.hurts.length && st.hurts[0][0] < w.time - 3) st.hurts.shift()
       if (hp1 < hp0) {
         st.dmg += hp0 - hp1
         st.dmgChunk += hp0 - hp1
@@ -343,6 +400,10 @@
           bossAlive: w.bossAlive,
           maxHp: pl.maxHp,
           revivesUsed: w.revivesUsed,
+          fromHalfHp: +(w.time - st.lastHalfHpT).toFixed(3),
+          dmgLast3sByKind: st.hurts.reduce((o, [, k, a]) => ((o[k] = +((o[k] || 0) + a).toFixed(1)), o), {}),
+          hurtsLast2s: st.hurts.filter((h) => h[0] >= w.time - 2).map(([t, k, a]) => [+t.toFixed(3), k, +a.toFixed(1)]),
+          lastHitBy: w.lastHitBy,
           hpLast20s: st.hpHist.slice(-20),
         }
         st.events.push({ t: +w.time.toFixed(2), type: 'death' })
@@ -352,6 +413,8 @@
       if (inv) {
         w.player.maxHp = 1e9
         w.player.hp = 1e9
+      } else if (w.player.hp >= w.player.maxHp * 0.5) {
+        st.lastHalfHpT = w.time
       }
 
       if (w.paused && w.pendingLevelUps > 0) {
@@ -474,6 +537,8 @@
       enemyProj: w.enemyProjectiles.size,
       frozenSteps: st.frozenSteps,
       score: w.score,
+      dashes: w.dashes,
+      closeCalls: w.closeCalls,
     }
     st.killsPrev = w.kills
     st.levelUpsChunk = 0
@@ -509,6 +574,8 @@
       xpTotal: +xpTotal(w).toFixed(1),
       dmgTaken: Math.round(st.dmg),
       healed: Math.round(st.heal),
+      dashes: w.dashes,
+      closeCalls: w.closeCalls,
       frozenSteps: st.frozenSteps,
       firstSeen: st.firstSeen,
       perks: st.perks,

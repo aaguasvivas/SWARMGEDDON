@@ -12,7 +12,7 @@ export const enum FeelKind {
   GemCollect /* a = xp */, HealCollect /* a = HP gained */,
   WeaponPickup /* b = weapon index */, WeaponEmpty /* b = weapon index */, LowAmmo /* a = rounds left */,
   PodSpawn /* b = weapon index */, EliteSpawn, BossSpawn, BossPhase, BossFrenzy, BossKill,
-  ChargerWindup, EnemyShot, Teleport, Dash, CloseCall, Alert /* b = RunAlert ring index */,
+  ChargerWindup, EnemyShot, Teleport, Dash /* a, b = heading unit vector */, CloseCall, Alert /* b = RunAlert ring index */,
   MultUp /* a = tier */, MultDown, ChainHit, Fusion /* b = fusion index */, Evolve /* b = weapon index */,
   CoreOpen /* a = levels */, Shard, BonusPickup /* b = bonus index */, BonusEnd, HazardDetonate, Win, Stalemate,
 }

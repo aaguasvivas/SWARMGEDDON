@@ -1,3 +1,5 @@
+import { DASH } from '../config.ts'
+
 /**
  * Perks: pure data + a pure modifier fold. The whole "build" lives in one
  * `Modifiers` struct; perks compose into it (stacking), systems read the
@@ -25,7 +27,9 @@ export interface Modifiers {
   explosiveRounds: number // bonus explosion on bullet death
   slowOnHit: number // 0..1 slow strength applied to hit enemies
   thorns: number // dps to enemies touching the player
-  dodge: number // 0..1 chance to negate a discrete hit
+  dashCharges: number // max dash charges (capped at DASH.maxCharges)
+  dashIframes: number // seconds of i-frames per dash
+  dashCooldownMul: number // scales the per-charge recharge
   damageReduction: number // 0..1 incoming damage cut
   revives: number // extra lives
   berserker: number // fire rate scales with missing HP
@@ -39,7 +43,8 @@ export function baseModifiers(): Modifiers {
     knockbackMul: 1, projectileSpeedMul: 1, projectileLifeMul: 1, moveSpeedMul: 1,
     bonusHp: 0, hpMul: 1, regenPerSec: 0, lifestealPerKill: 0, magnetMul: 1,
     critChance: 0, critMul: 2, xpMul: 1, bounces: 0, explosiveRounds: 0, slowOnHit: 0,
-    thorns: 0, dodge: 0, damageReduction: 0, revives: 0, berserker: 0,
+    thorns: 0, dashCharges: 1, dashIframes: DASH.iframes, dashCooldownMul: 1,
+    damageReduction: 0, revives: 0, berserker: 0,
     eliteDamageMul: 1, executeFrac: 0,
   }
 }
@@ -77,7 +82,7 @@ export const PERKS: readonly PerkDef[] = [
   { id: 'scavenger', name: 'Scavenger', desc: '+25% XP gained', rarity: 'common', maxStacks: 3, apply: (m, s) => (m.xpMul *= 1 + 0.25 * s) },
   { id: 'bulwark', name: 'Bulwark', desc: '-15% damage taken', rarity: 'rare', maxStacks: 3, apply: (m, s) => (m.damageReduction = Math.min(0.7, m.damageReduction + 0.15 * s)) },
   { id: 'thorns', name: 'Spiked Carapace', desc: 'enemies touching you take damage', rarity: 'rare', maxStacks: 3, apply: (m, s) => (m.thorns += 18 * s) },
-  { id: 'dodge', name: 'Phase Step', desc: '+9% dodge chance', rarity: 'rare', maxStacks: 3, apply: (m, s) => (m.dodge = Math.min(0.6, m.dodge + 0.09 * s)) },
+  { id: 'phase_step', name: 'Phase Step', desc: 'More dash charges and longer invulnerability.', rarity: 'rare', maxStacks: 3, apply: (m, s) => { m.dashCharges += s >= 3 ? 2 : 1; if (s >= 2) m.dashIframes = 0.3 } },
   { id: 'second_wind', name: 'Second Wind', desc: 'revive once at 50% HP', rarity: 'rare', maxStacks: 1, apply: (m, s) => (m.revives += s) },
   { id: 'berserker', name: 'Berserker', desc: 'fire faster as HP drops', rarity: 'rare', maxStacks: 1, apply: (m, s) => (m.berserker += s) },
   { id: 'glass_cannon', name: 'Glass Cannon', desc: '+45% damage, -25% max HP', rarity: 'rare', maxStacks: 1, apply: (m, s) => { m.damageMul *= 1 + 0.45 * s; m.hpMul *= Math.pow(0.75, s) } },

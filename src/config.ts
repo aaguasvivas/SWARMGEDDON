@@ -135,3 +135,21 @@ export const COLORS = {
   hudHpFill: 0x2ee6a6,
   hudHpBack: 0x10231d,
 } as const
+
+// P3: damage model and dash (A1)
+export const DASH = {
+  ticks: 9, distance: 170, // 18.89 u per tick at 60 Hz, about 1133 u/s
+  iframes: 0.20, endLag: 0.10, endLagSpeedMul: 0.5,
+  cooldown: 2.0, buffer: 0.15, minMoveForDir: 0.2, maxCharges: 4, closeCallRefund: 0.8,
+} as const
+export const GRACE = { hit: 0.5, draft: 0.75, revive: 1.5, win: 3.0 } as const
+export const BITE = { scale: 0.4, window: 0.4, w2: 0.5, w3: 0.25, capFracOfMaxHp: 0.16 } as const
+/** A burrower (or dune leviathan) that surfaced this recently, with its body
+ *  this close to the player, counts as a Close Call trigger (section 4.3). */
+export const CLOSE_CALL = { surfacedWithin: 0.25, surfacedDist: 60 } as const
+export const DASH_BTN = {
+  visualD: 64, hitR: 44,
+  portrait: { offX: 58, offY: 200 }, // center = (W - R - offX, H - B - offY)
+  landscape: { offX: 64, offY: 150 },
+  aimExclusionPad: 8, fireLatch: 0.45, fireLatchWindow: 0.25,
+} as const

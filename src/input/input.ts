@@ -8,6 +8,11 @@ const LEFT_KEYS = new Set(['a', 'arrowleft'])
 const RIGHT_KEYS = new Set(['d', 'arrowright'])
 const UP_KEYS = new Set(['w', 'arrowup'])
 const DOWN_KEYS = new Set(['s', 'arrowdown'])
+const DASH_CODES = new Set(['Space', 'ShiftLeft', 'ShiftRight'])
+/** Gamepad LB, and LT past this travel, press dash on the rising edge. */
+const GP_LB = 4
+const GP_LT = 6
+const GP_LT_PRESS = 0.5
 
 /**
  * Unified input. Aggregates keyboard+mouse, touch dual-sticks, and gamepad into
@@ -16,6 +21,8 @@ const DOWN_KEYS = new Set(['s', 'arrowdown'])
  *   - `move`:     desired movement, magnitude in [0,1]
  *   - `aimDir`:   unit facing direction, or (0,0) to keep current facing
  *   - `firing`:   trigger held (wired to weapons from Phase 1)
+ *   - `consumeDashPress()`: one queued dash press (Space/Shift, gamepad LB/LT,
+ *                 the touch DASH button), read once per sim step
  *   - `lastType`: which device was used most recently (UI adapts to this)
  *
  * Active-source priority is touch > gamepad > keyboard/mouse, so picking up a
@@ -43,6 +50,9 @@ export class InputManager {
   private keys = new Set<string>()
   private mouseFiring = false
   private gamepadIndex = -1
+  /** A dash press waiting for the next sim step to read it. */
+  private dashLatch = false
+  private gpDashHeld = false
 
   // Reusable scratch for the gamepad poll (no per-frame allocation).
   private gp = { active: false, mx: 0, my: 0, ax: 0, ay: 0, aimActive: false, fire: false }
@@ -103,10 +113,28 @@ export class InputManager {
   /** Toggle gameplay input (off in menus). Drops any held touches. */
   setEnabled(on: boolean): void {
     this.enabled = on
+    this.dashLatch = false
     if (!on) {
       this.touch.reset()
       this.mouseFiring = false
     }
+  }
+
+  /** Queue one dash press for the next sim step (ignored in menus). */
+  pressDash(): void {
+    if (this.enabled) this.dashLatch = true
+  }
+
+  /** Read and clear the queued dash press. Only stepSim calls this. */
+  consumeDashPress(): boolean {
+    const p = this.dashLatch
+    this.dashLatch = false
+    return p
+  }
+
+  /** Drop a press made while the sim was paused (a tap on a draft card). */
+  cancelDashPress(): void {
+    this.dashLatch = false
   }
 
   update(playerX: number, playerY: number): void {
@@ -118,13 +146,21 @@ export class InputManager {
     }
     this.pollGamepad()
 
-    if (this.touch.active) {
+    const t = this.touch
+    const latched = t.fireLatched(performance.now())
+    if (t.active || latched) {
       this.lastType = 'touch'
-      this.move.x = this.touch.move.x
-      this.move.y = this.touch.move.y
-      this.aimDir.x = this.touch.aim.x
-      this.aimDir.y = this.touch.aim.y
-      this.firing = this.touch.aimActive
+      this.move.x = t.move.x
+      this.move.y = t.move.y
+      if (latched) {
+        this.aimDir.x = t.latchX
+        this.aimDir.y = t.latchY
+        this.firing = true
+      } else {
+        this.aimDir.x = t.aim.x
+        this.aimDir.y = t.aim.y
+        this.firing = t.aimActive
+      }
       return
     }
 
@@ -191,7 +227,14 @@ export class InputManager {
         }
       }
     }
-    if (!pad) return
+    if (!pad) {
+      this.gpDashHeld = false
+      return
+    }
+
+    const dashHeld = !!pad.buttons[GP_LB]?.pressed || (pad.buttons[GP_LT]?.value ?? 0) > GP_LT_PRESS
+    if (dashHeld && !this.gpDashHeld) this.pressDash()
+    this.gpDashHeld = dashHeld
 
     let lx = pad.axes[0] ?? 0
     let ly = pad.axes[1] ?? 0
@@ -236,6 +279,7 @@ export class InputManager {
   private onKeyDown = (e: KeyboardEvent): void => {
     this.keys.add(e.key.toLowerCase())
     this.lastType = 'kbm'
+    if (!e.repeat && DASH_CODES.has(e.code)) this.pressDash()
   }
 
   private onKeyUp = (e: KeyboardEvent): void => {
@@ -258,7 +302,9 @@ export class InputManager {
       } catch {
         /* pointer already released */
       }
-      this.touch.onDown(e.pointerId, e.clientX - this.rectL, e.clientY - this.rectT, this.canvas.clientWidth)
+      if (this.touch.onDown(e.pointerId, e.clientX - this.rectL, e.clientY - this.rectT, this.canvas.clientWidth, performance.now())) {
+        this.pressDash()
+      }
       this.lastType = 'touch'
     } else {
       this.pointerX = e.clientX - this.rectL

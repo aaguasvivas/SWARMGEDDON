@@ -3,6 +3,9 @@ import { COLORS } from '../config.ts'
 import type { Insets } from '../platform/safeArea.ts'
 
 const MONO = 'ui-monospace, Menlo, Consolas, monospace'
+/** Portrait rest points: this far above the safe bottom, which keeps each
+ *  guide's label above the weapon pill. */
+const PORTRAIT_REST_UP = 124
 
 /**
  * First-run touch onboarding. New players (especially the "I thought it was
@@ -22,7 +25,7 @@ export class TouchHint {
   constructor() {
     this.banner = new Text({
       text: 'drag to play: left side moves, right side aims & fires',
-      style: { fontFamily: MONO, fontSize: 13, fill: COLORS.hudText, align: 'center', dropShadow: { color: 0x000000, blur: 0, distance: 1, angle: Math.PI / 4, alpha: 0.8 } },
+      style: { fontFamily: MONO, fontSize: 13, fill: COLORS.hudText, align: 'center', wordWrap: true, dropShadow: { color: 0x000000, blur: 0, distance: 1, angle: Math.PI / 4, alpha: 0.8 } },
     })
     this.banner.anchor.set(0.5)
     this.left = new Guide('MOVE', COLORS.player)
@@ -32,11 +35,17 @@ export class TouchHint {
   }
 
   layout(w: number, h: number, insets: Insets): void {
-    const cx = insets.left + (w - insets.left - insets.right) / 2
+    const availW = w - insets.left - insets.right
+    const cx = insets.left + availW / 2
     const bottom = h - insets.bottom
-    const y = bottom - (h - insets.top - insets.bottom) * 0.26
-    this.left.view.position.set(insets.left + (w - insets.left - insets.right) * 0.24, y)
-    this.right.view.position.set(insets.left + (w - insets.left - insets.right) * 0.76, y)
+    // The guides mark the thumbs' rest points. In portrait the DASH button sits
+    // 200 px above the bottom on the right, so the rest points sit lower and
+    // the aim guide further in, keeping it clear of the button.
+    const portrait = h > w
+    const y = portrait ? bottom - PORTRAIT_REST_UP : bottom - (h - insets.top - insets.bottom) * 0.26
+    this.left.view.position.set(insets.left + availW * 0.24, y)
+    this.right.view.position.set(insets.left + availW * (portrait ? 0.7 : 0.76), y)
+    this.banner.style.wordWrapWidth = availW - 32
     this.banner.position.set(cx, insets.top + 70)
   }
 
