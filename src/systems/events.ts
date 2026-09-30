@@ -42,8 +42,10 @@ export class EventRun {
   beat = -1
   def: SwarmEventDef | null = null
   part: EventPart | null = null
-  /** First Director.beatAng slot of the part's own draws. */
+  /** First Director.beatAng slot of the part's own draws, and the turn added
+   *  to its drawn angles (a mirror copy's half turn). */
   drawAt = 0
+  rot = 0
   /** The event's S (or G) plus the part's turn. */
   ang = 0
   /** Ticks until the part begins. */
@@ -117,11 +119,13 @@ export function eventAlert(world: World, def: SwarmEventDef, ang: number): void 
   world.alerts.push(world.feel, AlertKind.Event, def.title, sub, dx, dy, world.time, pl.x, pl.y)
 }
 
-/** The beat fires: each part takes a free slot (a part with no slot is lost). */
-export function startEvent(world: World, beat: number, def: SwarmEventDef, off: number): void {
+/** The beat fires: each part takes a free slot (a part with no slot is lost).
+ *  S (or G) is at slot `off`; the parts' own draws start at `partsAt` and turn
+ *  by `rot`. */
+export function startEvent(world: World, beat: number, def: SwarmEventDef, off: number, partsAt: number, rot: number): void {
   const runs = world.director.events
   const s = world.director.beatAng[off]!
-  let drawAt = off + 1
+  let drawAt = partsAt
   for (let p = 0; p < def.parts.length; p++) {
     const part = def.parts[p]!
     let run: EventRun | null = null
@@ -133,6 +137,7 @@ export function startEvent(world: World, beat: number, def: SwarmEventDef, off: 
       run.def = def
       run.part = part
       run.drawAt = drawAt
+      run.rot = rot
       run.ang = s + part.turn
       run.wait = Math.round(part.delay / FIXED_DT)
       run.t = 0
@@ -250,7 +255,7 @@ function emit(world: World, run: EventRun, k: number): void {
       return
     }
     case 'blink': {
-      const a = ang[run.drawAt]! + k * (TAU / p.count)
+      const a = ang[run.drawAt]! + run.rot + k * (TAU / p.count)
       const h = spawnHazard(world, HZ_CIRCLE, clampX(world, pl.x + Math.cos(a) * p.r), clampY(world, pl.y + Math.sin(a) * p.r), p.markerR, p.tele, 0, 0)
       if (!h) return
       h.onEnd = HZ_END_SPAWN
@@ -259,7 +264,7 @@ function emit(world: World, run: EventRun, k: number): void {
     }
     case 'volley': {
       if (!room(world)) return
-      const a = ang[run.drawAt]! + k * (TAU / p.count)
+      const a = ang[run.drawAt]! + run.rot + k * (TAU / p.count)
       const e = spawnEnemy(world, p.unit, clampX(world, pl.x + Math.cos(a) * p.r), clampY(world, pl.y + Math.sin(a) * p.r))
       if (!e) return
       e.eventUnit = true
@@ -270,7 +275,7 @@ function emit(world: World, run: EventRun, k: number): void {
       return
     }
     case 'mortar': {
-      const a = ang[run.drawAt + 2 * k]!
+      const a = ang[run.drawAt + 2 * k]! + run.rot
       const r = ang[run.drawAt + 2 * k + 1]!
       const h = spawnHazard(world, HZ_CIRCLE, clampX(world, pl.x + Math.cos(a) * r), clampY(world, pl.y + Math.sin(a) * r), p.r, p.tele, 0, p.dmg)
       if (h && (k + 1) % p.magmaEvery === 0) h.onEnd = HZ_END_MAGMA

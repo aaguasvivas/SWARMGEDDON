@@ -89,6 +89,8 @@
 //                                  cannot show a pool difference; det-long and det-death can.
 //   --perks=a,b,...                perf modes take these perks and fusions at run start
 //                                  (P8: --perks=cryo_rounds,explosive_rounds,f_shatter).
+//   --threat=N                     det modes start Standard runs at THREAT N (unlocked and
+//                                  selected through the game's own ladder keys first).
 //   --paint=<id>                   det modes fly this paint (granted first). Paints are
 //                                  cosmetic, so the hash must not change.
 //                                  Every det pass restores the owned set it started from,
@@ -114,7 +116,7 @@ const DPR = flags.dpr ? parseFloat(flags.dpr) : 1
 const SETTINGS = flags.settings ? JSON.parse(flags.settings) : null
 const RUN_MODE = flags.mode === 'daily' ? 'daily' : 'endless'
 const DAILY_DATE = flags.date || null
-const SAVE_PREP = { unlocked: flags.save === 'unlocked', paint: flags.paint || null }
+const SAVE_PREP = { unlocked: flags.save === 'unlocked', paint: flags.paint || null, threat: flags.threat ? parseInt(flags.threat) : 0 }
 const PERF_PERKS = flags.perks ? flags.perks.split(',') : []
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
@@ -209,6 +211,7 @@ const DET_HELPER = `(() => {
       }
       if (runMode !== 'daily') {
         S.setLoadout(c, a)
+        if (PREP.threat > 0) S.setThreat(a, PREP.threat)
         S.startRun(runMode)
       } else if (DATE) {
         S.startDaily(DATE)
@@ -336,7 +339,7 @@ const DET_HELPER = `(() => {
         streams[k] = s.toString(16)
       }
       return {
-        hash: (h >>> 0).toString(16), arena: w.arenaTheme.id, enemies: w.enemies.active.length, kills: w.kills,
+        hash: (h >>> 0).toString(16), arena: w.arenaTheme.id, threat: w.threat, enemies: w.enemies.active.length, kills: w.kills,
         level: w.level, drafts: st.drafts, pickups: w.pickups.active.length, time: +w.time.toFixed(2),
         bosses: st.bosses, director, byType, streams,
         dashes: w.dashes, closeCalls: w.closeCalls, damageTaken: Math.round(w.damageTaken),
@@ -459,7 +462,7 @@ if (MODE === 'shot') {
     }
     const r = runs[0]
     console.log(JSON.stringify({
-      mode: MODE, runMode: RUN_MODE, W, H, dpr: DPR, settings: SETTINGS ? applied : null, charId, arenaId: r.arena, steps,
+      mode: MODE, runMode: RUN_MODE, W, H, dpr: DPR, settings: SETTINGS ? applied : null, charId, arenaId: r.arena, threat: r.threat, steps,
       hash: r.hash, rerunMatch: r.hash === runs[1].hash && r.offers === runs[1].offers, save: flags.save || 'fresh', paint: flags.paint || 'factory',
       offers: r.offers, offerCount: r.offerCount, firstOffers: r.firstOffers, daily: r.daily, enemies: r.enemies, kills: r.kills, level: r.level,
       drafts: r.drafts, cores: r.cores, evolutions: r.evolutions, dashes: r.dashes, closeCalls: r.closeCalls, damageTaken: r.damageTaken,

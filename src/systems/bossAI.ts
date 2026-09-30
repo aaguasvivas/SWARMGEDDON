@@ -132,7 +132,7 @@ export function bossStep(w: World, e: Enemy, dt: number): void {
     return
   }
   const st = BOSS_STAGES[f.stage]
-  const cad = st.cadence[f.phase]! * Math.min(FRENZY_CADENCE_MAX, Math.pow(FRENZY_CADENCE, w.director.frenzy))
+  const cad = st.cadence[f.phase]! * w.threatDef.bossCadence * Math.min(FRENZY_CADENCE_MAX, Math.pow(FRENZY_CADENCE, w.director.frenzy))
 
   if (f.echoT > 0) {
     f.echoT = tickDown(f.echoT, dt)
@@ -243,7 +243,7 @@ function startAttack(w: World, e: Enemy, kit: BossKit): void {
   f.rot = f.rot + 1 < rotation.slots.length ? f.rot + 1 : rotation.loopFrom
   let kind = kit.attacks[slot]!
   if (
-    (kind === ATK_EGG_CLUTCH && w.director.broodCount >= MAX_BROOD) ||
+    ((kind === ATK_EGG_CLUTCH || kind === ATK_MOTHERS_CALL) && w.director.broodCount >= MAX_BROOD) ||
     (kind === ATK_FLAK_TURRETS && turretsAlive(w) + FLAK_TURRETS.count > FLAK_TURRETS.maxAlive)
   ) {
     kind = kit.attacks[SLOT_A]
@@ -615,7 +615,7 @@ function lungeStep(w: World, e: Enemy, dt: number, cad: number): void {
   e.facing = Math.atan2(f.dirY, f.dirX)
   if (!f.lungeHit && inSweptLane(w, e)) {
     if (closeCallArmed(w)) closeCall(w)
-    if (hurtPlayer(w, ROYAL_LUNGE.damage, 'discrete', e.def.idx, e.x, e.y, FF_RAM) > 0) f.lungeHit = true
+    if (hurtPlayer(w, ROYAL_LUNGE.damage * w.runDmgMul, 'discrete', e.def.idx, e.x, e.y, FF_RAM) > 0) f.lungeHit = true
   }
   f.stateT = tickDown(f.stateT, dt)
   if (stop || f.stateT === 0) {
@@ -672,7 +672,7 @@ function bossShot(w: World, e: Enemy, a: number, speed: number, damage: number, 
   p.vx = cx * speed
   p.vy = cy * speed
   p.facing = a
-  p.damage = damage
+  p.damage = damage * w.runDmgMul
   p.radius = radius
   p.life = life
   p.pierce = 0

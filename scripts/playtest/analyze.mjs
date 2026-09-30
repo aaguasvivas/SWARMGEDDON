@@ -80,6 +80,10 @@ for (const f of files) {
     arena: r.cfg.arena,
     mode: r.cfg.mode + (r.cfg.dash ? '+dash' : '') + (r.cfg.focus ? '+focus' : '') + ({ priority: '+P', random: '+R', evolve: '+E' }[r.cfg.perkPolicy] ?? ''),
     seed: r.cfg.seed,
+    threat: r.cfg.threat ?? 0,
+    ot: !!r.cfg.ot,
+    otStart: r.otStart ?? null,
+    otCycle: r.otCycle ?? 0,
     endTime: r.endTime,
     dead: r.dead,
     timeToDeath: r.dead ? r.endTime : null,
@@ -233,7 +237,7 @@ for (const s of out) {
   console.log(
     [
       s.arena.padEnd(6),
-      s.mode.padEnd(8),
+      (s.mode + (s.threat ? ' T' + s.threat : '') + (s.ot ? ' OT' : '')).padEnd(8),
       String(s.seed).padEnd(5),
       `end=${s.endTime}${s.dead ? ' DEAD' : ''}`,
       `L=${s.finalLevel}`,
@@ -275,8 +279,9 @@ if (allFights.length) {
 }
 console.log(`WINS ${out.filter((s) => s.won).length}/${out.length} stalemates=${out.filter((s) => s.stalemate).length} runs: ${out.filter((s) => s.won).map((s) => s.file).join(', ')}`)
 
-// A3 beat fidelity: each beat fired on time or where the deferral rules put it.
-const a3Runs = out.filter((s) => s.a3)
+// A3 beat fidelity: each beat fired on time or where the deferral rules put it
+// (OVERTIME runs have their own rows after the win, so they stay out of it).
+const a3Runs = out.filter((s) => s.a3 && !s.ot)
 if (a3Runs.length) {
   let bad = 0
   for (const s of a3Runs) {
@@ -296,4 +301,33 @@ if (readable.length) {
   const mid = readable.length >> 1
   const median = readable.length % 2 ? readable[mid] : (readable[mid - 1] + readable[mid]) / 2
   console.log(`A10 deaths=${readable.length} median=${median.toFixed(2)}s min=${readable[0].toFixed(2)}s (pass: median >= 3.0, min >= 1.2)`)
+}
+
+// A12 ladder: win rate per world, bot and THREAT level (T4 at most 15% and
+// below T0; T1 at most T0). An OVERTIME run counts its win before OVERTIME.
+const ladder = new Map()
+for (const s of out) {
+  const k = `${s.arena} ${s.mode}`
+  if (!ladder.has(k)) ladder.set(k, new Map())
+  const byT = ladder.get(k)
+  if (!byT.has(s.threat)) byT.set(s.threat, { runs: 0, wins: 0, ends: [] })
+  const e = byT.get(s.threat)
+  e.runs++
+  if (s.won) e.wins++
+  e.ends.push(s.ot && s.won ? s.otStart : s.endTime)
+}
+for (const [k, byT] of ladder) {
+  if (byT.size < 2) continue
+  const cells = [...byT.entries()].sort((a, b) => a[0] - b[0]).map(([t, e]) => `T${t} ${e.wins}/${e.runs} (${Math.round((100 * e.wins) / e.runs)}%) median end ${median(e.ends)}`)
+  console.log(`A12 ${k}: ${cells.join(' | ')}`)
+}
+
+// A13 OVERTIME end: runs that won and went on (cfg.ot). 90% or more dead by
+// 20:00 (1200 s), none alive past 24:00 (1440 s).
+const otRuns = out.filter((s) => s.ot && s.won)
+if (otRuns.length) {
+  const by20 = otRuns.filter((s) => s.dead && s.endTime <= 1200).length
+  const past24 = otRuns.filter((s) => !s.dead || s.endTime > 1440).length
+  for (const s of otRuns) console.log(`A13 ${s.file} clear->OT at ${s.otStart} cycle ${s.otCycle} ${s.dead ? 'dead' : 'ALIVE'} at ${s.endTime} (${(s.endTime / 60).toFixed(2)} min) L${s.finalLevel}`)
+  console.log(`A13 OT runs=${otRuns.length} dead by 20:00 ${by20} (${Math.round((100 * by20) / otRuns.length)}%, pass >= 90%); alive past 24:00 or unfinished ${past24} (pass: 0)`)
 }

@@ -10,8 +10,9 @@ import { PERKS, applyBuild, baseModifiers, fusionIndex, resetModifiers, type Mod
 import { CHARACTERS, type CharacterDef } from '../content/characters.ts'
 import { ARENAS, type ArenaTheme } from '../content/arenas.ts'
 import { ENEMY_IDS } from '../content/enemies.ts'
+import { THREAT_LEVELS, threatLevel, type ThreatLevel } from '../content/threat.ts'
 import { FeelKind, FeelQueue, RunAlertRing } from '../effects/feelQueue.ts'
-import { Director } from '../systems/director.ts'
+import { Director, applyRunMuls, startOvertime } from '../systems/director.ts'
 import { DraftState } from '../systems/draft.ts'
 import { BossFight } from '../systems/bossAI.ts'
 import { BlastQueue } from '../systems/blasts.ts'
@@ -275,6 +276,18 @@ export class World {
   /** VESPER: max HP grown from elite and boss kills. */
   reaperHp = 0
 
+  // P11: THREAT and OVERTIME
+  /** The run's THREAT level (world.threat), read once in beginRun. */
+  threatDef: ThreatLevel = THREAT_LEVELS[0]!
+  /** Enemy HP, the threat x OVERTIME damage multiplier (authored boss and
+   *  hazard damage takes only this; dmgMul adds the time ramp), the min and
+   *  max alive multiplier, and the OVERTIME multiplier of non-boss spawn
+   *  speed and the speed ceiling. The director sets them per OVERTIME cycle. */
+  hpMul = 1
+  runDmgMul = 1
+  aliveMul = 1
+  speedMul = 1
+
   constructor(
     readonly arena: Arena,
     readonly player: Player,
@@ -321,7 +334,7 @@ export class World {
 
   // --- run lifecycle ---------------------------------------------------------
 
-  /** Reseed + reset for a fresh run from `cfg`. The only entry point. Leak-free. */
+  /** Reseed + reset for a fresh run from `cfg` (THREAT included). The only entry point. Leak-free. */
   beginRun(cfg: RunConfig): void {
     this.clearAll()
     this.run = cfg
@@ -331,8 +344,11 @@ export class World {
     this.character = cfg.character
     this.arenaTheme = cfg.theme
     this.tintCache.clear()
-    this.script = resolveScript(this.arenaTheme.id)
+    this.threatDef = threatLevel(cfg.threat)
+    this.threat = this.threatDef.level
+    this.script = resolveScript(this.arenaTheme.id, this.threat)
     this.director.reset()
+    applyRunMuls(this)
     this.dmgMul = 1
     this.xpScale = this.script.minutes[0]!.xpScale
     this.arena.setTheme(this.arenaTheme)
@@ -367,7 +383,6 @@ export class World {
     this.alerts.reset()
     this.lastHitVx = 0
     this.lastHitVy = 0
-    this.threat = cfg.threat
     this.score = 0
     this.killPts = 0
     this.xpSum = 0
@@ -459,8 +474,8 @@ export class World {
 
   /** The win panel's OVERTIME: the run goes on past the win. */
   startOvertime(): void {
-    this.director.runState = 'overtime'
     this.pendingWin = false
+    startOvertime(this)
   }
 
   // --- weapons ---------------------------------------------------------------

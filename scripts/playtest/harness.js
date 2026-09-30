@@ -10,7 +10,9 @@
 // evolve (the held weapon's pair perk first, then priority). A Hive Core
 // reveal is answered through S.takeCore: the evolution when one is offered
 // (the random policy flips a seeded coin). Never calls
-// endRun itself; a stalemate ends the run through the game's own path. With
+// endRun itself; a stalemate ends the run through the game's own path.
+// cfg.threat starts the run at that THREAT level; with cfg.ot a win goes on
+// into OVERTIME through the win panel's own path (__SWARM.overtime). With
 // cfg.dash the bot also dashes out of danger; with cfg.focus it shoots the
 // boss during a fight. The smart and roam bots sidestep swarm-event streams
 // (STAMPEDE, walls, SHOAL RUN) and step out of every damaging hazard circle
@@ -369,7 +371,7 @@
     S.setLoadout(cfg.char, cfg.arena)
     S.startRun('endless')
     const w = S.world
-    S.beginSeed(cfg.seed) // keeps the pilot/theme startRun set
+    S.beginSeed(cfg.seed, { threat: cfg.threat | 0 }) // keeps the pilot/theme startRun set
     S.input.autoFire = true
     const st = {
       runId: Math.random(),
@@ -392,6 +394,7 @@
       lastBossAlive: false,
       bossesKilled: 0,
       won: false,
+      otStart: null,
       stalemate: false,
       lastRevives: 0,
       hpHist: [],
@@ -462,7 +465,7 @@
       w.player.maxHp = 1e9
       w.player.hp = 1e9
     }
-    return { seed: w.seed, arena: w.arenaTheme.id, char: w.character.id, hp: w.player.hp }
+    return { seed: w.seed, arena: w.arenaTheme.id, char: w.character.id, hp: w.player.hp, threat: w.threat }
   }
 
   function mulberry(seed) {
@@ -557,8 +560,9 @@
     const w = S.world
     const st = window.__PT
     const inv = st.cfg.invincible
+    const ot = !!st.cfg.ot
     let calls = 0
-    while (w.time < untilTime - 1e-9 && !st.dead && !st.won && !st.stalemate && calls < maxCalls) {
+    while (w.time < untilTime - 1e-9 && !st.dead && !(st.won && !ot) && !st.stalemate && calls < maxCalls) {
       const pk = w.pickups.active
       const t0 = w.time
       const hp0 = w.player.hp
@@ -638,12 +642,24 @@
         break
       }
 
-      // The win panel pauses the sim; a stalemate ends the run.
-      if (w.pendingWin || w.pendingEnd) {
-        if (w.pendingWin) st.won = true
-        else st.stalemate = true
-        st.events.push({ t: +w.time.toFixed(2), type: w.pendingWin ? 'win' : 'stalemate', clearTime: w.director.clearTime ? +w.director.clearTime.toFixed(2) : null })
+      // The win panel pauses the sim; a stalemate ends the run. With cfg.ot
+      // the bot answers the panel with OVERTIME once pending drafts are done.
+      if (w.pendingEnd) {
+        st.stalemate = true
+        st.events.push({ t: +w.time.toFixed(2), type: 'stalemate', clearTime: w.director.clearTime ? +w.director.clearTime.toFixed(2) : null })
         break
+      }
+      if (w.pendingWin) {
+        if (!st.won) {
+          st.won = true
+          st.events.push({ t: +w.time.toFixed(2), type: 'win', clearTime: w.director.clearTime ? +w.director.clearTime.toFixed(2) : null })
+        }
+        if (!ot) break
+        if (S.pauseReason === 'win') {
+          S.overtime()
+          st.otStart = +w.time.toFixed(2)
+          st.events.push({ t: st.otStart, type: 'overtime' })
+        }
       }
 
       if (inv) {
@@ -674,11 +690,13 @@
 
       const n = w.enemies.size
       st.aliveSumChunk += n
+      // A3 density counts the run before the win (OVERTIME has its own rows).
+      const scripted = w.director.runState === 'running'
       const lull = w.time < w.director.lullUntil
       const row = w.script.minutes[Math.min(11, Math.floor(w.time / 60))]
       if (lull) st.lullStepsChunk++
       if (w.bossAlive) st.bossStepsChunk++
-      else if (!lull && n >= 0.95 * row.maxAlive) st.satStepsChunk++
+      else if (scripted && !lull && n >= 0.95 * row.maxAlive) st.satStepsChunk++
       const runs = w.director.events
       let evActive = false
       for (let r = 0; r < runs.length; r++) if (runs[r].active) evActive = true
@@ -695,11 +713,11 @@
       const beats = w.script.beats
       for (let k = 0; k < beats.length; k++) if (beats[k].kind === 'event' && w.director.firedAt[k] >= 0) lastEvent = Math.max(lastEvent, w.director.firedAt[k])
       if (evActive || streamAlive || w.time - lastEvent < EVENT_WINDOW) st.eventStepsChunk++
-      else if (!w.director.cage.active) {
+      else if (scripted && !w.director.cage.active) {
         st.a3Base++
         if (n >= 0.95 * row.maxAlive) st.a3Sat++
       }
-      if (n - row.maxAlive > st.overRowChunk) st.overRowChunk = n - row.maxAlive
+      if (scripted && n - row.maxAlive > st.overRowChunk) st.overRowChunk = n - row.maxAlive
       while (st.alertSeq < w.alerts.seq) {
         const a = w.alerts.slots[st.alertSeq % w.alerts.slots.length]
         if (a.seq === st.alertSeq) {
@@ -792,7 +810,7 @@
         st.lastRevives = w.revivesUsed
       }
     }
-    return { t: w.time, dead: st.dead, won: st.won, stalemate: st.stalemate, calls }
+    return { t: w.time, dead: st.dead, won: st.won && !ot, stalemate: st.stalemate, calls }
   }
 
   window.__PT_chunk = () => {
@@ -847,6 +865,8 @@
       score: w.score,
       dashes: w.dashes,
       closeCalls: w.closeCalls,
+      otCycle: w.director.otCycle,
+      brood: w.director.broodCount,
       aliveMean: st.simStepsChunk ? +(st.aliveSumChunk / st.simStepsChunk).toFixed(1) : 0,
       spawns: st.spawnsChunk,
       lullSteps: st.lullStepsChunk,
@@ -892,6 +912,9 @@
       endTime: +w.time.toFixed(2),
       dead: st.dead,
       won: st.won,
+      threat: w.threat,
+      otStart: st.otStart,
+      otCycle: w.director.otCycle,
       stalemate: st.stalemate,
       death: st.death,
       level: w.level,

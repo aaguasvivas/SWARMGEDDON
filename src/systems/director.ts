@@ -28,6 +28,7 @@ import {
   FRENZY_STEP,
   GRACE,
   MID2_LATEST,
+  OVERTIME,
   POST_BOSS_LULL,
   POST_BOSS_LULL_MIN,
   PRACTICAL_CAP,
@@ -45,7 +46,18 @@ import { clamp } from '../core/vec.ts'
 import { AFFIX_BIT, tagTitle } from '../content/affixes.ts'
 import { BOSS_STAGES } from '../content/bosses.ts'
 import { ENEMIES } from '../content/enemies.ts'
-import { BEAT_DRAW_SLOTS, DEFER_SLOTS, MAX_BEATS, eventDef, type Beat, type BossStage, type MinuteRow } from '../content/runScripts.ts'
+import {
+  BEAT_DRAW_SLOTS,
+  DEFER_SLOTS,
+  MAX_BEATS,
+  beatOf,
+  eventDef,
+  leadOf,
+  stageText,
+  type Beat,
+  type BossStage,
+  type MinuteRow,
+} from '../content/runScripts.ts'
 import { WEAPONS } from '../content/weapons.ts'
 import { spawnPoof } from '../effects/fx.ts'
 import { AlertKind, FF_BOSS, FF_ELITE, FeelKind } from '../effects/feelQueue.ts'
@@ -66,6 +78,8 @@ const DEG = Math.PI / 180
 /** Spawn points stay this far inside the arena wall. */
 const EDGE_INSET = 24
 const NEW_BUG = 'NEW BUG'
+/** Sub of the OT boss's retreat alert (A15); its title is the script's stalemate line. */
+const RETREAT_SUB = 'THE SWARM RETURNS'
 
 /**
  * Run-arc state (docs/NEXT-LEVEL.md 4.1, A7.3). Allocated once with the World
@@ -84,8 +98,13 @@ export class Director {
   readonly beatAng = new Float32Array(BEAT_DRAW_SLOTS)
   /** Affix mask per elite, at the same slot as that elite's side in beatAng. */
   readonly beatAffix = new Uint8Array(BEAT_DRAW_SLOTS)
-  /** Boss beat waiting for its arrival (-1 = none), and whether its alert played. */
+  /** Per beat: the elites it brings, fixed when it warns (an OVERTIME beat
+   *  held into the next cycle keeps the count its draws were rolled for). */
+  readonly eliteN = new Uint8Array(MAX_BEATS)
+  /** Boss beat waiting for its arrival (-1 = none), its beat time, and
+   *  whether its alert played. */
   bossBeat = -1
+  bossAt = 0
   bossWarned = false
   bossTitle = ''
   lastBossKillAt = -1e9
@@ -96,6 +115,8 @@ export class Director {
    *  drops (NaN until then). A held beat's alert plays its lead before it fires. */
   readonly deferred = new Int16Array(DEFER_SLOTS)
   readonly deferredAt = new Float32Array(DEFER_SLOTS)
+  /** The held beat's own time (an event more than DEFER_DROP_LATE past it is dropped). */
+  readonly deferredDue = new Float32Array(DEFER_SLOTS)
   /** Per beat: its alert played for the fire time now set. Holding or
    *  rescheduling a beat clears it, so the beat is announced again. */
   readonly warned = new Uint8Array(MAX_BEATS)
@@ -120,6 +141,13 @@ export class Director {
   /** The current fight's brood alive (aiSystem counts it each tick). */
   broodCount = 0
   bossesKilled = 0
+  /** OVERTIME: the cycle (1, 2, ...; 0 before OVERTIME), its start, the
+   *  next OVERTIME beat to warn and to fire, and the cycle's gem XP multiplier. */
+  otCycle = 0
+  otStart = 0
+  otWarn = 0
+  otFire = 0
+  otXpMul = 1
 
   constructor() {
     for (let i = 0; i < EVENT_SLOTS; i++) this.events.push(new EventRun())
@@ -135,13 +163,16 @@ export class Director {
     this.rowIndex = 0
     this.beatAng.fill(0)
     this.beatAffix.fill(0)
+    this.eliteN.fill(0)
     this.bossBeat = -1
+    this.bossAt = 0
     this.bossWarned = false
     this.bossTitle = ''
     this.lastBossKillAt = -1e9
     this.cage.active = false
     this.deferred.fill(-1)
     this.deferredAt.fill(Number.NaN)
+    this.deferredDue.fill(0)
     this.warned.fill(0)
     for (let i = 0; i < this.events.length; i++) {
       this.events[i]!.active = false
@@ -159,13 +190,127 @@ export class Director {
     this.purgeT = 0
     this.broodCount = 0
     this.bossesKilled = 0
+    this.otCycle = 0
+    this.otStart = 0
+    this.otWarn = 0
+    this.otFire = 0
+    this.otXpMul = 1
   }
 }
 
-function leadOf(b: Beat): number {
-  if (b.kind === 'event' || b.kind === 'boss') return WARN_LEAD
-  if (b.kind === 'elite') return ELITE_WARN_LEAD
-  return 0
+/** THREAT and OVERTIME multipliers for the run's current state: HP, damage
+ *  and alive counts take the level's and OVERTIME's cycle c (0 before it). */
+export function applyRunMuls(world: World): void {
+  const T = world.threatDef
+  const d = world.director
+  const c = d.runState === 'overtime' ? d.otCycle : 0
+  world.hpMul = T.hpMul * Math.pow(OVERTIME.hpMul, c)
+  world.runDmgMul = T.dmgMul * Math.pow(OVERTIME.dmgMul, c)
+  world.aliveMul = T.aliveMul * Math.pow(OVERTIME.aliveMul, c)
+  world.speedMul = Math.pow(OVERTIME.speedMul, Math.max(0, c - 1))
+  d.otXpMul = Math.pow(OVERTIME.xpMul, c)
+}
+
+/** The win panel's OVERTIME (section 4.1): cycle 1 starts now with a short
+ *  lull. Beats still held from the run are dropped; OVERTIME brings its own. */
+export function startOvertime(world: World): void {
+  const d = world.director
+  d.runState = 'overtime'
+  d.otCycle = 1
+  d.otStart = world.time
+  d.otWarn = 0
+  d.otFire = 0
+  for (let k = 0; k < DEFER_SLOTS; k++) {
+    const i = d.deferred[k]!
+    if (i >= 0) d.firedAt[i] = -1
+    d.deferred[k] = -1
+  }
+  resetOvertimeBeats(world)
+  applyRunMuls(world)
+  d.rowIndex = OVERTIME.row0
+  d.lullUntil = world.time + OVERTIME.lull
+  d.lullMin = rowAt(world).minAlive * OVERTIME.lullMinMul
+}
+
+/** A new OVERTIME cycle: its beats fire again. A beat still held from the
+ *  last cycle keeps its slot and its flags. */
+function resetOvertimeBeats(world: World): void {
+  const d = world.director
+  const base = world.script.beats.length
+  const end = base + world.script.otBeats.length
+  for (let i = base; i < end; i++) {
+    if (isHeld(d, i)) continue
+    d.firedAt[i] = Number.NaN
+    d.warned[i] = 0
+  }
+}
+
+function isHeld(d: Director, i: number): boolean {
+  for (let k = 0; k < DEFER_SLOTS; k++) if (d.deferred[k] === i) return true
+  return false
+}
+
+/** Start of the current OVERTIME cycle. */
+function cycleStart(d: Director): number {
+  return d.otStart + (d.otCycle - 1) * OVERTIME.cycle
+}
+
+/** A beat's sim time: a main beat's `at`, or its offset in this OVERTIME cycle. */
+function beatTime(world: World, i: number): number {
+  const s = world.script
+  return i < s.beats.length ? s.beats[i]!.at : cycleStart(world.director) + s.otBeats[i - s.beats.length]!.at
+}
+
+/** An OVERTIME mirror copy plays only from its first cycle on. */
+function beatLive(d: Director, b: Beat): boolean {
+  return !(b.kind === 'event' && b.fromCycle !== undefined && d.otCycle < b.fromCycle)
+}
+
+function eliteCount(d: Director, b: Beat): number {
+  if (b.kind !== 'elite') return 1
+  return b.perCycle ? Math.min(b.count + d.otCycle, OVERTIME.eliteMax) : b.count
+}
+
+/** The minute row in force: rows[min(11, floor(t / 60))], and in OVERTIME
+ *  the cycle's minute on rows OVERTIME.row0 to row0 + 2. */
+function rowIndexAt(world: World): number {
+  const d = world.director
+  if (d.runState === 'overtime') {
+    const m = Math.floor((world.time - cycleStart(d)) / 60)
+    return OVERTIME.row0 + Math.max(0, Math.min(2, m))
+  }
+  return Math.min(11, Math.floor(world.time / 60))
+}
+
+function rowAt(world: World): MinuteRow {
+  return world.script.minutes[rowIndexAt(world)]!
+}
+
+/** OVERTIME beats of the current cycle; a cycle ends 180 s after it began,
+ *  once its last beat has fired. */
+function tickOvertime(world: World): void {
+  const d = world.director
+  const ot = world.script.otBeats
+  const base = world.script.beats.length
+  const t = world.time
+  for (;;) {
+    const c0 = cycleStart(d)
+    while (d.otWarn < ot.length && c0 + ot[d.otWarn]!.at - leadOf(ot[d.otWarn]!) <= t) {
+      if (beatLive(d, ot[d.otWarn]!)) warnBeat(world, base + d.otWarn)
+      d.otWarn++
+    }
+    while (d.otFire < ot.length && c0 + ot[d.otFire]!.at <= t) {
+      if (beatLive(d, ot[d.otFire]!)) fireOrDefer(world, base + d.otFire)
+      else d.firedAt[base + d.otFire] = -1
+      d.otFire++
+    }
+    if (d.otFire < ot.length || t < c0 + OVERTIME.cycle) return
+    d.otCycle++
+    d.otWarn = 0
+    d.otFire = 0
+    resetOvertimeBeats(world)
+    applyRunMuls(world)
+  }
 }
 
 /**
@@ -179,7 +324,7 @@ export function directorTick(world: World, dt: number): void {
   const beats = s.beats
   const t = world.time
 
-  world.dmgMul = 1 + DMG_RAMP_PER_MIN * Math.min(t / 60, 12)
+  world.dmgMul = (1 + DMG_RAMP_PER_MIN * Math.min(t / 60, 12)) * world.runDmgMul
   if (d.runState === 'won') {
     tickWin(world, dt)
     return
@@ -194,32 +339,33 @@ export function directorTick(world: World, dt: number): void {
     fireOrDefer(world, d.beatCursor)
     d.beatCursor++
   }
+  if (d.runState === 'overtime') tickOvertime(world)
   if (!d.cage.active) tickDeferred(world)
   tickEvents(world, dt)
   tickBossArrival(world)
   tickFight(world)
   if (d.runState !== 'running' && d.runState !== 'overtime') return
 
-  const ri = Math.min(11, Math.floor(t / 60))
+  const ri = rowIndexAt(world)
   const row = s.minutes[ri]!
   if (ri !== d.rowIndex) {
     d.rowIndex = ri
-    if (row.debut) {
+    if (row.debut && d.runState !== 'overtime') {
       world.alerts.push(world.feel, AlertKind.Debut, ENEMIES[row.debut]!.displayName, NEW_BUG, 0, 0, t, world.player.x, world.player.y)
     }
   }
-  world.xpScale = row.xpScale
+  world.xpScale = row.xpScale * d.otXpMul
 
   // Inside a cage the floor counts only the swarm outside it (not the boss or its brood).
   const caged = d.cage.active
   const lull = !caged && t < d.lullUntil
   let alive = world.enemies.size
-  let minA = lull ? d.lullMin : row.minAlive
+  let minA = lull ? d.lullMin : row.minAlive * world.aliveMul
   if (caged) {
     alive -= d.broodCount + (world.bossAlive ? 1 : 0)
     minA = CAGE_OUTSIDE_MIN[s.arenaId]!
   }
-  const maxA = Math.min(PRACTICAL_CAP, row.maxAlive)
+  const maxA = Math.floor(Math.min(PRACTICAL_CAP, row.maxAlive * world.aliveMul))
   d.topupAcc = Math.min(d.topupAcc + TOPUP_RATE * dt, 10)
   while (alive < minA && d.topupAcc >= 1) {
     spawnPulseUnit(world, row)
@@ -237,7 +383,7 @@ export function directorTick(world: World, dt: number): void {
 
 /** Roll a beat's script draws (fixed count per beat, A7.1) and push its alert. */
 function warnBeat(world: World, i: number): void {
-  const b = world.script.beats[i]!
+  const b = beatOf(world.script, i)
   const d = world.director
   const rng = world.rngs.script
   const off = world.script.drawOff[i]!
@@ -248,7 +394,9 @@ function warnBeat(world: World, i: number): void {
       break
     case 'elite': {
       const pool = world.script.affixPool
-      for (let k = 0; k < b.count; k++) {
+      const count = eliteCount(d, b)
+      d.eliteN[i] = count
+      for (let k = 0; k < count; k++) {
         d.beatAng[off + k] = sideAngle(world, rng.angle())
         let mask = 0
         for (let a = 0; a < b.affixes; a++) {
@@ -274,7 +422,9 @@ function warnBeat(world: World, i: number): void {
     }
     case 'event': {
       const def = eventDef(world.script, b.id)
-      rollEvent(world, def, off)
+      // A mirror copy draws nothing: its side is its event's, turned 180 degrees and fitted.
+      if (b.mirror !== undefined) d.beatAng[off] = fitSide(world, d.beatAng[world.script.drawOff[b.mirror]!]! + Math.PI, def.fit)
+      else rollEvent(world, def, off)
       if (!d.cage.active) {
         eventAlert(world, def, d.beatAng[off]!)
         d.warned[i] = 1
@@ -284,6 +434,7 @@ function warnBeat(world: World, i: number): void {
     case 'boss':
       d.beatAng[off] = rng.angle()
       d.bossBeat = i
+      d.bossAt = beatTime(world, i)
       d.bossWarned = false
       break
     case 'lull':
@@ -292,7 +443,7 @@ function warnBeat(world: World, i: number): void {
 }
 
 function fireOrDefer(world: World, i: number): void {
-  const b = world.script.beats[i]!
+  const b = beatOf(world.script, i)
   const caged = world.director.cage.active
   switch (b.kind) {
     case 'pack':
@@ -306,7 +457,7 @@ function fireOrDefer(world: World, i: number): void {
       }
       world.director.firedAt[i] = world.time
       world.director.lullUntil = world.time + b.dur
-      world.director.lullMin = world.script.minutes[Math.min(11, Math.floor(world.time / 60))]!.minAlive * b.minAliveMul
+      world.director.lullMin = rowAt(world).minAlive * b.minAliveMul
       if (b.alert) world.alerts.push(world.feel, AlertKind.Lull, b.alert.title, b.alert.sub, 0, 0, world.time, world.player.x, world.player.y)
       break
     case 'elite':
@@ -323,21 +474,30 @@ function fireOrDefer(world: World, i: number): void {
  *  whose alert has not played (its warn fell inside a cage that dropped before
  *  it came due) is announced now. */
 function fireBeat(world: World, i: number): void {
-  const b = world.script.beats[i]!
+  const s = world.script
+  const b = beatOf(s, i)
   if (world.director.warned[i] === 0) warnLate(world, i)
   world.director.firedAt[i] = world.time
   if (b.kind === 'elite') fireElites(world, i)
-  else if (b.kind === 'event') startEvent(world, i, eventDef(world.script, b.id), world.script.drawOff[i]!)
+  else if (b.kind === 'event') {
+    // A mirror copy's parts reuse its event's draws, turned 180 degrees.
+    const mirror = b.mirror !== undefined
+    const partsAt = (mirror ? s.drawOff[b.mirror!]! : s.drawOff[i]!) + 1
+    startEvent(world, i, eventDef(s, b.id), s.drawOff[i]!, partsAt, mirror ? Math.PI : 0)
+  }
 }
 
 /** resolveScript guarantees a slot for every event and elite beat, so a held
- *  beat is never dropped for room and never fires inside the cage. */
+ *  beat is never dropped for room and never fires inside the cage. An
+ *  OVERTIME beat still held from the last cycle stands for this one too. */
 function defer(world: World, i: number): void {
   const d = world.director
+  if (isHeld(d, i)) return
   for (let k = 0; k < DEFER_SLOTS; k++) {
     if (d.deferred[k] === -1) {
       d.deferred[k] = i
       d.deferredAt[k] = Number.NaN
+      d.deferredDue[k] = beatTime(world, i)
       d.warned[i] = 0
       return
     }
@@ -351,8 +511,8 @@ function tickDeferred(world: World): void {
     const i = d.deferred[k]!
     if (i < 0) continue
     const at = d.deferredAt[k]!
-    const b = world.script.beats[i]!
-    const dropped = b.kind === 'event' && at - b.at > DEFER_DROP_LATE
+    const b = beatOf(world.script, i)
+    const dropped = b.kind === 'event' && at - d.deferredDue[k]! > DEFER_DROP_LATE
     // A boss due first raises its cage and holds the beat again: its alert
     // waits for the new fire time.
     if (d.warned[i] === 0 && !dropped && t >= at - leadOf(b) && !(nextBossArrival(world) < at)) warnLate(world, i)
@@ -364,9 +524,15 @@ function tickDeferred(world: World): void {
 }
 
 /** The arrival time of the next boss (Infinity when none is left): the
- *  first boss beat not yet spawned or skipped, per the arrival and mid2 rules. */
+ *  first boss beat not yet spawned or skipped, per the arrival and mid2 rules;
+ *  in OVERTIME, this cycle's OT boss or, once it has come, the next cycle's. */
 function nextBossArrival(world: World): number {
   const d = world.director
+  if (d.runState === 'overtime') {
+    if (d.bossBeat >= 0) return Math.max(d.bossAt, d.lastBossKillAt + BOSS_MIN_GAP)
+    const past = d.otWarn >= world.script.otBeats.length
+    return Math.max(cycleStart(d) + (past ? OVERTIME.cycle : 0) + OVERTIME.boss, d.lastBossKillAt + BOSS_MIN_GAP)
+  }
   const beats = world.script.beats
   for (let i = 0; i < beats.length; i++) {
     const b = beats[i]!
@@ -382,7 +548,7 @@ function nextBossArrival(world: World): number {
  *  fires, or at fire time). An event's side is fitted again around where the
  *  player now stands (no draw). */
 function warnLate(world: World, i: number): void {
-  const b = world.script.beats[i]!
+  const b = beatOf(world.script, i)
   world.director.warned[i] = 1
   if (b.kind === 'elite') {
     pushEliteAlert(world, i)
@@ -412,7 +578,14 @@ export function directorBossKilled(world: World, e: Enemy): void {
   }
   d.lastBossKillAt = t
   d.lullUntil = t + POST_BOSS_LULL
-  d.lullMin = world.script.minutes[Math.min(11, Math.floor(t / 60))]!.minAlive * POST_BOSS_LULL_MIN
+  d.lullMin = rowAt(world).minAlive * POST_BOSS_LULL_MIN
+  scheduleHeld(world, t)
+}
+
+/** The cage dropped at `t`: the held beats fire from DEFER_AFTER_KILL later,
+ *  DEFER_GAP apart, in beat order. */
+function scheduleHeld(world: World, t: number): void {
+  const d = world.director
   let at = t + DEFER_AFTER_KILL
   let prev = -1
   for (;;) {
@@ -427,6 +600,26 @@ export function directorBossKilled(world: World, e: Enemy): void {
     d.warned[prev] = 0
     at += DEFER_GAP
   }
+}
+
+/** An OT boss still alive OVERTIME.bossStay s after it arrived retreats: it
+ *  leaves with no credit and the cage drops, so a fight the player cannot
+ *  finish never keeps the swarm out for long. */
+function retreat(world: World): void {
+  const d = world.director
+  const boss = world.boss
+  const pl = world.player
+  cancelBossTelegraph(world)
+  if (boss) {
+    boss.alive = false
+    spawnPoof(world, boss.x, boss.y, boss.gibTint, 16)
+  }
+  world.bossAlive = false
+  world.boss = null
+  d.cage.active = false
+  d.lastBossKillAt = world.time
+  world.alerts.push(world.feel, AlertKind.Boss, world.script.text.stalemate, RETREAT_SUB, 0, 0, world.time, pl.x, pl.y)
+  scheduleHeld(world, world.time)
 }
 
 /** The PRIME died: the run is cleared. Enemy shots and hazards go at once, the
@@ -468,12 +661,16 @@ function tickWin(world: World, dt: number): void {
   if (!world.pendingWin && world.time >= d.clearTime + WIN_PANEL_DELAY) world.pendingWin = true
 }
 
-/** FRENZY steps and the PRIME's stalemate. */
+/** FRENZY steps, the PRIME's stalemate and the OT boss's retreat. */
 function tickFight(world: World): void {
   const d = world.director
   const boss = world.boss
   if (!world.bossAlive || !boss) return
   const t = world.time
+  if (world.bossFight.stage === 'overtime' && t >= d.fightStart + OVERTIME.bossStay) {
+    retreat(world)
+    return
+  }
   if (world.bossFight.stage === 'final' && t >= d.fightStart + STALEMATE_AFTER) {
     cancelBossTelegraph(world)
     boss.alive = false
@@ -503,17 +700,17 @@ function tickFight(world: World): void {
 function tickBossArrival(world: World): void {
   const d = world.director
   if (d.bossBeat < 0) return
-  const b = world.script.beats[d.bossBeat]!
+  const b = beatOf(world.script, d.bossBeat)
   if (b.kind !== 'boss') return
   if (world.bossAlive && b.stage !== 'final') return
   const t = world.time
-  const arrive = Math.max(b.at, d.lastBossKillAt + BOSS_MIN_GAP)
+  const arrive = Math.max(d.bossAt, d.lastBossKillAt + BOSS_MIN_GAP)
   if (b.stage === 'mid2' && arrive > MID2_LATEST) {
     d.firedAt[d.bossBeat] = -1
     d.bossBeat = -1
     return
   }
-  const text = world.script.text[b.stage]
+  const text = stageText(world.script, b.stage)
   const ang = d.beatAng[world.script.drawOff[d.bossBeat]!]!
   const pl = world.player
   if (!d.bossWarned && t >= arrive - WARN_LEAD) {
@@ -644,7 +841,12 @@ function ascend(world: World): boolean {
 
 function beginFight(world: World, boss: Enemy, stage: BossStage): void {
   const d = world.director
-  boss.hp = boss.maxHp = Math.round(BOSS_STAGES[stage].hpBase * world.script.boss.worldMul * buildHpScale(world))
+  const ot = stage === 'overtime'
+  const hpBase = BOSS_STAGES[stage].hpBase * (ot ? Math.pow(OVERTIME.bossHpMul, d.otCycle) : 1)
+  // bossHpMul^c is the OT boss's whole OVERTIME growth (A10.2): it takes the
+  // THREAT level's HP multiplier, not the swarm's hpMul^c on top.
+  const hpMul = ot ? world.threatDef.hpMul : world.hpMul
+  boss.hp = boss.maxHp = Math.round(hpBase * world.script.boss.worldMul * buildHpScale(world) * hpMul)
   boss.submerged = true
   world.beginBossFight()
   world.bossFight.begin(stage)
@@ -739,12 +941,13 @@ function firePack(world: World, i: number): void {
 }
 
 function fireElites(world: World, i: number): void {
-  const b = world.script.beats[i]!
+  const b = beatOf(world.script, i)
   if (b.kind !== 'elite') return
   const d = world.director
   const off = world.script.drawOff[i]!
   const half = world.time < RING_NEAR_UNTIL ? RING_NEAR : RING_STD
-  for (let k = 0; k < b.count; k++) {
+  const count = d.eliteN[i]!
+  for (let k = 0; k < count; k++) {
     ringPointAt(world, d.beatAng[off + k]!, half)
     const e = spawnInside(world, world.script.eliteId, ringOut.x, ringOut.y)
     if (!e) continue
@@ -775,11 +978,10 @@ function sideAngle(world: World, ang: number): number {
  *  tag, or the elite's name and the count when several come at once. */
 function pushEliteAlert(world: World, i: number): void {
   const d = world.director
-  const b = world.script.beats[i]!
   const off = world.script.drawOff[i]!
   const ang = d.beatAng[off]!
   const def = ENEMIES[world.script.eliteId]!
-  const count = b.kind === 'elite' ? b.count : 1
+  const count = d.eliteN[i]!
   const title = count > 1 ? def.displayName + ' x' + count : tagTitle(def.idx, d.beatAffix[off]!)
   world.alerts.push(world.feel, AlertKind.Elite, title, FROM_WORD[quadrant(ang)]!, Math.cos(ang), Math.sin(ang), world.time, world.player.x, world.player.y)
 }

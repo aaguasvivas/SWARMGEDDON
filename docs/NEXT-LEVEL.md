@@ -291,6 +291,7 @@ export interface RunRngs { spawn: Rng; script: Rng; boss: Rng; loot: Rng; draft:
 | Damage mul | `1.2^c` |
 | minAlive and maxAlive | `x1.1^c`, maxAlive capped at PRACTICAL_CAP |
 | xpScale | `x0.8^c` |
+| Non-boss spawn speed and the 240 u/s ceiling | `x1.3^(c-1)`: cycle 1 unchanged, cycle 2 x1.3, cycle 3 x1.69 (P11 review) |
 
 Beats per cycle:
 - +20 s: EVENT 1, plus a mirror copy at +28 s when c >= 2.
@@ -299,6 +300,15 @@ Beats per cycle:
 - +160 s: OT boss (mid2 kit, `hpBase 2600 x 1.35^c`).
 
 Death is the only end.
+
+Built in P11 (constants `OVERTIME` in `src/config.ts`):
+- `startOvertime()` sets `runState = 'overtime'`, `otCycle = 1` and `otStart = t`, so the first cycle already runs at `c = 1` (HP x1.5, damage x1.2), and opens a 10 s lull at the row's minAlive x0.5. Cycle minute 0, 1 and 2 use world rows 8, 9 and 10. Beats still held at the win are dropped.
+- Every spawn takes `world.hpMul` (THREAT x `1.5^c`). The OT boss grows by its own `1.35^c` instead (A10.2): `2600 x 1.35^c x worldMul x buildScale^0.75 x THREAT hpMul`, so at THREAT 0 it has 3510, 4739 and 6397 base HP in cycles 1 to 3 (the PRIME has 4200). (P11 review: the first build also multiplied in `1.5^c`, which gave `2.025^c`: 18,885 HP at cycle 2 on T0 and 25,908 at cycle 3 on T2.) It fights with mid2's phases, cadence and rotations, and its alert reuses mid2's lines (`THE QUEEN / RETURNS`).
+- **Speed (P11 review).** From cycle 2, every non-boss spawn moves `x1.3^(c-1)` faster, and the 240 u/s ceiling (A11) rises by the same factor (`world.speedMul`, `OVERTIME.speedMul`). Stream units keep their authored speed. Without it a kiting ship outlives OVERTIME: NOVA runs at 285 u/s (308 with one Fleet Footed stack), faster than the capped swarm, and a Hive smart+P bot held 450 enemies at full HP through cycles 3 to 5. The term leaves cycle 1 as designed and passes the kiter's speed in cycle 2 (flyers 312 u/s). Measurements in the A12 and A13 note (section 11).
+- **Retreat (P11 decision, bound set in the P11 review).** An OT boss still alive `OVERTIME.bossStay` (90 s) after it arrives retreats: it leaves with no credit, the cage drops, the held beats are scheduled as after a kill (no lull), and the alert `THE QUEEN ESCAPED / THE SWARM RETURNS` (the script's stalemate title) plays. The next OT boss comes on time. Inside the cage the swarm is held outside and pulses stop, so the cage is the safest place in OVERTIME: with a stay of up to 180 s (the first rule: retreat when the next OT boss is due) the default bot, which shoots the swarm at the fence, spent up to 64% of its OVERTIME caged, and the runs that lived past 20:00 were the caged ones.
+- The elite beat brings `2 + c` elites (plus HUNTERS' +1 from THREAT 1), at most 8, with 2 affixes each. The count is fixed when the beat warns (`Director.eliteN`), so a beat held by a cage into the next cycle brings the elites its draws were rolled for. (P11 review: the count read at fire time added one elite with no side draw and no affixes.)
+- The EVENT 1 mirror plays from cycle 2 (every cycle at THREAT 2 and up), and at THREAT 2 and up EVENT 3 mirrors too (A11).
+- `RunResult.overtimeSec = time - clearTime` for a run that went on into OVERTIME.
 
 **`runState`:** `'running' | 'won' | 'overtime' | 'stalemate'`. `pendingWin` and `pendingEnd` are the only hand-offs to `main.ts`.
 
@@ -567,6 +577,7 @@ Table in A11. Effects are cumulative.
 - **Selection:** stored per world in `sel:threat` and clamped to the unlocked level.
 - **Run identity:** the threat is read once in `beginRun`.
 - **Daily:** threat comes from `DAILY_THREAT_CYCLE[d % 7]` (A11) and never unlocks threat.
+- **Built in P11:** `src/content/threat.ts` (the A11 table), `src/state/threatLadder.ts` (keys `threat` and `sel:threat`, both `Record<worldId, number>`; `selectedThreat`, `selectThreat`, `recordThreatClear` from `endRun`). `main.startRun` passes the selected level to `World.beginRun(seed, mode, char, theme, threat)`. No screen selects a level yet (P17 builds the THREAT row), and the Daily runs at 0 until P13 passes `dailySpec(date).threat`.
 
 ### 4.9 XP flow
 
@@ -1716,7 +1727,7 @@ node scripts/measure.mjs 390 844 perf ; node scripts/measure.mjs 390 844 perf-fi
 | A8 | Median survival | smart 5:30 or more; smart+P 8:00 or more; crude 2:30 or more; Hive crude median at least that of Depths and Wastes |
 | A9 | Level curve (smart+P median) | L9 to 12 at 3:00; L18 to 23 at 8:00; L23 to 28 at 11:00; no gap over 60 s after 1:00 |
 | A10 | Readable deaths | from the last HP at 50% or more to death: median 3.0 s or more, minimum 1.2 s or more |
-| A11 | Speed | no enemy over 240 u/s outside stream, charger dash and lunge |
+| A11 | Speed | no enemy over 240 u/s outside stream, charger dash and lunge (before OVERTIME; its cycles raise the ceiling, section 4.1) |
 | A12 | Ladder | T4 win rate at most 15%; T1 at most T0 |
 | A13 | Overtime | 90% or more dead by 20:00; none past 24:00 |
 | A14 | Determinism | identical hash across 3 viewports, a rerun, extreme settings, and a fresh vs unlocked save (Daily) |
@@ -1763,6 +1774,22 @@ node scripts/measure.mjs 390 844 perf ; node scripts/measure.mjs 390 844 perf-fi
   - P19 decides between row 11's maxAlive and how A3 treats a row step during the PRIME fight, and retunes rows 5 to 10 (`maxAlive`, `every`) for the saturated share. Capping mothersCall changes neither number.
 - Roam bots on the merged W3 build: Hive 573 alive, 413 over row 11, share 0.313; Depths 166 over, 0.255; Wastes 52 over, 0.001. The Hive roam excess is the PRIME brood in a fight the invincible bot cannot finish (the source tagging above), so the mothersCall MAX_BROOD question (A10.3) belongs to it.
 - The harness bot dodges streams (it sidesteps toward the side with less of the stream, sticky until no stream threatens) and every damaging hazard circle. In an A/B on 5 seeds per world the dodge steered for 5 to 183 steps per run and stream contact damage was near 0 with and without it; a stationary ship takes 8 to 16 HP from one STAMPEDE or SHOAL RUN. Survival differences between the arms come from divergence after the first event, not from the dodge.
+
+**A3 note (P11, the brood cap).** mothersCall now casts A instead at the brood cap, as eggClutch does (A10.3). Invincible Hive roam bot, seeds 1001, 2002 and 3003, 14 min, A/B on the P11 branch:
+- Without the cap: brood alive at 14:00 was 357, 202 and 207; alive at most 573, 438 and 512 (seed 1001 reproduces the W3 573 and 413 over row 11).
+- With the cap: brood alive at most 39 at any 30 s sample; alive at most 478, 438 and 436, so the 610 bound passes.
+- Over row maxAlive is still 150 to 254 through the whole PRIME fight. It is the row step: the field built under row 10 (maxAlive 420) plus the FINAL SWARM stays outside the cage, the caged roam bot cannot thin it, and row 11's maxAlive is 160. Before 11:00 the excess is at most 58 (at 10:30). P19 owns it (the A3 note above).
+- The saturated share stays 0.267 to 0.313 (the W3 note above; P19).
+
+**A12 and A13 note (P11).** Hive, `smart:SEED:14:nova:priority:T`, seeds 1001 x 1 to 10 (OVERTIME runs: `:25:nova:priority:T:ot`).
+- A12 passes: wins T0 5/10, T1 3/10, T2 4/10, T3 1/10, T4 0/10. T4 is at most 15% and below T0, and T1 is at most T0. Median end: T0 10:27, T4 5:16.
+- First P11 build, **A13 failed**: 13 runs went on into OVERTIME (Hive, T0 to T3), 10 died by 20:00 (77%, pass 90%), and T0 seeds 6006 and 9009 were alive at 25:00. The surviving bots kite: from cycle 2 on they hold 450 enemies (the PRACTICAL_CAP, HP x3.4 to x5, damage x1.7 to x2.1) and take 0 to 56 HP per 30 s, because enemy speed stops at the 240 u/s ceiling and NOVA runs at 285 u/s or more.
+- **P11 review** (the OT boss at `1.35^c` x THREAT, the elite count fixed at warn time). A13 runs: `smart:SEED:25:nova:priority:T:ot`, T0 seeds 1001 x 1 to 30 and T1 to T3 seeds 1001 x 1 to 10 (set 1: 16 runs into OVERTIME), plus T0 1001 x 31 to 60 and T1 to T3 1001 x 11 to 20 (set 2: 12 runs). Nothing before the win changes, so every arm has the same 16 winners on set 1 (T0 8/30, and T1 to T3 match the P11 A12 numbers above). Set 1 per arm, dead by 20:00 and alive past 24:00:
+  - No speed term, retreat when the next OT boss is due: 13/16 (81%), T2 seed 9009 alive at 25:00 at full HP with 450 enemies. Median time in OVERTIME 220 s.
+  - Speed `x1.1^c` from cycle 1, same retreat: 14/16 (88%), none past 24:00, but the median time in OVERTIME fell to 51 s: flyers at 264 u/s catch most bots in the first minute of cycle 1.
+  - Speed from cycle 2 only (`x1.15^(c-1)`), same retreat: 12/16 (75%), 2 past 24:00. The long runs were caged for 54 to 64% of their OVERTIME: the default bot shoots the swarm at the fence, so an OT boss often lived until the next one was due.
+  - Retreat after 90 s (`bossStay`) with `x1.1^(c-1)`, `x1.15^(c-1)`, `x1.2^(c-1)`: 13/16, 14/16, 13/16 (81 to 88%), none past 24:00. The late deaths came at 20:04 to 22:54, in cycle 3 or 4: in cycle 2 the kiters (NOVA with one Fleet Footed stack, 308 u/s) still outrun a swarm at x1.2 (flyers 288 u/s).
+  - **Shipped: `x1.3^(c-1)` and a 90 s stay.** Set 1: 15/16 (94%), none past 24:00, last death 20:36, median time in OVERTIME 236 s; the reviewer's T0 seeds 4004, 5005, 6006, 7007 and 9009 die at 16:09, 15:54, 19:39, 13:31 and 19:57. Set 2: 11/12 (92%), none past 24:00, last death 20:21. Both sets: 26/28 (93%). Long runs spend at most 47% of their OVERTIME caged. Deaths in cycle 1 (14 to 138 s into OVERTIME) are the same as without the term. P19 may retune `speedMul` and `bossStay` against A13.
 
 **A16 and section 3.2 note (W3 integration).**
 - A16 passes: a 10 s `perf-final` trace (Hive) has 23 minor GCs and no major GC. The longest pause was 1.81 to 1.90 ms in the integrator's runs and 1.05 ms in the fix re-run, so the margin under 2 ms is small.
@@ -2211,12 +2238,14 @@ beatAng = new Float32Array(96); beatAffix = new Uint8Array(96); scratch = new Fl
 firedAt = new Float32Array(32)   // P7: fire time per beat (NaN not yet, -1 dropped or skipped); A3 reads it
 cage = { active, x, y, r, formingFrom }; bossesAlive, fightIndex, fightStart, nextFrenzyAt, frenzy
 lastBossKillAt, bossStageNext; deferred = new Int16Array(12); deferredAt = new Float32Array(12); warned = new Uint8Array(32)
-events = [EventRun x3]; runState, clearTime, purgeT, purgeX, purgeY, otCycle, otStart
+eliteN = new Uint8Array(32)   // P11 review: elites per beat, fixed at warn time
+events = [EventRun x5]; runState, clearTime, purgeT, purgeX, purgeY, otCycle, otStart, otWarn, otFire, otXpMul
 broodCount, bossesKilled, elitesKilled
 ```
 
 - `deferred` holds one slot per event and elite beat of the script (`DEFER_SLOTS = 12`; T0 scripts have 10). `resolveScript` throws if a script has more, so a held beat never overflows the queue and never fires inside the cage.
 - (P7) `beatAng` holds 96 draws: the T0 Wastes script takes 64 (MORTAR BARRAGE alone takes 37), and P11's extra elites and mirrors need room. `resolveScript` throws past 96 draws or 32 beats.
+- (P11) `resolveScript(arenaId, threat)` also builds one OVERTIME cycle (`otBeats`, beat index `beats.length + k`) with its own draw slots, so `beatAng` holds 160 (Wastes at THREAT 2 and up: 70 for the run and 49 for the cycle, whose elite beat reserves 8), `deferred` 16 (THREAT 2 adds 3 mirror events to the 10 held beats), and the 32 beats include the cycle. `EVENT_SLOTS` is 5: a FINAL SWARM's 3 parts plus a held event and its mirror copy.
 
 ## A8. Swarm events (T0)
 
@@ -2274,7 +2303,7 @@ P7 rules (`src/content/affixes.ts`): the outline is a ring on the floor at the b
 | mid1 | 2400 | [0.5] | 1.0 / 1.2 | 1.0 / 1.0 |
 | mid2 | 2600 | [0.66, 0.33] | 1.0 / 1.2 / 1.35 | 1.0 / 1.0 / 0.8 |
 | final (PRIME) | 4200 | [0.66, 0.33] | 1.0 / 1.2 / 1.35 | 1.0 / 1.0 / 0.75 |
-| overtime c | 2600 x 1.35^c | as mid2 | as mid2 | as mid2 |
+| overtime c | 2600 x 1.35^c (x THREAT hpMul, not OVERTIME's 1.5^c) | as mid2 | as mid2 | as mid2 |
 
 Idle gap: queen 0.9 s, matron 0.7 s, tyrant 1.1 s. Cadence divides idleGap and recover. THREAT 3+ multiplies base cadence by 1.2, and FRENZY stacks on top.
 
@@ -2295,7 +2324,7 @@ Idle gap: queen 0.9 s, matron 0.7 s, tyrant 1.1 s. Cadence divides idleGap and r
 | A sporeNova | 0.90 | instant | 0.70 | 12 per glob | 16 globs, speed 220, r 8, life 3.0; the first is aimed at the player. P2+: second ring 0.35 s later, rotated 11.25 degrees. PRIME P3: 20 per ring. |
 | B royalLunge | 0.90 | up to 1.0 | 1.00 | 30 | lane len 560, halfW 50, heading locked at tele start; dash 560 u/s; stops at the cage edge or the arena wall; one hit, only inside the drawn lane (the stretch the body's front has swept), never on the wider PRIME body alone |
 | C eggClutch | 0.60 | instant | 0.60 | 0 | 5 eggs (PRIME P3: 7) on r 150, 1 boss draw; at brood cap, cast A instead |
-| SIG mothersCall | 1.20 | instant | 1.00 | none | 24 swarmers (hp x1.5) on 27 slots at `cage.r - 40`; 3 empty slots face away from the queen |
+| SIG mothersCall | 1.20 | instant | 1.00 | none | 24 swarmers (hp x1.5) on 27 slots at `cage.r - 40`; 3 empty slots face away from the queen; at brood cap, cast A instead (P11) |
 
 Decals: sporeNova a circle r 120 on the queen; royalLunge its lane, cut at the ring or the wall; eggClutch a circle r 164 (the egg ring plus an egg radius); mothersCall a circle of `cage.r - 40` on the cage center.
 
@@ -2347,6 +2376,13 @@ Effects are cumulative. Rule text is at most 48 characters.
 
 - Daily threat: `DAILY_THREAT_CYCLE = [0, 0, 1, 0, 1, 0, 2]`, indexed by `dayIndex % 7`.
 - Score factor: `(10 + 2T) / 10`.
+
+P11 rules (`src/content/threat.ts`, `resolveScript(arenaId, threat)`):
+- hpMul multiplies every enemy's spawn HP (`world.hpMul`), so elites, event units, brood and bosses take it too. dmgMul is `world.runDmgMul`: `world.dmgMul` is the time ramp x runDmgMul, and authored damage (boss bites, boss shots, the royal lunge, every hazard: boss attacks, MORTAR BARRAGE, VOLATILE) takes runDmgMul alone. aliveMul multiplies minAlive and maxAlive (maxAlive floored); lulls and the cage floor keep their own values.
+- The teaching elite (1:30) takes 1 affix and hpMul 1.0 from T1. "Elite beats from 6:15" are the 6:15, 8:15 and 9:10 beats (x3, x3, x4 at T1).
+- A mirror copy is its own event beat 8 s after its event (2:38, 5:38, 8:53), with its own alert and a HUD timeline tick. It takes no script draw: its S or G is its event's turned 180 degrees and fitted to the arena (`fitSide`, so near a wall it may turn back), and BLINK STORM, CHARGER VOLLEY and MORTAR BARRAGE reuse their event's drawn angles turned 180 degrees. Held by a cage, it follows the deferral rules like any event.
+- CHAMPIONS: every elite beat after the teaching elite has 2 affixes; the boss cadence is `stage cadence x 1.2 x FRENZY`.
+- SCARCITY: non-elite kills still roll the medkit draw but drop nothing; an elite drops 1 medkit and a boss 2 (5 below T4), each healing 7 (14 x 0.5).
 
 ## A12. Feats (48)
 
@@ -2479,6 +2515,7 @@ Callout lane: center y = `max(T + plateBottom + 56, 0.30H)` in portrait and `0.3
 | worldIntro | 1 | 2.2 s | world name | `vs ACID HIVE` / `vs PSYCHIC BROOD` / `vs CINDER SWARM` | borderGlow |
 | dailyIntro | 1 | 2.4 s | `DAILY #142` | `VIOLET DEPTHS · SAME RUN FOR EVERYONE` | gold |
 | alert boss / final | 3 | 3.0 s | script title | script sub | #ff6aa8 |
+| alert OT boss retreat (P11) | 3 | 3.0 s | script stalemate (`THE QUEEN ESCAPED`) | `THE SWARM RETURNS` | #ff6aa8 |
 | alert event | 2 | 3.0 s | event title | event sub | #ff5a6e |
 | alert elite | 2 | 2.0 s | elite name tag (several elites: `GUARDIAN x2`) | `FROM THE EAST` | gold |
 | alert lull / debut | 1 | 2.0 s | `FINAL SWARM` / enemy name | `IN 20 SECONDS` / `NEW BUG` | text.primary |

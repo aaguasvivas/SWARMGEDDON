@@ -58,6 +58,7 @@ import {
 import { updateLifetime } from './state/stats.ts'
 import { evaluateFeats } from './state/feats.ts'
 import { migrateSave } from './state/migrate.ts'
+import { recordThreatClear, selectThreat, selectedThreat, unlockedThreat } from './state/threatLadder.ts'
 import { shareRunCard } from './share/shareCard.ts'
 import { flushUpdatePrompt, setupUpdatePrompt } from './pwa/updatePrompt.ts'
 import { CHARACTERS, DEFAULT_CHARACTER_ID, characterById, type CharacterDef } from './content/characters.ts'
@@ -334,6 +335,7 @@ async function boot(): Promise<void> {
     } else {
       if (!isOwned(char.id)) char = characterById(DEFAULT_CHARACTER_ID)
       if (!isOwned(theme.id)) theme = arenaById(DEFAULT_ARENA_ID)
+      threat = selectedThreat(theme.id)
     }
     return {
       mode,
@@ -431,6 +433,7 @@ async function boot(): Promise<void> {
     lastResult = result
     feel.time.reset()
     const lifetime = updateLifetime(result)
+    recordThreatClear(result)
     const gains = recordWorldBest(result)
     const done = evaluateFeats(result, lifetime)
     if (result.mode === 'daily') recordDailyEnd(result)
@@ -657,7 +660,7 @@ async function boot(): Promise<void> {
   }
   winPanel.onExtract = () => endRun('clear')
   /** OVERTIME grants the PRIME core; its reveal resumes the run. */
-  winPanel.onOvertime = () => {
+  function startOvertime(): void {
     winPanel.hide()
     world.startOvertime()
     grantPrimeCore(world)
@@ -682,6 +685,7 @@ async function boot(): Promise<void> {
     feel.time.play(TimePreset.Resume)
   }
   coreReveal.onClose = closeCore
+  winPanel.onOvertime = startOvertime
 
   // --- layout (screen-dependent only; the arena/ichor are fixed-size) ---
   function layout(): void {
@@ -1161,6 +1165,18 @@ async function boot(): Promise<void> {
       setGlow: (v: number) => postFX.setIntensity(v),
       get screen() {
         return screen
+      },
+      get pauseReason() {
+        return pauseReason
+      },
+      /** The win panel's OVERTIME button (harness `ot` flag). */
+      overtime: () => {
+        if (pauseReason === 'win') startOvertime()
+      },
+      /** Unlock THREAT up to `t` in `arenaId` and select it for the next Standard run. */
+      setThreat: (arenaId: string, t: number) => {
+        if (unlockedThreat(arenaId) < t) saveJSON('threat', { ...loadJSON<Record<string, number>>('threat', {}), [arenaId]: t })
+        selectThreat(arenaId, t)
       },
       startRun: (mode: RunMode) => startRun(mode),
       /** The Daily of any UTC day, straight in (no confirm sheet). */
