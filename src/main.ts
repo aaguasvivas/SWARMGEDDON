@@ -13,6 +13,7 @@ import { TextureRegistry } from './render/textures.ts'
 import { IchorLayer } from './render/ichorLayer.ts'
 import { renderEntities } from './render/entityRenderer.ts'
 import { HazardRenderer } from './render/hazardRenderer.ts'
+import { EliteTags } from './render/eliteTags.ts'
 import { PostFX } from './render/postfx.ts'
 import { Vignette } from './render/vignette.ts'
 import { BackdropSystem } from './render/backdrop.ts'
@@ -115,6 +116,8 @@ async function boot(): Promise<void> {
   layers.ichor.addChild(ichor.view)
   const hazardView = new HazardRenderer(texReg)
   layers.ichor.addChild(hazardView.view)
+  const eliteTags = new EliteTags(texReg)
+  layers.ichor.addChild(eliteTags.rings)
 
   const player = new Player()
   const world = new World(arena, player, ichor, layers, texReg)
@@ -122,6 +125,7 @@ async function boot(): Promise<void> {
   const camera = new Camera()
   const numbers = new DamageNumbers()
   layers.overlay.addChild(numbers.view)
+  layers.overlay.addChild(eliteTags.view)
   const camLayers = [layers.world, layers.overlay] as const
   layers.warpHost.addChild(player.view) // above the swarm, inside the warped/bloomed scene
 
@@ -720,6 +724,7 @@ async function boot(): Promise<void> {
       followCamera(fd)
       camera.apply(camLayers, sh.offsetX * shakeMul, sh.offsetY * shakeMul, sh.rotation * shakeMul)
       numbers.update(renderClock * 1000, camera.zoom)
+      eliteTags.update(world, playing, camera.zoom)
       tweens.update(renderClock * 1000)
 
       // Ambient backdrop (motes + atmosphere). AFTER the camera write above, so

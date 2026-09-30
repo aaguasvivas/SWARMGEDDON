@@ -533,6 +533,8 @@ Crit, Giant Slayer, AoE and pickup weapons stay out of the estimate. The evolved
 - 10 per T0 run, on the beat skeleton.
 - Affixes are drawn without replacement at warn time (script stream) and stored as a bitmask (A9).
 - Name tag: if `affixNames + ' ' + displayName` is 18 characters or fewer, it is the title. Otherwise the title is `displayName` and the sub lists the affixes, for example `HASTED · VOLATILE`.
+  - (P7) The tag floats above every live elite (`src/render/eliteTags.ts`, 8 slots): title 13 px, sub 12 px, JetBrains Mono 800 with a 4 px ink stroke, a fixed screen distance above the outline ring. Its color and the ring's are the lowest affix bit's color (A9); an elite with no affix gets a gold title and no ring.
+  - (P7) The elite alert's title is the name tag title when the beat brings one elite, and `GUARDIAN x2` (display name and count) when it brings more; the sub names the first elite's side.
 - `onEliteKilled` drives shards, pods and bonuses. `onBossKilled(stage)` drives cores.
 
 **Events** (`src/systems/events.ts`; table in A8):
@@ -540,6 +542,10 @@ Crit, Giant Slayer, AoE and pickup weapons stay out of the estimate. The evolved
 - **STREAM mode** (`stream = true`) means a locked heading, authored speed, a TTL, and no seek or separation. At TTL, or 40 u outside the arena, the unit despawns with no credit.
 - Emission is spread over `spawnDur` through a preallocated `EventRun` (3 slots).
 - Geometry is relative to the player's sim position, never the view.
+- (P7) Each part of an event (a FINAL SWARM has 3) takes one `EventRun` slot and fixes its geometry when it begins (after its delay). Only cryo slows a stream unit; aura buffs and the 240 u/s ceiling do not apply to it.
+- (P7) S and G are one of the 4 sides (the drawn angle snapped to N, E, S or W), so the alert's direction word is exact. At warn time the side is fitted to the arena with no extra draw: the first of the side, its opposite, then each quarter turn that puts the point `fit` u out along it (the stream or wall distance, or the ring radius) inside the arena. A held event is fitted again when its late alert plays.
+- (P7) Arena edges: a stream origin or wall center that would fall outside the arena moves in along its ray to 24 u inside the wall; wall and ring slots outside the arena are skipped; every other spawn or drop point is clamped 24 u inside.
+- (P7) A held event or elite beat plays its alert its warn lead (3 s, elites 2 s) before its deferred fire time, so a late beat is announced like an on-time one. A held event that the drop rule will discard gets no alert.
 
 **Hazards** (`src/game/hazard.ts`, `src/systems/hazards.ts`, `src/render/hazardRenderer.ts`):
 - The pool holds 48.
@@ -1649,6 +1655,13 @@ node scripts/measure.mjs 390 844 perf ; node scripts/measure.mjs 390 844 perf-fi
   - **A6 FAIL on the default bot:** the seed 9009 PRIME fight took 158.83 s, over the 150 s cap. The build was survival (Vampiric, Regrowth 2, Bulwark 2, Vitality 3, and LIVING ARMOR, which has no effect until P8) with one damage perk, Heavy Rounds 1. So buildScale was about 1.22 (PRIME HP 4876 = 4200 x 1.22^0.75), and the default bot shoots the nearest enemy, often the swarm outside the cage.
   - Every W2 number ran with the inert picks listed in the P8 W2 hand-off (section 10.3). P19 re-measures after P8.
 
+**A3 note (P7).**
+- Beat timing is measured from `Director.firedAt` (the sim time each beat fired, or -1 when a rule dropped or skipped it). `scripts/playtest/analyze.mjs` replays the deferral rules over each run's own cage intervals (held beats at kill + 10 s, then 12 s apart; an event more than 60 s late dropped; a lull inside a cage skipped; bosses at `max(at, last kill + 20)`, mid2 skipped past 570 s) and prints one `A3` line per run.
+- The event window for the saturation share lasts while an event part emits or a stream unit lives, and 15 s after an event beat fires. Ring units are ordinary enemies after that.
+- Measured on the P7 branch, T0, `roam:1001:14`, `smart+focus:1001:14:nova:priority` and `smart+dash:2002:14:nova:priority` in each world (9 runs): 153 of 153 beats on time or where the rules put them (held elites and events after a boss kill, BLINK STORM, HIVE WALL and a lull dropped or skipped by rule). Density on the smart bots: alive at most 293, never over the row's maxAlive, saturated share at most 0.033.
+- The invincible Hive roam run fails the density bound: 627 alive and 467 over row 11's maxAlive during the PRIME fight it cannot finish. Tagging every spawn after 10:30 by source gave 474 boss-brood swarmers and 60 eggs, 81 other spawns and no event units, so the excess is the PRIME kit's brood in a 210 s stalemate fight (the eggClutch cap of 24 brood does not limit mothersCall), not the events. P6b or P19 owns it.
+- The harness bot dodges streams (it sidesteps toward the side with less of the stream, sticky until no stream threatens) and every damaging hazard circle. In an A/B on 5 seeds per world the dodge steered for 5 to 183 steps per run and stream contact damage was near 0 with and without it; a stationary ship takes 8 to 16 HP from one STAMPEDE or SHOAL RUN. Survival differences between the arms come from divergence after the first event, not from the dodge.
+
 **A1 note (P4 review).**
 - "Both phone views" means the P14 normalized camera views: 560 x 996 (portrait) and 996 x 560 (landscape). Measure them with `node scripts/measure.mjs 375 667 opening 560 996` and `node scripts/measure.mjs 375 667 opening 996 560`.
 - Without view arguments, `opening` uses a 1:1 view (375 x 667 world units). That view cannot pass before P14, because `RING_NEAR` stays off screen on the normalized views by design (C27). Measured worst empty view: 16.0 s at 375 x 667 and 15.3 s at 667 x 375.
@@ -1959,7 +1972,7 @@ export const POST_BOSS_LULL_MIN = 0.5, BOSS_MARKER_LEAD = 1.5, BOSS_MARKER_R = 9
 | 10:00 | EVENT 4: FINAL SWARM | per event |
 | 10:30 | BOSS final: PRIME (warn 10:27) | 1 |
 
-Event draw counts: 1 per event for S or G. MORTAR BARRAGE draws 36 extra. BLINK STORM and CHARGER VOLLEY draw 1 start angle each. A FINAL SWARM draws per component.
+Event draw counts: 1 per event for S or G. MORTAR BARRAGE draws 36 extra. BLINK STORM and CHARGER VOLLEY draw 1 start angle each. A FINAL SWARM draws its S once (every component's direction derives from it) plus the start angle of its BLINK STORM or CHARGER VOLLEY: Hive 1, Depths 2, Wastes 2. The T0 Wastes script takes 64 draw slots in all.
 
 ### A7.2 World rows
 
@@ -2042,14 +2055,16 @@ Debut alerts (`NEW BUG`) use `EnemyDef.displayName`: BROODMOTHER, ABYSSAL MAW, D
 
 ```ts
 pulseT, topupAcc, beatCursor, warnCursor, lullUntil, lullMin
-beatAng = new Float32Array(64); beatAffix = new Uint8Array(192); scratch = new Float32Array(64)
+beatAng = new Float32Array(96); beatAffix = new Uint8Array(96); scratch = new Float32Array(64)
+firedAt = new Float32Array(32)   // P7: fire time per beat (NaN not yet, -1 dropped or skipped); A3 reads it
 cage = { active, x, y, r, formingFrom }; bossesAlive, fightIndex, fightStart, nextFrenzyAt, frenzy
-lastBossKillAt, bossStageNext; deferred = new Int16Array(12); deferredAt = new Float32Array(12)
+lastBossKillAt, bossStageNext; deferred = new Int16Array(12); deferredAt = new Float32Array(12); deferWarned = new Uint8Array(12)
 events = [EventRun x3]; runState, clearTime, purgeT, purgeX, purgeY, otCycle, otStart
 broodCount, bossesKilled, elitesKilled
 ```
 
 - `deferred` holds one slot per event and elite beat of the script (`DEFER_SLOTS = 12`; T0 scripts have 10). `resolveScript` throws if a script has more, so a held beat never overflows the queue and never fires inside the cage.
+- (P7) `beatAng` holds 96 draws: the T0 Wastes script takes 64 (MORTAR BARRAGE alone takes 37), and P11's extra elites and mirrors need room. `resolveScript` throws past 96 draws or 32 beats.
 
 ## A8. Swarm events (T0)
 
@@ -2070,6 +2085,8 @@ broodCount, bossesKilled, elitesKilled
 
 - Direction words: `FROM THE NORTH/EAST/SOUTH/WEST` and `GAP TO THE ...`. World up is screen up.
 - The S or G drawn at warn time is shown in the 3 s alert.
+- (P7) Emission (`spawnDur`): STAMPEDE and SHOAL RUN over 2.0 s (one unit every 50 or 42 ms); walls, rings, BLINK STORM and CHARGER VOLLEY at once; MORTAR BARRAGE drop k at k/3 s. Lateral offsets (band) are spawn-stream draws; the SHOAL RUN wobble phase is `0.7i` with no draw. A wall's units sit `spacing` apart centered on its center (HIVE WALL 21 gaps = 924 u; CINDER WALL 17 gaps = 782 u). A ring's empty slots are centered on G (4 empty slots in the Depths FINAL SWARM). Every third mortar drop (k = 2, 5, 8 ...) leaves the magma pool.
+- (P7) FINAL SWARM directions: the Depths RIPTIDE gap faces opposite S (as in Hive), and SHOAL RUN comes from S. Body counts at T0: Hive 113, Depths 80 (plus 10 BLINK STORM psychics), Wastes 46.
 
 ## A9. Elite affixes
 
@@ -2082,6 +2099,8 @@ broodCount, bossesKilled, elitesKilled
 | SHIELDED | 16 | front armor 0.6; facing turns at most 2.4 rad/s | Depths, Wastes |
 
 Elite XP (unscaled): guardian 20, abyssalWarden 26, duneLeviathan 30. Outline color by affix: MOLTEN #ff7a3a, HASTED #57c8ff, BROOD #4dffa0, VOLATILE #ffe066, SHIELDED #b886ff.
+
+P7 rules (`src/content/affixes.ts`): the outline is a ring on the floor at the body radius + 8 u in the lowest set bit's color. MOLTEN's first pool drops 1.0 s after spawn, with the arena's hazard tint (acid in Hive, magma in Wastes). HASTED multiplies the spawn speed (the 240 u/s ceiling still applies) and every restart of the fire and teleport timers by 0.75. BROOD's 4 fodder stand at 90 degree steps on r 30 from one spawn-stream draw; the half-HP burst and the death burst are separate, so a kill from above half HP spawns 8. VOLATILE's blast uses the flat authored damage (threat scaling only). SHIELDED sets front armor to max(def armor, 0.6), and the facing (not the path) turns at most 2.4 rad/s.
 
 ## A10. Bosses
 
@@ -2298,7 +2317,7 @@ Callout lane: center y = `max(T + plateBottom + 56, 0.30H)` in portrait and `0.3
 | dailyIntro | 1 | 2.4 s | `DAILY #142` | `VIOLET DEPTHS · SAME RUN FOR EVERYONE` | gold |
 | alert boss / final | 3 | 3.0 s | script title | script sub | #ff6aa8 |
 | alert event | 2 | 3.0 s | event title | event sub | #ff5a6e |
-| alert elite | 2 | 2.0 s | elite name tag | `FROM THE EAST` | gold |
+| alert elite | 2 | 2.0 s | elite name tag (several elites: `GUARDIAN x2`) | `FROM THE EAST` | gold |
 | alert lull / debut | 1 | 2.0 s | `FINAL SWARM` / enemy name | `IN 20 SECONDS` / `NEW BUG` | text.primary |
 | bossPhase | 2 | 1.0 s | `QUEEN PRIME ENRAGES` | | #ff6aa8 |
 | frenzy | 2 | 1.2 s | `FRENZY` | `FINISH IT` | #ff5a6e |

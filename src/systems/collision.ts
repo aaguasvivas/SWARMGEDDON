@@ -1,5 +1,6 @@
-import { ARC_ROUNDS, BITE, BOSS_SLOW_CAP, CLOSE_CALL, GRACE, HEALTH_DROP_CHANCE, HEALTH_HEAL, HEALTH_HEAL_ELITE } from '../config.ts'
+import { ARC_ROUNDS, BITE, BOSS_SLOW_CAP, CLOSE_CALL, GRACE, HEALTH_DROP_CHANCE, HEALTH_HEAL, HEALTH_HEAL_ELITE, MAX_ENEMIES, SPAWN_ROOM } from '../config.ts'
 import { distSq } from '../core/vec.ts'
+import { AF_BROOD, AF_VOLATILE, BROOD, VOLATILE } from '../content/affixes.ts'
 import { PICKUP_WEAPON_IDS } from '../content/weapons.ts'
 import {
   spawnChainArc,
@@ -15,7 +16,9 @@ import { hurtPlayer } from './damage.ts'
 import { closeCall, closeCallArmed } from './dash.ts'
 import { dropGem, dropHealth, spawnWeaponDrop } from './pickups.ts'
 import { directorBossKilled } from './director.ts'
+import { spawnHazard } from './hazards.ts'
 import { spawnEnemy } from './spawn.ts'
+import { HZ_CIRCLE } from '../game/hazard.ts'
 import { KillSource, scoreKill } from '../game/scoring.ts'
 import type { Enemy } from '../game/enemy.ts'
 import type { Projectile } from '../game/projectile.ts'
@@ -185,11 +188,11 @@ function applyHit(world: World, e: Enemy, p: Projectile): boolean {
   const crit = m.critChance > 0 && world.rngs.combat.float() < m.critChance
   if (crit) dmg *= m.critMul
 
-  // Beetle-style frontal armor.
-  if (e.def.frontArmor) {
+  // Frontal armor (beetles, SHIELDED elites).
+  if (e.armor > 0) {
     const sp = Math.hypot(p.vx, p.vy) || 1
     const dot = (p.vx / sp) * Math.cos(e.facing) + (p.vy / sp) * Math.sin(e.facing)
-    if (dot < -0.25) dmg *= 1 - e.def.frontArmor
+    if (dot < -0.25) dmg *= 1 - e.armor
   }
 
   dmg = vsTarget(world, e, dmg)
@@ -231,7 +234,27 @@ function dealDamage(world: World, e: Enemy, dmg: number): void {
   if (!e.alive) return
   e.hp -= dmg
   e.flash = 0.07
+  if ((e.affix & AF_BROOD) !== 0 && !e.halfBurst && e.hp <= e.maxHp * BROOD.atHpFrac) {
+    e.halfBurst = true
+    broodBurst(world, e)
+  }
   if (e.hp <= 0) killEnemy(world, e)
+}
+
+/** BROOD: world fodder around the elite, one spawn draw for the ring's turn. */
+function broodBurst(world: World, e: Enemy): void {
+  if (world.enemies.size >= MAX_ENEMIES - SPAWN_ROOM) return
+  const a0 = world.rngs.spawn.angle()
+  for (let i = 0; i < BROOD.count; i++) {
+    const a = a0 + (i * Math.PI * 2) / BROOD.count
+    spawnEnemy(world, world.script.fodderId, e.x + Math.cos(a) * BROOD.r, e.y + Math.sin(a) * BROOD.r)
+  }
+}
+
+/** Affix effects of an elite's death: BROOD bursts again, VOLATILE leaves its blast. */
+function affixDeath(world: World, e: Enemy): void {
+  if ((e.affix & AF_BROOD) !== 0) broodBurst(world, e)
+  if ((e.affix & AF_VOLATILE) !== 0) spawnHazard(world, HZ_CIRCLE, e.x, e.y, VOLATILE.r, VOLATILE.tele, 0, VOLATILE.dmg)
 }
 
 /** Thorns has no shot, so a thorns kill must not carry the last bullet's
@@ -342,6 +365,8 @@ function killEnemy(world: World, e: Enemy): void {
       if (roll < chance) dropHealth(world, e.x, e.y, HEALTH_HEAL)
     }
   }
+
+  if (e.affix !== 0) affixDeath(world, e)
 
   if (def.behavior === 'splitter' && def.splitInto) {
     const count = def.splitCount ?? 2

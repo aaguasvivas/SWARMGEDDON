@@ -100,6 +100,16 @@ export function spawnEnemy(world: World, defId: string, x: number, y: number): E
   e.phaseDir = 0
   e.dashHit = false
   e.buffedMul = 1
+  e.armor = def.frontArmor ?? 0
+  e.affix = 0
+  e.affixT = 0
+  e.halfBurst = false
+  e.eventUnit = false
+  e.stream = false
+  e.ttl = 0
+  e.wobAmp = 0
+  e.wobFreq = 0
+  e.wobPhase = 0
   // Faction skin: the arena's paired brood hue-shifts every enemy's palette.
   // Pure presentation (no RNG, cached per color); the sim never reads tints.
   e.tint = world.broodTint(def.tint)

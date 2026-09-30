@@ -4,7 +4,8 @@
 //   mode: turret (invincible, stationary) | roam (invincible, kite+collect)
 //         crude (normal HP, flee centroid) | smart (normal HP, kite+dodge+collect)
 //         append +dash (e.g. smart+dash) for the dash policy, +focus to shoot
-//         the boss during a fight instead of the nearest enemy
+//         the boss during a fight instead of the nearest enemy, +nostream to
+//         switch off the stream dodge (an A/B of the dodge on one seed)
 import puppeteer from '/Users/Adelson/Desktop/personal/SWARMGEDDON/node_modules/puppeteer-core/lib/esm/puppeteer/puppeteer-core.js'
 import { acquireChromeLock } from '../lib/chromeLock.mjs'
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
@@ -25,6 +26,7 @@ const configs = process.argv.slice(3).map((s) => {
     mode,
     dash: opts.includes('dash'),
     focus: opts.includes('focus'),
+    noStreamDodge: opts.includes('nostream'),
     seed: parseInt(seed),
     minutes: min ? parseFloat(min) : 14,
     char: char || 'nova',
@@ -65,9 +67,9 @@ async function launch() {
 await acquireChromeLock('playtest')
 const { browser, page } = await launch()
 await page.evaluate(readFileSync(join(HERE, 'harness.js'), 'utf8'))
-for (const { mode, dash, focus, seed, minutes, char, perkPolicy, threat, ot } of configs) {
+for (const { mode, dash, focus, noStreamDodge, seed, minutes, char, perkPolicy, threat, ot } of configs) {
   const invincible = mode === 'turret' || mode === 'roam'
-  const init = await page.evaluate((cfg) => window.__PT_init(cfg), { arena, mode, dash, focus, seed, char, invincible, perkPolicy, threat, ot })
+  const init = await page.evaluate((cfg) => window.__PT_init(cfg), { arena, mode, dash, focus, noStreamDodge, seed, char, invincible, perkPolicy, threat, ot })
   const t0 = Date.now()
   const end = minutes * 60
   for (let t = 30; t <= end + 1e-6; t += 30) {
@@ -81,8 +83,8 @@ for (const { mode, dash, focus, seed, minutes, char, perkPolicy, threat, ot } of
   const fin = await page.evaluate(() => window.__PT_final())
   fin.init = init
   fin.wallSeconds = (Date.now() - t0) / 1000
-  const file = join(OUT, `${arena}_${mode}${dash ? '_dash' : ''}${focus ? '_focus' : ''}_${seed}${char !== 'nova' ? '_' + char : ''}${perkPolicy !== 'first' ? '_' + perkPolicy : ''}${threat ? '_t' + threat : ''}${ot ? '_ot' : ''}.json`)
+  const file = join(OUT, `${arena}_${mode}${dash ? '_dash' : ''}${focus ? '_focus' : ''}${noStreamDodge ? '_nostream' : ''}_${seed}${char !== 'nova' ? '_' + char : ''}${perkPolicy !== 'first' ? '_' + perkPolicy : ''}${threat ? '_t' + threat : ''}${ot ? '_ot' : ''}.json`)
   writeFileSync(file, JSON.stringify(fin, null, 1))
-  console.log(JSON.stringify({ file, arena, mode, dash, focus, seed, perkPolicy, endTime: fin.endTime, dead: fin.dead, won: fin.won, stalemate: fin.stalemate, firstDraftAt: fin.firstDraftAt, firstFusionAt: fin.firstFusionAt, xpCollectFrac: fin.xpCollectFrac, xpCollectFrac30: fin.xpCollectFrac30, fromHalfHp: fin.death?.fromHalfHp ?? null, level: fin.level, kills: fin.kills, dashes: fin.dashes, closeCalls: fin.closeCalls, maxEnemies: fin.maxEnemies, wall: fin.wallSeconds }))
+  console.log(JSON.stringify({ file, arena, mode, dash, focus, seed, perkPolicy, endTime: fin.endTime, dead: fin.dead, won: fin.won, stalemate: fin.stalemate, firstDraftAt: fin.firstDraftAt, firstFusionAt: fin.firstFusionAt, xpCollectFrac: fin.xpCollectFrac, xpCollectFrac30: fin.xpCollectFrac30, fromHalfHp: fin.death?.fromHalfHp ?? null, level: fin.level, kills: fin.kills, dashes: fin.dashes, closeCalls: fin.closeCalls, maxEnemies: fin.maxEnemies, streamDmg: fin.streamDmg, dodgeSteps: fin.dodgeSteps, wall: fin.wallSeconds }))
 }
 await browser.close()

@@ -1,3 +1,4 @@
+import type { AffixId } from './affixes.ts'
 import { ENEMIES } from './enemies.ts'
 
 /**
@@ -12,10 +13,84 @@ export type SwarmEventId =
   | 'cinderWall' | 'chargerVolley' | 'mortarBarrage'
   | 'finalSwarm'
 
-export type AffixId = 'molten' | 'hasted' | 'brood' | 'volatile' | 'shielded'
+/**
+ * One part of a swarm event (A8). Geometry is relative to the player's sim
+ * position when the part starts: `turn` rotates it from the event's drawn S
+ * (or G), `delay` is its start after the beat (FINAL SWARM components).
+ *
+ * - stream: `count` units emitted over `dur` from `dist` toward the side, each
+ *   at a lateral offset in +-`band`, all on one heading locked toward the
+ *   player; `wobble` is the lateral amplitude, `wobbleFreq` its rate and
+ *   `wobbleStep` the phase step per unit.
+ * - wall: a line of `count` stream units `spacing` apart, `dist` toward the
+ *   side, perpendicular to it, heading at the player.
+ * - ring: `count` of `slots` evenly spaced slots on radius `r`, the empty
+ *   slots centered on the gap; normal AI.
+ * - blink: `count` marker hazards on radius `r` (from one drawn start angle);
+ *   a unit spawns at each when its telegraph ends.
+ * - volley: `count` chargers on radius `r` (one drawn start angle), spawned in
+ *   windup aimed at the player.
+ * - mortar: `count` hazard circles, `perSec` per second, each on the player's
+ *   position plus a drawn offset (angle, radius 0 to `spread`); every
+ *   `magmaEvery`th leaves a magma pool.
+ */
+export type EventPart =
+  | { kind: 'stream'; delay: number; turn: number; unit: string; count: number; speed: number; ttl: number; dist: number; band: number; dur: number; wobble: number; wobbleFreq: number; wobbleStep: number }
+  | { kind: 'wall'; delay: number; turn: number; unit: string; count: number; speed: number; ttl: number; dist: number; spacing: number }
+  | { kind: 'ring'; delay: number; turn: number; unit: string; slots: number; count: number; r: number; hpMul: number }
+  | { kind: 'blink'; delay: number; turn: number; unit: string; count: number; r: number; markerR: number; tele: number }
+  | { kind: 'volley'; delay: number; turn: number; unit: string; count: number; r: number; windup: number }
+  | { kind: 'mortar'; delay: number; turn: number; count: number; r: number; dmg: number; tele: number; perSec: number; spread: number; magmaEvery: number }
 
-/** A9 bits: elite affix picks are stored as a mask of these. */
-export const AFFIX_BIT: Readonly<Record<AffixId, number>> = { molten: 1, hasted: 2, brood: 4, volatile: 8, shielded: 16 }
+export interface SwarmEventDef {
+  title: string
+  /** The alert sub: 'from' names the side S, 'gap' names the gap G, 'none' shows `sub`. */
+  dir: 'from' | 'gap' | 'none'
+  sub: string
+  /** At warn time S (or G) turns to an open side, so that the point this far
+   *  along it from the player lies inside the arena (0 = any side). */
+  fit: number
+  parts: readonly EventPart[]
+}
+
+const STAMPEDE = { kind: 'stream', delay: 0, turn: 0, unit: 'swarmer', count: 40, speed: 200, ttl: 9, dist: 720, band: 110, dur: 2.0, wobble: 0, wobbleFreq: 0, wobbleStep: 0 } as const
+const BROOD_RING = { kind: 'ring', delay: 0, turn: 0, unit: 'swarmer', slots: 36, count: 33, r: 460, hpMul: 1.5 } as const
+const HIVE_WALL = { kind: 'wall', delay: 0, turn: 0, unit: 'beetle', count: 22, speed: 64, ttl: 16, dist: 640, spacing: 44 } as const
+const RIPTIDE = { kind: 'ring', delay: 0, turn: 0, unit: 'wraith', slots: 30, count: 27, r: 480, hpMul: 1.3 } as const
+const SHOAL_RUN = { kind: 'stream', delay: 0, turn: 0, unit: 'flyer', count: 48, speed: 230, ttl: 8, dist: 760, band: 100, dur: 2.0, wobble: 60, wobbleFreq: 5.2, wobbleStep: 0.7 } as const
+const BLINK_STORM = { kind: 'blink', delay: 0, turn: 0, unit: 'psychic', count: 10, r: 280, markerR: 34, tele: 1.0 } as const
+const CINDER_WALL = { kind: 'wall', delay: 0, turn: 0, unit: 'beetle', count: 18, speed: 60, ttl: 16, dist: 600, spacing: 46 } as const
+const CHARGER_VOLLEY = { kind: 'volley', delay: 0, turn: 0, unit: 'cinderCharger', count: 10, r: 380, windup: 0.9 } as const
+const MORTAR_BARRAGE = { kind: 'mortar', delay: 0, turn: 0, count: 18, r: 70, dmg: 22, tele: 1.0, perSec: 3, spread: 160, magmaEvery: 3 } as const
+
+/** A8, the nine world events. Each world's FINAL SWARM is its WorldScript.finalSwarm. */
+export const SWARM_EVENTS: Readonly<Record<Exclude<SwarmEventId, 'finalSwarm'>, SwarmEventDef>> = {
+  stampede: { title: 'STAMPEDE', dir: 'from', sub: '', fit: STAMPEDE.dist, parts: [STAMPEDE] },
+  broodRing: { title: 'BROOD RING', dir: 'gap', sub: '', fit: BROOD_RING.r, parts: [BROOD_RING] },
+  hiveWall: { title: 'HIVE WALL', dir: 'from', sub: '', fit: HIVE_WALL.dist, parts: [HIVE_WALL] },
+  riptide: { title: 'RIPTIDE', dir: 'gap', sub: '', fit: RIPTIDE.r, parts: [RIPTIDE] },
+  shoalRun: { title: 'SHOAL RUN', dir: 'from', sub: '', fit: SHOAL_RUN.dist, parts: [SHOAL_RUN] },
+  blinkStorm: { title: 'BLINK STORM', dir: 'none', sub: 'ALL AROUND YOU', fit: 0, parts: [BLINK_STORM] },
+  cinderWall: { title: 'CINDER WALL', dir: 'from', sub: '', fit: CINDER_WALL.dist, parts: [CINDER_WALL] },
+  chargerVolley: { title: 'CHARGER VOLLEY', dir: 'none', sub: 'SIDESTEP THE RAMS', fit: 0, parts: [CHARGER_VOLLEY] },
+  mortarBarrage: { title: 'MORTAR BARRAGE', dir: 'none', sub: 'KEEP MOVING', fit: 0, parts: [MORTAR_BARRAGE] },
+}
+
+const HALF_TURN = Math.PI
+const QUARTER_TURN = Math.PI / 2
+
+/** The event's own draw (S or G) plus each part's extra draws (A7.1). */
+export function eventDraws(def: SwarmEventDef): number {
+  let n = 1
+  for (let i = 0; i < def.parts.length; i++) n += partDraws(def.parts[i]!)
+  return n
+}
+
+/** Script draws a part takes after the event's S: BLINK STORM and CHARGER
+ *  VOLLEY one start angle, MORTAR BARRAGE an angle and a radius per drop. */
+export function partDraws(p: EventPart): number {
+  return p.kind === 'blink' || p.kind === 'volley' ? 1 : p.kind === 'mortar' ? 2 * p.count : 0
+}
 
 export interface MinuteRow {
   /** [enemy id, weight] pairs for pulse and top-up picks. */
@@ -56,6 +131,8 @@ export interface WorldScript {
   eliteId: string
   affixPool: readonly AffixId[]
   fodderId: string
+  /** The world's FINAL SWARM (A8): its parts are the world's own events. */
+  finalSwarm: SwarmEventDef
   boss: { midId: string; primeId: string; worldMul: number }
   text: { mid1: AlertText; mid2: AlertText; final: AlertText; slain: string; win: string; stalemate: string }
 }
@@ -69,8 +146,10 @@ export interface ResolvedScript extends WorldScript {
   markers: { at: Float32Array; kind: Uint8Array; label: readonly string[] }
 }
 
-/** Director.beatAng / beatAffix capacity. */
-export const BEAT_DRAW_SLOTS = 64
+/** Director.beatAng / beatAffix capacity (the T0 Wastes script takes 64). */
+export const BEAT_DRAW_SLOTS = 96
+/** Director.firedAt capacity: beats per script. */
+export const MAX_BEATS = 32
 /** Director.deferred capacity: every event and elite beat of a script fits. */
 export const DEFER_SLOTS = 12
 
@@ -169,6 +248,10 @@ export const WORLD_SCRIPTS: Readonly<Record<string, WorldScript>> = {
     eliteId: 'guardian',
     affixPool: ['molten', 'hasted', 'brood', 'volatile'],
     fodderId: 'swarmer',
+    finalSwarm: {
+      title: 'FINAL SWARM', dir: 'none', sub: 'HOLD ON', fit: STAMPEDE.dist,
+      parts: [STAMPEDE, { ...STAMPEDE, delay: 2.5, turn: QUARTER_TURN }, { ...BROOD_RING, delay: 6, turn: HALF_TURN }],
+    },
     boss: { midId: 'queen', primeId: 'queenPrime', worldMul: 1.0 },
     text: {
       mid1: { title: 'THE QUEEN', sub: 'AWAKENS' },
@@ -199,6 +282,10 @@ export const WORLD_SCRIPTS: Readonly<Record<string, WorldScript>> = {
     eliteId: 'abyssalWarden',
     affixPool: ['hasted', 'volatile', 'shielded', 'brood'],
     fodderId: 'biter',
+    finalSwarm: {
+      title: 'FINAL SWARM', dir: 'none', sub: 'HOLD ON', fit: SHOAL_RUN.dist,
+      parts: [{ ...RIPTIDE, slots: 36, count: 32, turn: HALF_TURN }, { ...SHOAL_RUN, delay: 3 }, { ...BLINK_STORM, delay: 8 }],
+    },
     boss: { midId: 'voidMatron', primeId: 'voidMatronPrime', worldMul: 0.9 },
     text: {
       mid1: { title: 'THE VOID MATRON', sub: 'STIRS' },
@@ -229,6 +316,10 @@ export const WORLD_SCRIPTS: Readonly<Record<string, WorldScript>> = {
     eliteId: 'duneLeviathan',
     affixPool: ['molten', 'shielded', 'volatile', 'brood'],
     fodderId: 'biter',
+    finalSwarm: {
+      title: 'FINAL SWARM', dir: 'none', sub: 'HOLD ON', fit: CINDER_WALL.dist,
+      parts: [{ ...CINDER_WALL, ttl: 12 }, { ...CINDER_WALL, ttl: 12, turn: HALF_TURN }, { ...CHARGER_VOLLEY, delay: 6 }],
+    },
     boss: { midId: 'emberTyrant', primeId: 'emberTyrantPrime', worldMul: 1.15 },
     text: {
       mid1: { title: 'THE EMBER TYRANT', sub: 'RISES' },
@@ -241,16 +332,22 @@ export const WORLD_SCRIPTS: Readonly<Record<string, WorldScript>> = {
   },
 }
 
+/** The event a beat fires: one of the nine, or the world's FINAL SWARM. */
+export function eventDef(s: WorldScript, id: SwarmEventId): SwarmEventDef {
+  return id === 'finalSwarm' ? s.finalSwarm : SWARM_EVENTS[id]
+}
+
 /** Script-stream slots a beat fills at warn time: one per pack unit on a full
- *  circle (radius), one pack center angle otherwise, one side per elite, one
- *  S or G per event, one spawn angle per boss. */
-function drawSlots(b: Beat): number {
+ *  circle (radius), one pack center angle otherwise, one side per elite, the
+ *  event's draws (eventDraws), one spawn angle per boss. */
+function drawSlots(s: WorldScript, b: Beat): number {
   switch (b.kind) {
     case 'pack':
       return b.arc >= 360 ? b.count : 1
     case 'elite':
       return b.count
     case 'event':
+      return eventDraws(eventDef(s, b.id))
     case 'boss':
       return 1
     case 'lull':
@@ -271,7 +368,7 @@ export function resolveScript(arenaId: string): ResolvedScript {
   for (let i = 0; i < s.beats.length; i++) {
     const b = s.beats[i]!
     drawOff[i] = off
-    off += drawSlots(b)
+    off += drawSlots(s, b)
     if (b.kind === 'event' || b.kind === 'elite') held++
     if (b.kind === 'event') {
       at.push(b.at)
@@ -287,6 +384,7 @@ export function resolveScript(arenaId: string): ResolvedScript {
       label.push(s.text[b.stage].title)
     }
   }
+  if (s.beats.length > MAX_BEATS) throw new Error(`run script '${arenaId}' has ${s.beats.length} beats (max ${MAX_BEATS})`)
   if (off > BEAT_DRAW_SLOTS) throw new Error(`run script '${arenaId}' needs ${off} draw slots (max ${BEAT_DRAW_SLOTS})`)
   if (held > DEFER_SLOTS) throw new Error(`run script '${arenaId}' has ${held} event and elite beats (max ${DEFER_SLOTS})`)
   return { ...s, drawOff, markers: { at: Float32Array.from(at), kind: Uint8Array.from(kind), label } }

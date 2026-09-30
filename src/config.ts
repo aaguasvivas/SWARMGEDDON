@@ -244,3 +244,12 @@ export const WIN_PANEL_DELAY = 2.0
 export const TIER_COLOR: readonly number[] = [0x7da99c, 0x7da99c, 0x7dffd6, 0x57c8ff, 0xb886ff, 0xffe066, 0xffb066, 0xff6a6a, 0xff6cf0]
 /** A run shorter than this adds seconds, kills and damage to the lifetime stats, but no run. */
 export const STATS_MIN_RUN_S = 10
+
+// P7: swarm events and affixes (docs/NEXT-LEVEL.md 4.7, A8, A9)
+/** Concurrent event parts in emission (a FINAL SWARM fills all three). */
+export const EVENT_SLOTS = 3
+/** A stream unit this far outside the arena despawns with no credit. */
+export const STREAM_EXIT_PAD = 40
+/** Events and brood ignore maxAlive; they spawn only while the field is under
+ *  MAX_ENEMIES minus this. */
+export const SPAWN_ROOM = 20
