@@ -590,6 +590,8 @@ Constants in A6. Rules:
 | EMBER | 85 HP, 305 speed, Scorcher | AFTERBURNER: Two dash charges. Every dash reloads her gun and boosts damage. | family mobility; dashCharges 2; each dash sets `fireCooldown = 0` and grants x1.3 damage for 1.5 s |
 | VESPER | 120 HP, 265 speed, Stiletto | REAPER: No medkits. Kills heal her. Elites and bosses make her bigger. | family survival; medkit rolls still happen but drops are skipped; kill heal 1 HP with a cap of 8 HP/s; elite kill +8 max HP; boss kill +25 max HP (heals the same) |
 
+Resolved in P9 (`PilotRules` in `src/content/characters.ts`): the v1 passives (NOVA +35% pickup range, EMBER +15% damage, VESPER +1 HP per kill) are gone. The rule sets the base values perks build on: EMBER's 2 charges before Phase Step, VESPER's 8 HP/s kill-heal cap before Vampiric. NOVA's pod hold of 0 goes through the one hold expression, so Quartermaster cannot make it negative; her pods inside the capture radius (125 x magnetMul) are captured and home in like gems. Her salvage counts every pickup magazine that runs dry (not one replaced by another pod) and multiplies the base weapon, the evolved one after an evolution. EMBER's x1.3 scales the hit and the weapon's own explosion. VESPER's growth is added after hpMul (Glass Cannon does not shrink it) and survives every perk recompute. The main menu shows the rule name and the sentences of its copy that fit one 12 px line at 375 px; P17's pilot card shows the whole rule.
+
 ---
 
 ## 5. Score and multiplier (sim)
@@ -1516,6 +1518,15 @@ Run each phase's acceptance plus this standard block:
   - VESPER sees no medkit in 20 runs.
   - One evolution in a run completes EVOLVED (#37) and adds 1 to `stats.evolutions`.
 - W3 hand-off: `buildRunResult` sets `evolutions: []` (`src/state/runResult.ts`), and feat #37 EVOLVED (`r.evolutions.length`) and `stats.evolutions` read that list. P9 records each evolution when the player takes it, in a `World` list of evolved weapon ids reset in `beginRun` (the P9 field block), and `buildRunResult` fills `RunResult.evolutions` from it. Without this, evolutions ship but never count: `paint:ultraviolet` stays locked and the lifetime evolutions stat stays 0.
+- Measured on the P9 branch (`node scripts/probe-p9.mjs`, 20 checks, and the harness, which now answers a core reveal through `S.takeCore` and logs bonus, shard, core and medkit drops):
+  - Cores: 1,000 mid1 rolls on one loot stream split 58.2 / 36.7 / 5.1%, and the first roll of 1,000 seeds 59.1 / 36.0 / 4.9% (mid2 and overtime within 2% of their rows too).
+  - EVOLVED: RAIL SPIKE with Deadeye 2 at a core evolves to SKEWER; `RunResult.evolutions` is `['skewer']`, feat #37 completes and `stats.evolutions` goes from 0 to 1.
+  - Shards: 265 shards over 72 harness runs, the closest two 60.66 s apart.
+  - Bonuses, smart bot, NOVA priority, seeds 1001 x 1 to 10 per world: 2.02 per minute after 2:00 over 177 minutes (Hive 1.95, Depths 2.22, Wastes 1.87). Per run 1.10 to 2.77; the one run under 1.5 died at 3:49 (2 drops in 1.8 minutes). No type twice in a row in 357 drops. Type shares: OVERDRIVE 162, FIREBLAST 156, SHIELD 139, FREEZE 138, NUKE 136, VACUUM 102.
+  - VESPER: 0 medkits in 21 runs (20 Hive smart runs of 5:31 to 12:52, 1 Wastes random run); NOVA on the same seeds: 14 to 250 per run.
+  - A18 evolve: 3 of the 4 `nova:evolve` Hive runs that reached mid2 evolved (41 offers over all runs, 41 taken).
+  - A18 XP, roam bot, seeds 777, 1001, 2002: XP collected by 30 s before the end 0.90 to 1.00 in all 9 runs (Hive 0.964 to 1.0, Depths 0.901 to 1.0, Wastes 0.921 to 1.0). The whole-run share is 0.951 to 0.988 in Hive (P11 lane on the W3 base, 3 Hive roam runs: 0.918 to 0.963) but 0.779 to 0.918 in Depths and 0.800 to 0.946 in Wastes: those 6 runs end in a win 2 s after the PRIME kill, so the PRIME fight's gems are never collected. At 10:00 Depths seed 1001 stands at 0.892. NOVA lost her v1 +35% pickup range (section 4.10), which VACUUM does not fully replace off Hive; P19 owns the margin.
+  - The evolutions raise the kill rate: Hive seed 1001 (smart, priority) evolved ION SPEAR at 4:56, had 4,148 kills at 6:30 and 9,804 when it died at 9:06. In the P11 lane (the W3 base plus P11, T0, no cores) the same seed had 2,969 kills at 6:30 and 5,967 when it died at 9:06. P19 retunes with evolutions live.
 
 **P10: Score, RunResult v2, stats** (about 700 lines)
 - Files:
@@ -1978,6 +1989,13 @@ export const CORES = {
 | CORE SHARD | 16, cyan #57e0ff | elite kill, at most 1 per 60 s | +1 level to a random owned non-maxed perk; toast `+1 ADRENALINE (LV 3)` |
 | HIVE CORE | 26, gold #ffc24a | every boss kill | 1, 3 or 5 levels, +1 reroll, +1 banish, evolution choice; pause and reveal |
 
+Resolved in P9 (`src/systems/cores.ts`, `src/ui/coreReveal.ts`):
+- **Shard cooldown.** A shard sets `eliteCoreReadyAt = time + shardCooldown`, so two shards are always at least 60 s apart (`+= 60` from 0 would let a late elite and the next one drop close together). A shard needs a free core slot; with none, nothing drops and the cooldown does not start. Shards and Hive Cores share the 4 core slots of the pickup pool.
+- **Loot draws.** A shard draws its perk (none when every owned perk is maxed: SHARPEN). A Hive Core draws its row (1, 3 or 5) and then one perk per level, at contact, counting the levels already allotted; a level with no owned perk left below its max becomes SHARPEN with no draw. The levels apply when the reveal closes, so the choice never moves a stream.
+- **Rows.** mid1 and mid2 use their rows; every boss after mid2 uses the overtime row. The PRIME drops no core at its corpse: its core (5 levels, no draw for the row) comes with OVERTIME, from the win panel's OVERTIME button.
+- **Evolution offer.** Any Hive Core, the PRIME core included, offers the evolution while the held pickup weapon has an evolution and its pair has 2+ stacks, except when that evolution is already the base weapon (a new Ion Lance pod after ION SPEAR). EVOLVE replaces the levels; +1 reroll and +1 banish come with either choice (caps 5 and 3). `World.evolutions` records each evolution taken, and `RunResult.evolutions` is that list.
+- **Pause.** The hand-off order is death, stalemate, win, core reveal, draft, and the win panel also waits for a pending core. A second core touched during a reveal waits on the field. Without a choice the reveal closes itself after revealSec and a tap skips it after skipAfterSec; with a choice it waits for EVOLVE or TAKE N LEVELS (keys 1 and 2). Closing it gives the 0.75 s draft grace.
+
 ### A5.3 Bonuses
 
 ```ts
@@ -1992,6 +2010,14 @@ export const BONUS = { perXpChance: 0.0015, pityAfter: 40, minGap: 8, maxOnField
 | shield | SHIELD | 16 | 6.0 s | #4dffa0 | Full damage immunity. It cannot trigger a Close Call. |
 | fireblast | FIREBLAST | 20 | instant | #ff9a3c | 24 radial shots of the current weapon at x1.5 damage, pierce +3, no ammo. |
 | vacuum | VACUUM | 14 | instant | #b886ff | Captures every gem and medkit. Eligible only with 25+ gems on the field. |
+
+Resolved in P9 (`src/systems/bonuses.ts`, constants `BONUS` and `BONUS_FX` in `src/config.ts`):
+- **Drop order.** Capacity and timing gate before any draw: at most 2 bonuses on the field, then (except the first elite kill) the 8 s gap from the last drop, then pity (no draw) or the chance roll (one loot draw), then the type roll (one loot draw). Pity and the gap count from the last drop, and from 0 s before the first one.
+- **First elite.** The first elite kill of the run drops a bonus past the gap (not past the field cap). A NUKE or FIREBLAST kill of that elite uses the guarantee up with no drop.
+- **No bonus.** NUKE kills, FIREBLAST shots and everything they set off (their explosions, chain hops and the blasts they queue, which carry `BLAST_NO_BONUS`) drop no bonus. NUKE kills go through the normal kill path (kills, XP, gibs, BROOD and VOLATILE, VESPER's growth) with `KillSource.NoScore`.
+- **NUKE.** Centered on the ship. The fractions are flat: no damage multiplier applies to them, not even FREEZE's +20%. Only the enemies alive at the blast are hit, so a nuked BROOD elite's brood lives. Burrowed enemies and a boss still emerging are untouched.
+- **FREEZE.** Non-boss enemies skip their AI step (no move, no fire, no hatch, stream units hold), do not bite or ram, and take +20% from every damage source but the NUKE; thorns still hurts them. "Bosses move at 50%" is the boss's walk; its attacks keep their timing.
+- **OVERDRIVE** multiplies the effective fire rate (after every perk) and skips the ammo cost; the move bonus is in `playerSpeedMul`. **SHIELD** makes `hurtPlayer` return 0 for every kind and disarms the Close Call. **FIREBLAST** fires from the ship's facing, through the same launch path as SALVO STEP (so pilot and weapon multipliers apply and explosions scale). **VACUUM** captures gems, the bank gem and medkits, never pods, shards, cores or bonuses.
 
 ## A6. XP and pickup pool
 

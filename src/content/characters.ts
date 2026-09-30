@@ -1,4 +1,4 @@
-import type { Modifiers } from './perks.ts'
+import { PODS } from '../config.ts'
 
 /**
  * How an item is owned (section 7.4). Every selectable pilot, world and paint
@@ -13,11 +13,58 @@ export interface UnlockMeta {
 }
 
 /**
- * Playable pilots. Stats and the signature passive FEED THE SIM (a run's
- * identity), so they must be pure device-independent data: the same seed with
- * the same pilot replays identically everywhere. Colors are presentation.
- * Passives fold into the run's base Modifiers (same pipeline as perks, zero
- * engine changes).
+ * A pilot's rule (section 4.10): data the sim reads at its hooks. Each pilot
+ * sets only the fields of its own rule; the rest keep the NO_RULES values.
+ */
+export interface PilotRules {
+  /** Seconds to take a pod before Quartermaster's cut (NOVA 0: at once). */
+  podHold: number
+  /** Pods are captured and home in like gems. */
+  podHoming: boolean
+  /** Base weapon damage per emptied pickup magazine, and its cap. */
+  salvageDmg: number
+  salvageMax: number
+  /** Dash charges before Phase Step. */
+  dashCharges: number
+  /** Each dash readies the gun (fireCooldown 0) and multiplies damage by
+   *  dashDmgMul for dashDmgSec. */
+  dashReload: boolean
+  dashDmgMul: number
+  dashDmgSec: number
+  /** Medkit drops happen (their rolls always do). */
+  medkits: boolean
+  /** Kill healing per kill and its HP/s cap before perks. */
+  killHeal: number
+  killHealCap: number
+  /** Max HP gained (and healed) per elite and per boss kill. */
+  eliteMaxHp: number
+  bossMaxHp: number
+}
+
+const NO_RULES: Readonly<PilotRules> = {
+  podHold: PODS.holdTime,
+  podHoming: false,
+  salvageDmg: 0,
+  salvageMax: 0,
+  dashCharges: 1,
+  dashReload: false,
+  dashDmgMul: 1,
+  dashDmgSec: 0,
+  medkits: true,
+  killHeal: 0,
+  killHealCap: 6,
+  eliteMaxHp: 0,
+  bossMaxHp: 0,
+}
+
+function rules(r: Partial<PilotRules>): PilotRules {
+  return { ...NO_RULES, ...r }
+}
+
+/**
+ * Playable pilots. Stats and the rule FEED THE SIM (a run's identity), so they
+ * must be pure device-independent data: the same seed with the same pilot
+ * replays identically everywhere. Colors and the rule copy are presentation.
  */
 export interface CharacterDef {
   id: string
@@ -31,9 +78,10 @@ export interface CharacterDef {
   speed: number
   /** Infinite-ammo base weapon; finite pickups still revert to this. */
   startWeapon: string
-  passiveName: string
-  passiveDesc: string
-  applyPassive: (m: Modifiers) => void
+  /** The rule's name and UI copy (section 4.10). */
+  ruleName: string
+  ruleDesc: string
+  rules: PilotRules
   unlock: UnlockMeta
 }
 
@@ -47,9 +95,9 @@ export const CHARACTERS: readonly CharacterDef[] = [
     maxHp: 100,
     speed: 285,
     startWeapon: 'pistol',
-    passiveName: 'Magnet Coil',
-    passiveDesc: '+35% pickup range',
-    applyPassive: (m) => (m.magnetMul *= 1.35),
+    ruleName: 'SALVAGER',
+    ruleDesc: 'Takes pods instantly. Every emptied pickup gun makes her Sidearm stronger.',
+    rules: rules({ podHold: 0, podHoming: true, salvageDmg: 0.05, salvageMax: 0.5 }),
     unlock: { how: 'default' },
   },
   {
@@ -61,9 +109,9 @@ export const CHARACTERS: readonly CharacterDef[] = [
     maxHp: 85,
     speed: 305,
     startWeapon: 'scorcher',
-    passiveName: 'Overcharge',
-    passiveDesc: '+15% damage',
-    applyPassive: (m) => (m.damageMul *= 1.15),
+    ruleName: 'AFTERBURNER',
+    ruleDesc: 'Two dash charges. Every dash reloads her gun and boosts damage.',
+    rules: rules({ dashCharges: 2, dashReload: true, dashDmgMul: 1.3, dashDmgSec: 1.5 }),
     unlock: { how: 'earn', feat: 'overcharged' },
   },
   {
@@ -75,9 +123,9 @@ export const CHARACTERS: readonly CharacterDef[] = [
     maxHp: 120,
     speed: 265,
     startWeapon: 'stiletto',
-    passiveName: 'Reaper',
-    passiveDesc: '+1 HP per kill',
-    applyPassive: (m) => (m.lifestealPerKill += 1),
+    ruleName: 'REAPER',
+    ruleDesc: 'No medkits. Kills heal her. Elites and bosses make her bigger.',
+    rules: rules({ medkits: false, killHeal: 1, killHealCap: 8, eliteMaxHp: 8, bossMaxHp: 25 }),
     unlock: { how: 'earn', feat: 'thick_hide' },
   },
 ]

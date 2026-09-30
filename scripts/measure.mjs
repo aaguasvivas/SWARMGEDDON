@@ -9,8 +9,9 @@
 //   det  [charId] [arenaId|all] [steps]
 //                                  determinism probe: ?seed=777, flood(200), a scripted
 //                                  bot (aim at nearest, fire, walk to pickups or circle,
-//                                  always pick card 1, dash presses at sim ticks 60, 200,
-//                                  330 and 331), `steps` ticks (default 600). One line
+//                                  always pick card 1, take the evolution a Hive Core
+//                                  offers, dash presses at sim ticks 60, 200, 330 and
+//                                  331), `steps` ticks (default 600). One line
 //                                  per world with an FNV hash of enemies, player, progress,
 //                                  director state and all 7 RNG stream states. Default
 //                                  world: all three. Hashes MUST match across viewports,
@@ -183,7 +184,7 @@ const DET_HELPER = `(() => {
       if (runMode !== 'daily') S.setLoadout(c, a)
       else S.setLoadout(c, 'hive')
       S.startRun(runMode)
-      st = { drafts: 0, bosses: 0, realUpdate: inp.update, wasBoss: false, tick: 0, realHp: !!realHp, rerolls, rerollsUsed: 0 }
+      st = { drafts: 0, cores: 0, bosses: 0, realUpdate: inp.update, wasBoss: false, tick: 0, realHp: !!realHp, rerolls, rerollsUsed: 0 }
       if (!realHp) {
         w.player.maxHp = 1e9
         w.player.hp = 1e9
@@ -195,6 +196,10 @@ const DET_HELPER = `(() => {
       for (let i = 0; i < n; i++) {
         if (st.realHp && w.pendingGameOver) return true
         S.step(1)
+        while (w.paused && w.core.pending) {
+          st.cores++
+          S.takeCore(true)
+        }
         while (w.paused && w.draft.open) {
           st.drafts++
           if (st.rerolls < 0) {
@@ -263,6 +268,10 @@ const DET_HELPER = `(() => {
       mix(dr.index); mix(dr.rerolls); mix(dr.banishes); mix(dr.sinceRare); mix(w.pendingLevelUps)
       mix(w.xpDropped); mix(w.xpCollected); mix(w.lastLevelAt)
       mix(w.score); mix(w.killPts); mix(w.xpSum); mix(w.chain); mix(w.tier); mix(w.hits); mix(w.longestNoHit)
+      mix(w.freezeT); mix(w.overdriveT); mix(w.shieldT); mix(w.lastBonusAt); mix(w.lastBonusType); mix(w.eliteCoreReadyAt)
+      mix(w.salvage); mix(w.afterburnT); mix(w.reaperHp); mix(w.player.maxHp < 1e8 ? w.player.maxHp : 0); mix(st.cores)
+      for (const id of w.evolutions) for (const ch of id) byte(ch.charCodeAt(0))
+      for (const p of w.pickups.active) { byte(p.kind.charCodeAt(0)); mix(p.sub) }
       for (const ch of w.weapon.id) byte(ch.charCodeAt(0))
       for (const [id, n] of w.perkStacks) { for (const ch of id) byte(ch.charCodeAt(0)); mix(n) }
       const d = w.director
@@ -298,6 +307,7 @@ const DET_HELPER = `(() => {
         bosses: st.bosses, director, byType, streams,
         dashes: w.dashes, closeCalls: w.closeCalls, damageTaken: Math.round(w.damageTaken),
         rerollsUsed: st.rerollsUsed, xpDropped: +w.xpDropped.toFixed(1), xpCollected: +w.xpCollected.toFixed(1),
+        cores: st.cores, evolutions: [...w.evolutions], bonusLast: w.lastBonusType,
         perks: Object.fromEntries(w.perkStacks),
         score: w.score, chain: w.chain, peakTier: w.peakTier, hits: w.hits,
       }
@@ -417,7 +427,7 @@ if (MODE === 'shot') {
     console.log(JSON.stringify({
       mode: MODE, runMode: RUN_MODE, W, H, dpr: DPR, settings: SETTINGS ? applied : null, charId, arenaId: r.arena, steps,
       hash: r.hash, rerunMatch: r.hash === runs[1].hash, save: flags.save || 'fresh', paint: flags.paint || 'factory', enemies: r.enemies, kills: r.kills, level: r.level,
-      drafts: r.drafts, dashes: r.dashes, closeCalls: r.closeCalls, damageTaken: r.damageTaken,
+      drafts: r.drafts, cores: r.cores, evolutions: r.evolutions, dashes: r.dashes, closeCalls: r.closeCalls, damageTaken: r.damageTaken,
       score: r.score, chain: r.chain, peakTier: r.peakTier, hits: r.hits, pickups: r.pickups, time: r.time, bosses: r.bosses, director: r.director, streams: r.streams, byType: r.byType,
     }))
   }
@@ -514,7 +524,7 @@ if (MODE === 'shot') {
           while (w.time < 60) {
             const t0 = w.time
             S.step(1)
-            while (w.paused && w.draft.open) S.pickCard(0)
+            while (w.paused && (w.core.pending || w.draft.open)) if (w.core.pending) S.takeCore(true); else S.pickCard(0)
             w.player.maxHp = w.player.hp = 1e9
             if (w.time === t0) continue
             if (w.enemies.active.some(inView)) {
@@ -652,6 +662,7 @@ if (MODE === 'shot') {
     const w = S.world
     window.__PERF_PICKS = 0
     const keepLive = () => {
+      if (w.paused && w.core.pending) S.takeCore(true)
       if (w.paused && w.draft.open) {
         S.pickCard(0)
         window.__PERF_PICKS++

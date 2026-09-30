@@ -31,6 +31,7 @@ import { LevelUpModal } from './ui/levelupModal.ts'
 import { MainMenu } from './ui/mainMenu.ts'
 import { GameOver } from './ui/gameOver.ts'
 import { WinPanel } from './ui/winPanel.ts'
+import { CoreReveal } from './ui/coreReveal.ts'
 import { SettingsPanel } from './ui/settingsPanel.ts'
 import { Leaderboard } from './ui/leaderboard.ts'
 import { dismissNamePrompt } from './ui/namePrompt.ts'
@@ -62,7 +63,9 @@ import { hazardsTick } from './systems/hazards.ts'
 import { aiSystem, buildEnemyHash } from './systems/ai.ts'
 import { weaponSystem } from './systems/weapons.ts'
 import { projectileSystem, enemyProjectileSystem } from './systems/projectiles.ts'
-import { pickupSystem } from './systems/pickups.ts'
+import { dropHiveCore, pickupSystem } from './systems/pickups.ts'
+import { bonusSystem } from './systems/bonuses.ts'
+import { grantPrimeCore, resolveCore } from './systems/cores.ts'
 import { collisionSystem } from './systems/collision.ts'
 import { acidSystem } from './systems/acid.ts'
 import { dashSystem } from './systems/dash.ts'
@@ -159,6 +162,7 @@ async function boot(): Promise<void> {
   const mainMenu = new MainMenu()
   const gameOver = new GameOver()
   const winPanel = new WinPanel()
+  const coreReveal = new CoreReveal()
   const settingsPanel = new SettingsPanel()
   const leaderboard = new Leaderboard()
   const touchHint = new TouchHint()
@@ -169,7 +173,7 @@ async function boot(): Promise<void> {
   // vignette sits at the bottom of the UI (above the world, below the HUD).
   layers.ui.addChild(
     vignette.view, hud.view, input.touch.view, hurtOverlay, flashOverlay, crosshair,
-    touchHint.view, modal.view, winPanel.view, mainMenu.view, gameOver.view, settingsPanel.view, leaderboard.view, toast.view,
+    touchHint.view, modal.view, winPanel.view, coreReveal.view, mainMenu.view, gameOver.view, settingsPanel.view, leaderboard.view, toast.view,
   )
   if (debug) layers.ui.addChild(debug.view)
 
@@ -208,8 +212,8 @@ async function boot(): Promise<void> {
 
   // --- state machine ---
   let screen: Screen = 'menu'
-  /** Why the sim is paused beyond a draft: the win panel is up. */
-  let pauseReason: 'none' | 'win' = 'none'
+  /** Why the sim is paused beyond a draft: the win panel or a core reveal is up. */
+  let pauseReason: 'none' | 'win' | 'core' = 'none'
   let lastResult: RunResult | null = null
   let submitToken = 0
   /** UTC day the current run started on (a run belongs to its start date). */
@@ -241,7 +245,7 @@ async function boot(): Promise<void> {
     const paint = selectedPaint()
     // Two SHORT lines (pilot, then arena): a single run-on line wraps
     // unpredictably on phones and is hard to scan.
-    const cHint = cOpen ? `${c.name}: ${c.passiveDesc}` : `🔒 ${c.name}: ${featForReward(c.id)!.desc}`
+    const cHint = cOpen ? ruleHint(c) : `🔒 ${c.name}: ${featForReward(c.id)!.desc}`
     const aHint = aOpen ? `${a.name}: vs ${a.broodName}` : `🔒 ${a.name}: ${featForReward(a.id)!.desc}`
     mainMenu.setLoadout(
       cOpen ? `▸ ${c.name}` : `🔒 ${c.name}`,
@@ -317,6 +321,7 @@ async function boot(): Promise<void> {
     input.setEnabled(true)
     modal.close()
     winPanel.hide()
+    coreReveal.hide()
     mainMenu.hide()
     toast.hide()
     gameOver.hide()
@@ -330,6 +335,7 @@ async function boot(): Promise<void> {
   function endRun(end: RunEnd, after: AfterRun = 'recap'): void {
     pauseReason = 'none'
     winPanel.hide()
+    coreReveal.hide()
     // Until the Daily lifecycle exists, every Daily is ranked.
     const result = buildRunResult(world, end, { date: runDate, ranked: world.mode === 'daily', dailyNumber: 0, paint: runPaint })
     lastResult = result
@@ -368,6 +374,7 @@ async function boot(): Promise<void> {
     screen = 'menu'
     pauseReason = 'none'
     winPanel.hide()
+    coreReveal.hide()
     input.setEnabled(false)
     feel.reset()
     camera.reset()
@@ -471,15 +478,32 @@ async function boot(): Promise<void> {
     winPanel.show(world.script.text.win, world.director.clearTime, input.lastType === 'kbm')
   }
   winPanel.onExtract = () => endRun('clear')
+  /** OVERTIME grants the PRIME core; its reveal resumes the run. */
   winPanel.onOvertime = () => {
     winPanel.hide()
-    pauseReason = 'none'
     world.startOvertime()
+    grantPrimeCore(world)
+    openCore()
+  }
+
+  /** A Hive Core was taken: the sim waits on its reveal (and the evolution
+   *  choice), then resumes with the draft grace. */
+  function openCore(): void {
+    pauseReason = 'core'
+    world.paused = true
+    coreReveal.show(world.core, world.perkStacks, input.lastType === 'kbm')
+  }
+  function closeCore(evolve: boolean): void {
+    if (!world.core.pending) return
+    resolveCore(world, evolve)
+    coreReveal.hide()
+    pauseReason = 'none'
     world.paused = false
     world.resumeFromDraft()
     input.cancelDashPress()
     feel.time.play(TimePreset.Resume)
   }
+  coreReveal.onClose = closeCore
 
   // --- layout (screen-dependent only; the arena/ichor are fixed-size) ---
   function layout(): void {
@@ -496,6 +520,7 @@ async function boot(): Promise<void> {
     backdrop.layout(w, h)
     modal.setScreen(w, h, insets)
     winPanel.layout(w, h, insets)
+    coreReveal.layout(w, h, insets)
     mainMenu.layout(w, h)
     gameOver.layout(w, h)
     settingsPanel.layout(w, h)
@@ -529,7 +554,7 @@ async function boot(): Promise<void> {
       settingsPanel.hide()
       return true
     }
-    if (modal.isOpen() || pauseReason === 'win') return true // swallow back while a choice is up
+    if (modal.isOpen() || pauseReason !== 'none') return true // swallow back while a choice is up
     if (screen === 'playing') {
       quitRun('recap')
       return true
@@ -572,6 +597,10 @@ async function boot(): Promise<void> {
     }
     if (pauseReason === 'win') {
       winPanel.pressKey(e.key)
+      return
+    }
+    if (pauseReason === 'core') {
+      coreReveal.pressKey(e.key)
       return
     }
     if (debug && e.key === '`') {
@@ -634,6 +663,7 @@ async function boot(): Promise<void> {
     projectileSystem(world, dt)
     enemyProjectileSystem(world, dt)
     pickupSystem(world, dt)
+    bonusSystem(world, dt)
     collisionSystem(world, dt)
     hazardsTick(world, dt)
     acidSystem(world, dt)
@@ -645,12 +675,14 @@ async function boot(): Promise<void> {
 
     sweepPools()
 
-    // Hand-offs, in rank order: death (next tick), the stalemate, the win, then
-    // a draft (DRAFT.minGap apart). A pick is never applied posthumously, and
-    // level-ups earned before the win are drafted before the win panel opens.
+    // Hand-offs, in rank order: death (next tick), the stalemate, the win, a
+    // core reveal, then a draft (DRAFT.minGap apart). A pick is never applied
+    // posthumously, and level-ups and a core taken before the win resolve
+    // before the win panel opens.
     if (world.pendingGameOver) return
     if (world.pendingEnd) endRun('stalemate')
-    else if (world.pendingWin && world.pendingLevelUps === 0) openWin()
+    else if (world.pendingWin && world.pendingLevelUps === 0 && !world.core.pending) openWin()
+    else if (world.core.pending) openCore()
     else if (draftDue(world)) openDraft()
   }
 
@@ -728,10 +760,11 @@ async function boot(): Promise<void> {
       crosshair.visible = showCrosshair
       if (showCrosshair) crosshair.position.set(input.pointerX, input.pointerY)
 
-      hud.view.visible = playing && !modal.isOpen()
+      hud.view.visible = playing && !modal.isOpen() && !coreReveal.isOpen()
       if (playing) hud.update(world, fd)
 
       if ((!world.paused || !playing) && modal.isOpen()) modal.close()
+      coreReveal.update(performance.now())
 
       // Touch onboarding: show the dual-stick guide on touch until both sticks
       // have been used once (then remember it, forever). Each side fades on use.
@@ -743,7 +776,7 @@ async function boot(): Promise<void> {
           saveJSON('seenTouchControls', true)
         }
       }
-      const showTouchHint = playing && isTouchDevice && !input.hasPointer && !touchLearned && !world.bossAlive
+      const showTouchHint = playing && !world.paused && isTouchDevice && !input.hasPointer && !touchLearned && !world.bossAlive
       touchHint.view.visible = showTouchHint
       if (showTouchHint) touchHint.update(fd, touchMoveUsed, touchAimUsed)
 
@@ -924,6 +957,10 @@ async function boot(): Promise<void> {
       },
       addXp: (n: number) => world.addXp(n),
       give: (id: string) => world.equipWeapon(id),
+      /** A Hive Core of CORES.table row `row` (0 mid1, 1 mid2, 2 overtime), 60 u right of the ship. */
+      dropCore: (row = 0) => dropHiveCore(world, player.x + 60, player.y, row),
+      /** Close the core reveal as a tap would: the evolution (when offered) or the levels. */
+      takeCore: (evolve: boolean) => closeCore(evolve),
       saveJSON,
       loadJSON,
     }
@@ -943,6 +980,20 @@ function runSeed(mode: RunMode): number {
   }
   if (mode === 'daily') return seedFromString('swarmgeddon:' + todayStr())
   return (performance.now() * 1000) >>> 0 || DEFAULT_SEED
+}
+
+/** The menu fits one 12 px line per loadout item at 375 px. */
+const RULE_HINT_MAX = 46
+
+/** The pilot's rule for the menu hint: its name and the whole sentences that fit. */
+function ruleHint(c: CharacterDef): string {
+  let out = `${c.name} · ${c.ruleName}:`
+  const head = out.length
+  for (const part of c.ruleDesc.split(/(?<=\.) /)) {
+    if (out.length > head && out.length + 1 + part.length > RULE_HINT_MAX) break
+    out += ' ' + part
+  }
+  return out
 }
 
 function makeDecor(rng: Rng, count: number): DecorSpeck[] {

@@ -66,7 +66,7 @@ async function checks() {
   const stepTo = (t) => {
     while (w.time < t - 1e-9) {
       S.step(1)
-      while (w.paused && w.draft.open) S.pickCard(0)
+      while (w.paused && (w.core.pending || w.draft.open)) if (w.core.pending) S.takeCore(true); else S.pickCard(0)
       god()
     }
   }
@@ -604,7 +604,7 @@ async function checks() {
         S.step(1)
         god()
         al.note()
-        while (w.paused && w.draft.open) S.pickCard(0)
+        while (w.paused && (w.core.pending || w.draft.open)) if (w.core.pending) S.takeCore(true); else S.pickCard(0)
       }
     }
     stepNote(450 + 2 / 60)
@@ -661,7 +661,7 @@ function scene(kind) {
   const stepTo = (t) => {
     while (w.time < t - 1e-9) {
       S.step(1)
-      while (w.paused && w.draft.open) S.pickCard(0)
+      while (w.paused && (w.core.pending || w.draft.open)) if (w.core.pending) S.takeCore(true); else S.pickCard(0)
       pl.maxHp = pl.hp = 1e9
     }
   }

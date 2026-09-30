@@ -317,6 +317,40 @@ async function runSize(browser, size) {
     await page.evaluate(() => window.__SWARM.pickCard(0))
     await sleep(300)
   })
+  // P9: the Hive Core reveal. The PRIME core (5 levels) with an evolution
+  // choice (RAIL SPIKE held, Deadeye 2), then a plain mid1 core.
+  await step('16-core-evolve', async () => {
+    await page.evaluate(async () => {
+      const S = window.__SWARM
+      const w = S.world
+      const cores = await import('/src/systems/cores.ts')
+      for (const id of ['deadeye', 'deadeye', 'heavy_rounds', 'adrenaline', 'vitality', 'long_barrel']) w.choosePerk(id)
+      S.give('railgun')
+      w.player.hp = w.player.maxHp
+      w.paused = false
+      cores.grantPrimeCore(w)
+      S.step(1)
+    })
+    await sleep(900)
+    await shot('16-core-evolve')
+    await page.evaluate(() => window.__SWARM.takeCore(true))
+    await sleep(300)
+  })
+  await step('16b-core-plain', async () => {
+    await page.evaluate(() => {
+      const S = window.__SWARM
+      const w = S.world
+      S.dropCore(1)
+      const c = w.pickups.active.find((p) => p.alive && p.kind === 'core')
+      c.x = c.prevX = w.player.x
+      c.y = c.prevY = w.player.y
+      S.step(1)
+    })
+    await sleep(700)
+    await shot('16b-core-plain')
+    await page.evaluate(() => window.__SWARM.world.core.pending && window.__SWARM.takeCore(false))
+    await sleep(300)
+  })
   await step('09-gameover', async () => {
     await page.evaluate(() => {
       const S = window.__SWARM
@@ -357,7 +391,7 @@ async function runSize(browser, size) {
       const ready = () => w.bossAlive && w.bossFight.state === 2 && w.bossFight.attack === 1 && w.bossFight.stateT < 0.45 && w.time - w.director.cage.formingFrom > 1.6
       for (let i = 0; i < 60 * 30 && !ready(); i++) {
         S.step(1)
-        while (w.paused && w.draft.open) S.pickCard(0)
+        while (w.paused && (w.core.pending || w.draft.open)) if (w.core.pending) S.takeCore(true); else S.pickCard(0)
         w.player.hp = 1e9
       }
       w.paused = true
@@ -366,8 +400,8 @@ async function runSize(browser, size) {
     await sleep(700)
     await shot('10b-boss-tele')
   })
-  await step('13-win', async () => {
-    await page.evaluate(() => {
+  const toWin = () =>
+    page.evaluate(() => {
       const S = window.__SWARM
       const w = S.world
       S.setLoadout('nova', 'hive')
@@ -390,7 +424,7 @@ async function runSize(browser, size) {
         for (let i = 0; i < 60 * 30 && !w.pendingWin; i++) {
           if (w.bossAlive && w.boss && !w.boss.submerged) w.boss.hp = Math.min(w.boss.hp, 1)
           S.step(1)
-          while (w.paused && w.draft.open) S.pickCard(0)
+          while (w.paused && (w.core.pending || w.draft.open)) if (w.core.pending) S.takeCore(true); else S.pickCard(0)
           w.player.hp = 1e9
         }
         S.step(1)
@@ -399,6 +433,8 @@ async function runSize(browser, size) {
       }
       S.feel.hurtFlash = 0
     })
+  await step('13-win', async () => {
+    await toWin()
     await sleep(900)
     await shot('13-win')
   })
@@ -406,6 +442,26 @@ async function runSize(browser, size) {
     await tap(page, size, 'EXTRACT')
     await sleep(900)
     await shot('14-clear-recap')
+  })
+  // P9: OVERTIME grants the PRIME core; its reveal resumes the run.
+  await step('17-overtime-core', async () => {
+    await toWin()
+    await sleep(700)
+    await tap(page, size, 'OVERTIME')
+    await sleep(600)
+    // Checked before the shot: with no evolution offered the reveal closes itself after 2.4 s.
+    const st = await page.evaluate(() => {
+      const w = window.__SWARM.world
+      return { pending: w.core.pending, prime: w.core.prime, levels: w.core.levels, runState: w.director.runState, paused: w.paused }
+    })
+    await shot('17-overtime-core')
+    if (!st.pending || !st.prime || st.levels !== 5 || st.runState !== 'overtime' || !st.paused) throw new Error('overtime core: ' + JSON.stringify(st))
+    await page.evaluate(() => window.__SWARM.takeCore(true))
+    await sleep(300)
+    const after = await page.evaluate(() => ({ paused: window.__SWARM.world.paused, pending: window.__SWARM.world.core.pending, screen: window.__SWARM.screen }))
+    if (after.paused || after.pending || after.screen !== 'playing') throw new Error('overtime resume: ' + JSON.stringify(after))
+    await page.evaluate(() => window.__SWARM.endRun('quit', 'menu'))
+    await sleep(300)
   })
   await step('15-stalemate-recap', async () => {
     await page.evaluate(() => {

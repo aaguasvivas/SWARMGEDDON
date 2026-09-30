@@ -1,5 +1,5 @@
 import { FF_ACID, FF_CONTACT, FF_DISCRETE, FeelKind } from '../effects/feelQueue.ts'
-import { FUSION, GRACE } from '../config.ts'
+import { BONUS_FX, FUSION, GRACE } from '../config.ts'
 import { spawnRing } from '../effects/fx.ts'
 import { addContinuousDamage, registerHit } from '../game/scoring.ts'
 import type { World } from '../game/world.ts'
@@ -10,7 +10,8 @@ const SHIELD_RING_TINT = 0x9be7ff
 const SHIELD_RING_SCALE = 2
 
 /**
- * The only way the player loses HP. LIVING ARMOR's overshield absorbs first;
+ * The only way the player loses HP. I-frames and the SHIELD bonus block
+ * everything; LIVING ARMOR's overshield absorbs first;
  * a hit it takes whole emits ShieldHit instead of PlayerHurt. Returns the
  * damage that landed (overshield included); callers consume an enemy
  * projectile only when the result is > 0. Only HP removed counts as a scoring
@@ -19,7 +20,7 @@ const SHIELD_RING_SCALE = 2
  */
 export function hurtPlayer(w: World, amount: number, kind: HurtKind, srcIdx: number, sx: number, sy: number, ff = 0): number {
   const pl = w.player
-  if (pl.invuln > 0) return 0
+  if (pl.invuln > 0 || w.shieldT > 0) return 0
   if (kind === 'discrete' && pl.hitCd > 0) return 0
   const dmg = amount * (1 - w.mods.damageReduction)
   if (dmg <= 0) return 0
@@ -91,6 +92,8 @@ export function killHeal(w: World, amount: number): void {
 
 /** The player's move speed multiplier this tick. */
 export function playerSpeedMul(w: World): number {
-  const m = w.mods.moveSpeedMul
-  return bloodrushActive(w) ? m * FUSION.bloodrushSpeedMul : m
+  let m = w.mods.moveSpeedMul
+  if (bloodrushActive(w)) m *= FUSION.bloodrushSpeedMul
+  if (w.overdriveT > 0) m *= BONUS_FX.overdriveMoveMul
+  return m
 }

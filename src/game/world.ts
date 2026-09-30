@@ -15,6 +15,7 @@ import { Director } from '../systems/director.ts'
 import { DraftState } from '../systems/draft.ts'
 import { BossFight } from '../systems/bossAI.ts'
 import { BlastQueue } from '../systems/blasts.ts'
+import { CoreState } from '../systems/cores.ts'
 import type { Layers } from '../render/app.ts'
 import type { IchorLayer } from '../render/ichorLayer.ts'
 import type { TextureRegistry } from '../render/textures.ts'
@@ -226,6 +227,29 @@ export class World {
   /** Projectile tint of the pilot's start weapon; the paint sets it. Presentation only. */
   baseBulletTint = WEAPONS[DEFAULT_WEAPON_ID]!.tint
 
+  // P9: Hive Cores, shards, bonuses, pilot rules
+  /** An elite kill from this sim time on drops a core shard (CORES.shardCooldown apart). */
+  eliteCoreReadyAt = 0
+  /** The Hive Core rolled at contact; main.ts pauses for its reveal while it is pending. */
+  readonly core = new CoreState()
+  /** Weapon ids evolved this run, in the order taken (RunResult.evolutions). */
+  readonly evolutions: string[] = []
+  /** Sim time of the last bonus drop and its BONUSES index (-1 = none yet). */
+  lastBonusAt = 0
+  lastBonusType = -1
+  /** An elite died this run (the first elite kill always drops a bonus). */
+  eliteKilled = false
+  /** Seconds left on FREEZE, OVERDRIVE and SHIELD. */
+  freezeT = 0
+  overdriveT = 0
+  shieldT = 0
+  /** NOVA: pickup magazines emptied this run. */
+  salvage = 0
+  /** EMBER: seconds left on the post-dash damage boost. */
+  afterburnT = 0
+  /** VESPER: max HP grown from elite and boss kills. */
+  reaperHp = 0
+
   constructor(
     readonly arena: Arena,
     readonly player: Player,
@@ -291,6 +315,7 @@ export class World {
     this.player.speed = this.character.speed
     this.baseWeaponId = this.character.startWeapon
     this.perkStacks.clear()
+    this.reaperHp = 0
     this.recomputeModifiers()
     this.equipWeapon(this.baseWeaponId)
     this.time = 0
@@ -367,6 +392,17 @@ export class World {
     this.lockAt = -1
     this.weaponPool = PICKUP_WEAPON_IDS
     this.baseBulletTint = WEAPONS[this.character.startWeapon]!.tint
+    this.eliteCoreReadyAt = 0
+    this.core.reset()
+    this.evolutions.length = 0
+    this.lastBonusAt = 0
+    this.lastBonusType = -1
+    this.eliteKilled = false
+    this.freezeT = 0
+    this.overdriveT = 0
+    this.shieldT = 0
+    this.salvage = 0
+    this.afterburnT = 0
 
     const b = this.arena.bounds
     this.player.spawn(b.x + b.w / 2, b.y + b.h / 2)
@@ -445,11 +481,15 @@ export class World {
   recomputeModifiers(): void {
     const m = this.mods
     resetModifiers(m)
-    this.character.applyPassive(m) // pilot signature passive, then perks stack on top
+    // The pilot rule's base values, then perks stack on top.
+    const r = this.character.rules
+    m.dashCharges = r.dashCharges
+    m.lifestealPerKill += r.killHeal
+    m.killHealCap = r.killHealCap
     for (const [id, stacks] of this.perkStacks) applyBuild(m, id, stacks)
 
     const prevMax = this.player.maxHp
-    this.player.maxHp = Math.max(10, Math.round(this.character.maxHp * m.hpMul + m.bonusHp))
+    this.player.maxHp = Math.max(10, Math.round(this.character.maxHp * m.hpMul + m.bonusHp + this.reaperHp))
     const dMax = this.player.maxHp - prevMax
     if (dMax > 0) this.player.hp = Math.min(this.player.maxHp, this.player.hp + dMax)
     else this.player.hp = Math.min(this.player.hp, this.player.maxHp)

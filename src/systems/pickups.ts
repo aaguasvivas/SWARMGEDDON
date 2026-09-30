@@ -1,9 +1,12 @@
-import { BERSERK_MEDKIT, COLORS, MAX_PICKUPS, PICKUP_RESERVE, PODS, XP } from '../config.ts'
+import { BERSERK_MEDKIT, BONUS, COLORS, CORES, MAX_PICKUPS, PICKUP_RESERVE, PODS, XP } from '../config.ts'
 import { clamp } from '../core/vec.ts'
+import { BONUSES } from '../content/bonuses.ts'
 import { WEAPONS, weaponIndex } from '../content/weapons.ts'
 import { FeelKind } from '../effects/feelQueue.ts'
 import { PICKUP_SLOT, PICKUP_SLOTS, type Pickup, type PickupKind } from '../game/pickup.ts'
 import type { World } from '../game/world.ts'
+import { takeBonus } from './bonuses.ts'
+import { takeHiveCore, takeShard } from './cores.ts'
 import { healPlayer } from './damage.ts'
 
 const R = PICKUP_RESERVE
@@ -36,6 +39,12 @@ function acquirePickup(world: World, kind: PickupKind): Pickup | null {
   p.homeT = 0
   p.hold = 0
   p.timer = false
+  p.sub = 0
+  p.xp = 0
+  p.heal = 0
+  p.weaponId = ''
+  p.vx = 0
+  p.vy = 0
   world.pickupN[PICKUP_SLOT[kind]]!++
   return p
 }
@@ -265,11 +274,9 @@ export function dropBossPod(world: World, x: number, y: number): void {
   spawnPod(world, x + Math.cos(a) * PODS.bossPodOffset, y + Math.sin(a) * PODS.bossPodOffset, pickBossPodType(world), false)
 }
 
-/** Place a pod (color-coded to the weapon) inside the arena inset and, while
- *  the cage is up, inside cage.r - PODS.cageInset. */
-function spawnPod(world: World, x: number, y: number, weaponId: string, timer: boolean): void {
-  const p = acquirePickup(world, 'weapon')
-  if (!p) return
+/** Put `p` at (x, y) inside the arena inset and, while the cage is up,
+ *  inside cage.r - PODS.cageInset. */
+function place(world: World, p: Pickup, x: number, y: number): void {
   const b = world.arena.bounds
   const inset = PODS.edgeInset
   x = clamp(x, b.x + inset, b.x + b.w - inset)
@@ -286,13 +293,17 @@ function spawnPod(world: World, x: number, y: number, weaponId: string, timer: b
       y = c.y + dy * k
     }
   }
-  p.timer = timer
-  p.weaponId = weaponId
-  p.xp = 0
   p.x = p.prevX = x
   p.y = p.prevY = y
-  p.vx = 0
-  p.vy = 0
+}
+
+/** Place a pod (color-coded to the weapon). */
+function spawnPod(world: World, x: number, y: number, weaponId: string, timer: boolean): void {
+  const p = acquirePickup(world, 'weapon')
+  if (!p) return
+  place(world, p, x, y)
+  p.timer = timer
+  p.weaponId = weaponId
   p.radius = 15
   p.life = PODS.life + world.mods.podLifeBonus
   p.phase = 0
@@ -303,7 +314,43 @@ function spawnPod(world: World, x: number, y: number, weaponId: string, timer: b
   s.tint = WEAPONS[weaponId]!.tint
   s.alpha = 1
   s.scale.set(1)
-  world.feel.emit(FeelKind.PodSpawn, 0, x, y, 0, weaponIndex(weaponId))
+  world.feel.emit(FeelKind.PodSpawn, 0, p.x, p.y, 0, weaponIndex(weaponId))
+}
+
+// --- shards, Hive Cores, bonuses (docs/NEXT-LEVEL.md 4.6, A5.2, A5.3) -------
+
+function contactPickup(world: World, kind: PickupKind, x: number, y: number, radius: number, life: number, key: string, tint: number): Pickup | null {
+  const p = acquirePickup(world, kind)
+  if (!p) return null
+  place(world, p, x, y)
+  p.radius = radius
+  p.life = life
+  p.phase = 0
+  world.texReg.applySprite(p.sprite, key)
+  const s = p.sprite
+  s.visible = true
+  s.tint = tint
+  s.alpha = 1
+  s.scale.set(1)
+  return p
+}
+
+/** An elite's core shard, at its corpse. It lasts CORES.shardLife. */
+export function dropShard(world: World, x: number, y: number): boolean {
+  return contactPickup(world, 'shard', x, y, CORES.shardRadius, CORES.shardLife, 'shard', CORES.shardTint) !== null
+}
+
+/** A boss's Hive Core, at its corpse, from CORES.table row `row`. It never expires. */
+export function dropHiveCore(world: World, x: number, y: number, row: number): void {
+  const p = contactPickup(world, 'core', x, y, CORES.coreRadius, Infinity, 'core', CORES.coreTint)
+  if (p) p.sub = row
+}
+
+/** A bonus of BONUSES index `type`. It lasts BONUS.life. */
+export function dropBonus(world: World, x: number, y: number, type: number): boolean {
+  const p = contactPickup(world, 'bonus', x, y, BONUS.radius, BONUS.life, 'bonus', BONUSES[type]!.tint)
+  if (p) p.sub = type
+  return p !== null
 }
 
 /** VACUUM (A5.3): every gem, bank gem and medkit on the field is captured. */
@@ -311,7 +358,7 @@ export function vacuumPickups(world: World): void {
   const a = world.pickups.active
   for (let i = 0; i < a.length; i++) {
     const p = a[i]!
-    if (p.alive && p.kind !== 'weapon' && !p.captured) {
+    if (p.alive && (p.kind === 'xp' || p.kind === 'bank' || p.kind === 'health') && !p.captured) {
       p.captured = true
       p.homeT = 0
     }
@@ -319,12 +366,14 @@ export function vacuumPickups(world: World): void {
 }
 
 /**
- * The pod timer, then every pickup. Pods are taken by standing on them for
- * PODS.holdTime (less Quartermaster's cut); the fill decays off the pod. Gems
- * and medkits that enter the capture radius (scaled by Magnetic) are captured
- * and home in at XP.homeStart to XP.homeMax u/s, never letting go. Gems never
- * expire; medkits last XP.medkitLife until captured. The uncaptured bank gem
- * trails the player at XP.bankLeash at most.
+ * The pod timer, then every pickup. Pods are taken by standing on them for the
+ * pilot's hold time (less Quartermaster's cut); the fill decays off the pod.
+ * Gems and medkits (and NOVA's pods) that enter the capture radius (scaled by
+ * Magnetic) are captured and home in at XP.homeStart to XP.homeMax u/s, never
+ * letting go. Gems never expire; medkits last XP.medkitLife until captured.
+ * The uncaptured bank gem trails the player at XP.bankLeash at most. Shards,
+ * Hive Cores and bonuses are taken on contact only; a Hive Core waits while
+ * another one's reveal is pending.
  */
 export function pickupSystem(world: World, dt: number): void {
   podTimer(world, dt)
@@ -333,17 +382,43 @@ export function pickupSystem(world: World, dt: number): void {
   const pl = world.player
   const capture = XP.captureRadius * world.mods.magnetMul
   const capture2 = capture * capture
-  const holdTime = Math.max(0, PODS.holdTime - world.mods.podHoldCut)
+  const rules = world.character.rules
+  const holdTime = Math.max(0, rules.podHold - world.mods.podHoldCut)
 
   for (let i = 0; i < a.length; i++) {
     const p = a[i]!
     p.prevX = p.x
     p.prevY = p.y
-    if (p.kind === 'weapon') {
+    const kind = p.kind
+    if (kind === 'shard' || kind === 'core' || kind === 'bonus') {
       p.life -= dt
       if (p.life <= 0) {
         p.alive = false
         continue
+      }
+      if (kind === 'core' && world.core.pending) continue
+      const dx = pl.x - p.x
+      const dy = pl.y - p.y
+      const rr = p.radius + pl.radius
+      if (dx * dx + dy * dy < rr * rr) {
+        collect(world, p)
+        p.alive = false
+      }
+      continue
+    }
+    if (kind === 'weapon' && !(rules.podHoming && p.captured)) {
+      p.life -= dt
+      if (p.life <= 0) {
+        p.alive = false
+        continue
+      }
+      if (rules.podHoming) {
+        const hx = pl.x - p.x
+        const hy = pl.y - p.y
+        if (hx * hx + hy * hy < capture2) {
+          p.captured = true
+          p.homeT = 0
+        }
       }
       const dx = pl.x - p.x
       const dy = pl.y - p.y
@@ -424,6 +499,12 @@ function collect(world: World, p: Pickup): void {
     const gained = healPlayer(world, p.heal)
     if (world.mods.berserker > 0) world.berserkT = BERSERK_MEDKIT.sec
     world.feel.emit(FeelKind.HealCollect, 0, pl.x, pl.y, gained)
+  } else if (p.kind === 'shard') {
+    takeShard(world)
+  } else if (p.kind === 'core') {
+    takeHiveCore(world, p.sub)
+  } else if (p.kind === 'bonus') {
+    takeBonus(world, p.sub)
   } else {
     const wi = weaponIndex(p.weaponId)
     world.equipWeapon(p.weaponId)
