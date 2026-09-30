@@ -16,6 +16,16 @@ export const ATK_SPORE_NOVA = 0
 export const ATK_ROYAL_LUNGE = 1
 export const ATK_EGG_CLUTCH = 2
 export const ATK_MOTHERS_CALL = 3
+export const ATK_RIFT_BLINK = 4
+export const ATK_PSI_LANCE = 5
+export const ATK_UNDERTOW = 6
+export const ATK_RIFT_STORM = 7
+export const ATK_MAGMA_MORTAR = 8
+export const ATK_FLAK_TURRETS = 9
+export const ATK_SCORCH_SWEEP = 10
+export const ATK_CINDERFALL = 11
+
+const DEG = Math.PI / 180
 
 export interface PhaseRotation {
   /** Slots cast in order; after the last one the rotation restarts at `loopFrom`. */
@@ -78,10 +88,8 @@ export interface BossKit {
 }
 
 const QUEEN_KIT: BossKit = { idleGap: 0.9, range: 160, speedMul: 1, strafe: false, attacks: [ATK_SPORE_NOVA, ATK_ROYAL_LUNGE, ATK_EGG_CLUTCH, ATK_MOTHERS_CALL] }
-// The VOID MATRON and EMBER TYRANT borrow the QUEEN's attacks until their own
-// kits land (P6b); their idle movement and gaps are already theirs.
-const MATRON_KIT: BossKit = { idleGap: 0.7, range: 260, speedMul: 1, strafe: true, attacks: [ATK_SPORE_NOVA, ATK_ROYAL_LUNGE, ATK_SPORE_NOVA, ATK_SPORE_NOVA] }
-const TYRANT_KIT: BossKit = { idleGap: 1.1, range: 300, speedMul: 0.6, strafe: false, attacks: [ATK_SPORE_NOVA, ATK_ROYAL_LUNGE, ATK_ROYAL_LUNGE, ATK_SPORE_NOVA] }
+const MATRON_KIT: BossKit = { idleGap: 0.7, range: 260, speedMul: 1, strafe: true, attacks: [ATK_RIFT_BLINK, ATK_PSI_LANCE, ATK_UNDERTOW, ATK_RIFT_STORM] }
+const TYRANT_KIT: BossKit = { idleGap: 1.1, range: 300, speedMul: 0.6, strafe: false, attacks: [ATK_MAGMA_MORTAR, ATK_FLAK_TURRETS, ATK_SCORCH_SWEEP, ATK_CINDERFALL] }
 
 /** A10.3, by boss def id. */
 export const BOSS_KITS: Readonly<Record<string, BossKit>> = {
@@ -102,3 +110,24 @@ export const SPORE_NOVA = {
 export const ROYAL_LUNGE = { tele: 0.9, active: 1.0, recover: 1.0, damage: 30, len: 560, halfW: 50, speed: 560 } as const
 export const EGG_CLUTCH = { tele: 0.6, recover: 0.6, count: 5, primeP3Count: 7, ringR: 150 } as const
 export const MOTHERS_CALL = { tele: 1.2, recover: 1.0, unit: 'swarmer', count: 24, slots: 27, hpMul: 1.5, inset: 40 } as const
+
+/** THE VOID MATRON's attacks (A10.3). */
+export const RIFT_BLINK = { tele: 0.9, active: 0.15, recover: 0.8, damage: 26, r: 140 } as const
+export const PSI_LANCE = {
+  tele: 0.8, recover: 0.7, damage: 16, lanes: 3, spread: 24 * DEG, len: 700, halfW: 22, speed: 760, radius: 9,
+  echoDelay: 0.15, boltLighten: 0.6,
+} as const
+/** `decal`: the wraith ring plus a wraith radius; it stays up through the pull. */
+export const UNDERTOW = { tele: 0.7, active: 3.0, recover: 0.6, pull: 150, unit: 'wraith', count: 6, ringR: 90, decal: 104 } as const
+export const RIFT_STORM = { tele: 0.7, active: 0.15, recover: 1.0, damage: 22, r: 120, count: 3 } as const
+
+/** THE EMBER TYRANT's attacks (A10.3). */
+export const MAGMA_MORTAR = { tele: 1.0, active: 0.15, recover: 0.8, damage: 22, r: 70, ring: 4, ringR: 120 } as const
+/** `decal`: the marker circle at each turret spot. */
+export const FLAK_TURRETS = { tele: 0.8, recover: 0.6, unit: 'flakTurret', count: 3, ringR: 170, maxAlive: 6, decal: 34 } as const
+export const SCORCH_SWEEP = { tele: 0.9, active: 1.4, recover: 0.8, damage: 28, arc: 120 * DEG, reach: 460, halfW: 30 } as const
+/** Circle k lands `r0 + rStep * k` from the player's spot at the cast start,
+ *  at `angStep * k` plus one boss draw, `gap` seconds after circle k - 1. */
+export const CINDERFALL = {
+  tele: 1.0, active: 0.15, recover: 1.0, damage: 20, r: 80, count: 12, r0: 90, rStep: 27, angStep: 50 * DEG, gap: 0.25,
+} as const

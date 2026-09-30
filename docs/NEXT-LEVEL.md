@@ -780,6 +780,8 @@ If the app goes to the background during the sequence, the game jumps straight t
 - **Boss.** Intro, phase ROAR, FRENZY tint and kill, per A15, A16 and A17. The kill gets rings, 40 gibs (fx stream) and a bloom pulse when flashes are on.
 - **Threat cues.** The charger windup lane decal (6 sprites, 253 x 2r, hazard tint, 8 Hz pulse). Off-screen arrows (8 sprites) with priority boss > elite > charger in windup > pod > bonus > core, plus a 3 s alert-direction arrow.
 - **Hazards and cage.** The telegraph fill alpha ramps from 0.25 to 0.55 over `tele/teleMax`. A white flash on detonation. The cage ring is formed by a 1.5 s scale-in.
+  - Markers (no damage of their own) take the boss color 15% toward white and ramp from 0.45 to 0.85 (0.45 while live), because a boss color sits close to its own world's floor and glow (P6b screenshots: violet lance lanes on the Depths floor, ember turret spots on the Wastes floor). A marker circle wider than 200 u (mothersCall) keeps the 0.25 to 0.55 ramp, so the cage-wide wash does not hide the swarm.
+  - A burning sweep dims its sector to 0.2 and draws its flame line at 0.8.
 - **Kill pitch ladder:** `semis = min(12, 2 x (tier - 1))`.
 - **Gem ladder:** each gem within 350 ms of the last steps up the ratios `[1, 9/8, 5/4, 3/2, 5/3, 2, 9/4, 5/2, 3, 10/3, 4]` over 659 Hz.
 
@@ -1648,6 +1650,12 @@ node scripts/measure.mjs 390 844 perf ; node scripts/measure.mjs 390 844 perf-fi
   - Default bot: mid1 median 77.9 s (8 kills, longest 108.1 s), mid2 median 52.7 s (5 kills, longest 134.6 s), final 50.66 s and 158.83 s, 2 wins. Kill-to-next-arrival at least 45.4 s.
   - **A6 FAIL on the default bot:** the seed 9009 PRIME fight took 158.83 s, over the 150 s cap. The build was survival (Vampiric, Regrowth 2, Bulwark 2, Vitality 3, and LIVING ARMOR, which has no effect until P8) with one damage perk, Heavy Rounds 1. So buildScale was about 1.22 (PRIME HP 4876 = 4200 x 1.22^0.75), and the default bot shoots the nearest enemy, often the swarm outside the cage.
   - Every W2 number ran with the inert picks listed in the P8 W2 hand-off (section 10.3). P19 re-measures after P8.
+- **P6b branch (W2 main + the Matron and Tyrant kits, before P7 and P8), seeds 1001 x 1 to 30, `nova:priority`.**
+  - Depths, focus bot: mid1 median 22.75 s (29 kills, 8.1 to 40.6 s), mid2 median 13.85 s (8 kills, 8.4 to 22.8 s), final median 23.4 s (4 kills, 12.9 to 26.2 s), 4 wins. mid1 passes; mid2 and final are under their floors (20 s and 40 s).
+  - Depths, default bot: longest mid1 129.9 s, mid2 52.5 s, final 42.9 s, so every fight is under 150 s. 2 wins. No bot died inside a Matron fight (0 of 54 deaths).
+  - Wastes, focus bot: mid1 median 29.3 s (23 kills, 9.9 to 69.6 s), mid2 median 24.6 s (8 kills), final 43.1 and 57.8 s. All three medians pass. 2 wins.
+  - Wastes, default bot: mid1 median 81.1 s (longest 160.9 s), mid2 median 88.3 s (longest 120.2 s), final 63.7 and 176.5 s. **A6 FAIL on the default bot:** 2 of 24 finished fights ran over 150 s. 15 more fights ended in the bot's death: 20 of 56 Wastes deaths happened inside a Tyrant fight, 17 by boss hazards and 3 by turret shots. The harness bot sums a push away from each damaging circle, so the magma mortar's 5 circles cancel and it stays in the middle, and it reads a sweep as a circle on the boss. A player leaves the mortar with a diagonal step of about 110 u inside the 1.0 s telegraph. P7 (bot hazard dodging) re-measures, and P19 tunes `hpBase` from those numbers.
+  - The 10-seed subset (1001 x 1 to 10), for comparison with the W2 Hive numbers: Depths focus mid1 24.85 s (9 kills), mid2 12.18 s (3), final 17.73 s (2); Wastes focus mid1 27.93 s (7), mid2 26.72 s (4), final 50.43 s (2). Default bot, longest fight: Depths 129.9 s, Wastes 148.5 s.
 
 **A1 note (P4 review).**
 - "Both phone views" means the P14 normalized camera views: 560 x 996 (portrait) and 996 x 560 (landscape). Measure them with `node scripts/measure.mjs 375 667 opening 560 996` and `node scripts/measure.mjs 375 667 opening 996 560`.
@@ -2092,7 +2100,7 @@ Elite XP (unscaled): guardian 20, abyssalWarden 26, duneLeviathan 30. Outline co
 - `voidMatronPrime`: scale 3.1, r 54, speed 40, damage 55, tint #ff4f86, XP 240.
 - `emberTyrantPrime`: scale 3.4, r 58, speed 30, damage 60, tint #ffd23d, XP 260.
 - `egg`: sprite splitter, scale 0.9, hp 40, speed 0, r 14, damage 0, XP 2, behavior `'egg'`, hpRamp 0. Hatches after 4.0 s into 3 swarmers.
-- `flakTurret`: sprite cinderMortarch, scale 1.0, hp 60, speed 0, r 16, XP 3, behavior `'spitter'`, fireCooldown 1.6, projectileSpeed 460, projectileDamage 11, hpRamp 0.1.
+- `flakTurret`: sprite cinderMortarch, scale 1.0, hp 60, speed 0, r 16, XP 3, behavior `'spitter'`, fireCooldown 1.6, projectileSpeed 460, projectileDamage 11, hpRamp 0.1. P6b: damage 0 (a rooted gun, no bite), tint #ff8a2a, gib #ffb05a x6, name `FLAK TURRET`, no acid. It is the fight's brood, so it shoots inside the cage. When its fight ends (kill, ascend or stalemate), every turret of that fight collapses with no credit: a speed-0 shooter would otherwise fire across the arena for the rest of the run.
 - Boss contact bites: queen 24, matron 22, tyrant 24.
 
 ### A10.2 Stages
@@ -2125,7 +2133,7 @@ Idle gap: queen 0.9 s, matron 0.7 s, tyrant 1.1 s. Cadence divides idleGap and r
 | C eggClutch | 0.60 | instant | 0.60 | 0 | 5 eggs (PRIME P3: 7) on r 150, 1 boss draw; at brood cap, cast A instead |
 | SIG mothersCall | 1.20 | instant | 1.00 | none | 24 swarmers (hp x1.5) on 27 slots at `cage.r - 40`; 3 empty slots face away from the queen |
 
-Decals: sporeNova a circle r 120 on the queen; royalLunge its lane, cut at the ring or the wall; eggClutch a circle r 164 (the egg ring plus an egg radius); mothersCall a circle of `cage.r - 40` on the cage center. Until P6b lands, the VOID MATRON and EMBER TYRANT cast the QUEEN's attacks with their own idle movement and gaps.
+Decals: sporeNova a circle r 120 on the queen; royalLunge its lane, cut at the ring or the wall; eggClutch a circle r 164 (the egg ring plus an egg radius); mothersCall a circle of `cage.r - 40` on the cage center.
 
 **THE VOID MATRON** (idle: strafes at 260 u)
 
@@ -2136,6 +2144,8 @@ Decals: sporeNova a circle r 120 on the queen; royalLunge its lane, cut at the r
 | C undertow | 0.70 | 3.0 | 0.60 | 0 | pulls the player at 150 u/s (clamped by MAX_WELL_PULL 140); 6 wraiths at r 90 |
 | SIG riftStorm | 0.70 x3 | 0.15 each | 1.00 | 22 | 3 riftBlinks in a row, r 120, each aimed at its own tele start |
 
+Decals (P6b): riftBlink and riftStorm the slam circle on the player's spot, and she lands in it when its damage window ends (hazard `onEnd` blink); the next riftStorm blink telegraphs at the player's spot on that tick. psiLance its 3 lanes, and each bolt ends where its lane ends; bolts are drawn 60% toward white. undertow a circle r 104 on her (the wraith ring plus a wraith radius) that stays up through the 3.0 s pull; the pull adds to any gravity well inside the one MAX_WELL_PULL clamp and stops when the bodies touch; the wraith ring starts toward the player (no draw).
+
 **THE EMBER TYRANT** (idle: approaches to 300 u at 0.6x speed)
 
 | Attack | tele | active | recover | dmg | Parameters |
@@ -2144,6 +2154,10 @@ Decals: sporeNova a circle r 120 on the queen; royalLunge its lane, cut at the r
 | B flakTurrets | 0.80 | instant | 0.60 | 11 per shot | 3 turrets on r 170 around her (1 draw); max 6 alive, otherwise cast A |
 | C scorchSweep | 0.90 | 1.40 | 0.80 | 28 | 120 degree sector, r 460; flame line halfW 30 sweeps from player angle -60 degrees; direction alternates |
 | SIG cinderfall | 1.00 each | 0.15 | 1.00 | 20 | 12 circles r 80 on a spiral (radius 90 + 27k, angle 50k degrees + 1 draw), one every 0.25 s |
+
+Decals (P6b): magmaMortar its 5 circles, placed around the player's spot at the tele start (the center one leaves the magma pool). flakTurrets a marker circle r 34 at each turret spot (on r 170 around her, clamped inside the cage), and the turret rises from it (hazard `onEnd` spawn); "max 6 alive" means slot A casts when the live turrets plus 3 would pass 6. scorchSweep its 120 degree sector from her position at the tele start, then, while it burns, the flame line (the sector dims). cinderfall its circles; the spiral is centered on the player's spot at the cast start, and a circle that lies wholly outside the cage (it cannot reach the caged player) is not cast.
+
+A multi-part attack (riftStorm, cinderfall) holds the boss until its last part lands, then recovers, so only one attack's telegraph is live at a time. A phase change cancels every boss telegraph still warning and every boss marker, and the parts still to come; damage already live finishes. The end of a fight (a kill, an ascend or a stalemate) ends every boss hazard of it.
 
 **Arrival and fight sanity** (effective DPS = estimate x 0.6):
 

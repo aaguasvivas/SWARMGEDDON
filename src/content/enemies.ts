@@ -98,6 +98,8 @@ const SPECS: Record<string, EnemySpec> = {
   // WASTES boss: surrounds itself with flak turrets.
   emberTyrant: { id: 'emberTyrant', displayName: 'THE EMBER TYRANT', sprite: 'queen', hp: 2000, speed: 30, radius: 48, damage: 60, xp: 130, tint: 0xffeb3d, scale: 2.8, behavior: 'boss', gibColor: 0xfff25a, gibCount: 32, boss: true, hpRamp: 0 },
   emberTyrantPrime: { id: 'emberTyrantPrime', displayName: 'TYRANT PRIME', sprite: 'queen', hp: 4200, speed: 30, radius: 58, damage: 60, xp: 260, tint: 0xffd23d, scale: 3.4, behavior: 'boss', gibColor: 0xfff25a, gibCount: 38, boss: true, hpRamp: 0 },
+  // EMBER TYRANT brood: a rooted gun. It collapses when its fight ends (bossAI).
+  flakTurret: { id: 'flakTurret', displayName: 'FLAK TURRET', sprite: 'cinderMortarch', hp: 60, speed: 0, radius: 16, damage: 0, xp: 3, tint: 0xff8a2a, scale: 1.0, behavior: 'spitter', gibColor: 0xffb05a, gibCount: 6, fireCooldown: 1.6, projectileSpeed: 460, projectileDamage: 11, leavesAcid: false, hpRamp: 0.1 },
 }
 
 /** Every enemy id in a stable order (RunResult kill tallies and the killer id). */

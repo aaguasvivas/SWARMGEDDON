@@ -1,6 +1,6 @@
 import { MAX_ENEMIES, MAX_HAZARDS } from '../config.ts'
-import { FeelKind } from '../effects/feelQueue.ts'
-import { spawnRing } from '../effects/fx.ts'
+import { FF_BOSS, FeelKind } from '../effects/feelQueue.ts'
+import { spawnPoof, spawnRing } from '../effects/fx.ts'
 import { HZ_CIRCLE, HZ_END_BLINK, HZ_END_MAGMA, HZ_END_NONE, HZ_END_SPAWN, HZ_LANE, type Hazard } from '../game/hazard.ts'
 import { tickDown } from '../game/player.ts'
 import type { World } from '../game/world.ts'
@@ -76,14 +76,21 @@ function endHazard(w: World, h: Hazard): void {
     case HZ_END_BLINK: {
       const b = w.boss
       if (b) {
+        spawnPoof(w, b.x, b.y, b.gibTint, 12)
         b.x = b.prevX = h.x
         b.y = b.prevY = h.y
+        spawnPoof(w, h.x, h.y, b.gibTint, 12)
+        w.feel.emit(FeelKind.Teleport, FF_BOSS, h.x, h.y, 0, 0, b.def)
       }
       break
     }
-    case HZ_END_SPAWN:
-      if (w.enemies.size < MAX_ENEMIES - 20) spawnEnemy(w, h.unit, h.x, h.y)
+    case HZ_END_SPAWN: {
+      if (w.enemies.size >= MAX_ENEMIES - 20) break
+      const s = spawnEnemy(w, h.unit, h.x, h.y)
+      // A boss's unit is the fight's brood: it may stay and shoot inside the cage.
+      if (s && h.boss) s.brood = w.bossFights
       break
+    }
   }
 }
 
