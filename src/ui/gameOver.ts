@@ -84,14 +84,16 @@ export class GameOver {
     this.relayout() // the banner slot is sized to its content
   }
 
-  /** Banner the feats the run finished (owns the rank line's slot): the new
-   *  items first, at most two names, then a count of the rest. */
+  /** Banner the feats the run finished (owns the rank line's slot): at most two
+   *  names, then a count of the rest. When the run unlocked new items, the
+   *  banner names and counts only those, not the feats whose reward was
+   *  already owned. */
   setUnlocks(unlocks: FeatUnlock[]): void {
     if (unlocks.length === 0) return
     this.hasUnlockBanner = true
     const fresh = unlocks.filter((u) => u.fresh)
     const names = fresh.length > 0 ? fresh.map((u) => u.name) : unlocks.map((u) => u.feat.name)
-    const more = unlocks.length - Math.min(2, names.length)
+    const more = names.length - Math.min(2, names.length)
     const head = `★ ${fresh.length > 0 ? 'UNLOCKED' : unlocks.length > 1 ? 'FEATS DONE' : 'FEAT DONE'}: ${names.slice(0, 2).join(' + ')}`
     this.unlockText = more > 0 ? [`${head} +${more} MORE ★`, `${head} ★\n+${more} MORE`] : [`${head} ★`, `${head} ★`]
     this.rank.style.fill = 0xffe066

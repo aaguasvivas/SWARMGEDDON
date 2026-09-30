@@ -70,6 +70,8 @@
 //   --save=unlocked                det modes own every feat reward first, so Standard
 //                                  drafts and drops from the canonical pools (default:
 //                                  the fresh save plus the pilot and world, the start pools).
+//                                  A 600-step det hashes the same for both saves, so it
+//                                  cannot show a pool difference; det-long and det-death can.
 //   --paint=<id>                   det modes fly this paint (granted first). Paints are
 //                                  cosmetic, so the hash must not change.
 //                                  Every det pass restores the owned set it started from,

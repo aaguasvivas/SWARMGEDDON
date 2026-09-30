@@ -9,7 +9,10 @@
 //   3. The acceptance save (unlocks ember + depths, best:world:hive 200 s / 900
 //      kills) boots with EMBER and DEPTHS, feats #4 #6 #10 done, every perk and
 //      weapon owned, and the welcome toast.
+//      The toast covers no menu item at 375x667, 667x375, 390x844 and 844x390
+//      (with phone insets), and hides when a run starts.
 //   4. A paint flies: hull, base weapon bullets, RunResult.paint.
+//   5. The recap banner names and counts only feats whose reward is new.
 // Usage: SWG_URL=http://localhost:5212 node scripts/probe-meta.mjs [simSecondsPerRun=240]
 import puppeteer from 'puppeteer-core'
 import assert from 'node:assert/strict'
@@ -21,6 +24,13 @@ const SECONDS = parseInt(process.argv[2] || '240')
 const LOCKED_PERKS = ['giant_slayer', 'berserker', 'overpressure', 'second_wind', 'glass_cannon', 'incendiary', 'adrenal_wake', 'slipstream', 'quartermaster', 'hollow_point']
 const START_WEAPONS = ['smg', 'shotgun', 'minigun', 'plasma', 'flamethrower', 'rocket']
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+const NO_INSETS = { top: 0, bottom: 0, left: 0, right: 0 }
+const TOAST_SIZES = [
+  { w: 375, h: 667, insets: NO_INSETS },
+  { w: 667, h: 375, insets: NO_INSETS },
+  { w: 390, h: 844, insets: { top: 47, bottom: 34, left: 0, right: 0 } },
+  { w: 844, h: 390, insets: { top: 0, bottom: 21, left: 47, right: 47 } },
+]
 
 await acquireChromeLock('probe-meta')
 let browser
@@ -167,18 +177,69 @@ try {
     await sleep(600)
     out.accept = await page.evaluate(() => {
       const S = window.__SWARM
-      const w = S.world
-      const r = {
-        toast: S.toast.view.visible ? S.toast.view.children[1].text : null,
+      const text = S.toast.view.visible ? S.toast.view.children[1].text : null
+      // Keep the toast up for the placement checks below (it lasts 6 s from boot).
+      if (text) S.toast.show(text, 30)
+      return {
+        toast: text,
         done: Object.keys(S.loadJSON('feats', { done: {} }).done).sort(),
         owned: S.loadJSON('unlocks', []),
         stats: S.loadJSON('stats', null),
       }
+    })
+    // The toast never covers a menu element, and stays inside the safe area.
+    const cdp = await page.createCDPSession()
+    out.toastPlacement = []
+    for (const sz of TOAST_SIZES) {
+      await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: sz.insets })
+      await page.setViewport({ width: sz.w, height: sz.h, deviceScaleFactor: 1 })
+      await sleep(400)
+      const r = await page.evaluate(() => {
+        const S = window.__SWARM
+        const box = (o) => {
+          const b = o.getBounds()
+          return { x: b.x, y: b.y, w: b.width, h: b.height }
+        }
+        let title = null
+        const find = (o) => {
+          for (const c of o.children ?? []) {
+            if (title) return
+            if (c.text === 'SWARMGEDDON') title = c
+            else find(c)
+          }
+        }
+        find(S.app.stage)
+        const W = S.app.screen.width
+        const H = S.app.screen.height
+        const items = []
+        for (const c of title.parent.children) {
+          if (!c.visible || c.alpha === 0) continue
+          const b = box(c)
+          if (b.w < 1 || b.h < 1 || (b.w >= W && b.h >= H)) continue // skip empty text and the full-screen backdrop
+          items.push({ label: c.text ?? c.children?.find((k) => k.text)?.text ?? c.constructor.name, ...b })
+        }
+        return { W, H, visible: S.toast.view.visible, plate: box(S.toast.view.children[0]), items }
+      })
+      const p = r.plate
+      const hits = r.items.filter((b) => p.x < b.x + b.w - 0.5 && b.x < p.x + p.w - 0.5 && p.y < b.y + b.h - 0.5 && b.y < p.y + p.h - 0.5)
+      assert.equal(r.visible, true, `${sz.w}x${sz.h}: toast shown`)
+      assert.equal(r.W, sz.w)
+      assert.deepEqual(hits.map((b) => b.label), [], `${sz.w}x${sz.h}: the toast covers menu items`)
+      assert.ok(p.x >= sz.insets.left + 16 - 0.5 && p.x + p.w <= sz.w - sz.insets.right - 16 + 0.5, `${sz.w}x${sz.h}: toast inside the side gutters`)
+      assert.ok(p.y >= sz.insets.top + 8 - 0.5 && p.y + p.h <= sz.h - sz.insets.bottom, `${sz.w}x${sz.h}: toast inside the safe area`)
+      out.toastPlacement.push({ size: `${sz.w}x${sz.h}`, plate: p, items: r.items.length })
+    }
+    await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: TOAST_SIZES[0].insets })
+    await page.setViewport({ width: 375, height: 667, deviceScaleFactor: 1 })
+    await sleep(200)
+    out.accept.run = await page.evaluate(() => {
+      const S = window.__SWARM
+      const w = S.world
       S.loop.stop()
       S.startRun('endless')
-      r.run = { pilot: w.character.id, world: w.arenaTheme.id, perks: w.perkPool.length, weapons: w.weaponPool.length }
+      const run = { pilot: w.character.id, world: w.arenaTheme.id, perks: w.perkPool.length, weapons: w.weaponPool.length, toast: S.toast.view.visible }
       S.endRun('quit', 'menu')
-      return r
+      return run
     })
     assert.deepEqual(out.accept.done, ['deep_dive', 'overcharged', 'swatter'])
     assert.equal(out.accept.run.pilot, 'ember')
@@ -186,8 +247,10 @@ try {
     assert.equal(out.accept.run.perks, 31)
     assert.equal(out.accept.run.weapons, 11)
     assert.equal(out.accept.toast, 'Welcome to v2. Your records earned 3 feats. See RECORDS.')
+    assert.equal(out.accept.run.toast, false, 'the toast hides when a run starts')
     assert.equal(out.accept.stats.importedV1, true)
     console.log('PASS 3 acceptance save', JSON.stringify({ ...out.accept, owned: out.accept.owned.length }))
+    console.log('PASS 3 toast placement', JSON.stringify(out.toastPlacement.map((t) => ({ size: t.size, plate: [t.plate.x, t.plate.y, t.plate.w, t.plate.h].map(Math.round), menuItems: t.items }))))
     await ctx.close()
   }
 
@@ -226,6 +289,50 @@ try {
     assert.equal(out.paint.shotTint, 0xff8a4a)
     assert.notEqual(out.paint.smgTint, 0xff8a4a)
     console.log('PASS 4 paint', JSON.stringify(out.paint))
+    await ctx.close()
+  }
+
+  // 5. The recap banner names and counts only the new items. The save already
+  //    owns the rewards of FIRST CONTACT and SWATTER; a 12 s run with 1,200
+  //    kills, Lv 9 and peak x5 finishes 7 feats, 5 of them with new rewards.
+  {
+    const { ctx, page } = await open()
+    out.banner = await page.evaluate(() => {
+      const S = window.__SWARM
+      const w = S.world
+      S.setPaint('static')
+      S.setPaint('hazard')
+      S.setPaint('factory')
+      S.loop.stop()
+      S.startRun('endless')
+      for (let t = 0; t < 12 * 60; t++) {
+        w.player.maxHp = w.player.hp = 1e9
+        S.step(1)
+        for (let g = 0; g < 8 && w.paused && w.draft.open; g++) S.pickCard(0)
+      }
+      w.kills = 1200
+      w.level = 9
+      w.peakTier = 5
+      const before = new Set(S.loadJSON('unlocks', []))
+      S.endRun('quit')
+      const feats = S.loadJSON('feats', { done: {} })
+      let banner = null
+      const find = (o) => {
+        for (const c of o.children ?? []) {
+          if (banner) return
+          if (c.visible && typeof c.text === 'string' && /^★ (UNLOCKED|FEATS? DONE):/.test(c.text)) banner = c.text
+          else find(c)
+        }
+      }
+      find(S.app.stage)
+      const owned = S.loadJSON('unlocks', [])
+      return { done: Object.keys(feats.done), fresh: owned.filter((id) => !before.has(id)), banner, screen: S.screen }
+    })
+    assert.equal(out.banner.screen, 'gameover')
+    assert.equal(out.banner.done.length, 7, 'feats done')
+    assert.equal(out.banner.fresh.length, 5, 'new rewards')
+    assert.ok(/^★ UNLOCKED: .+ \+ .+ (\+3 MORE ★|★\n\+3 MORE)$/.test(out.banner.banner), `banner counts only new items: ${out.banner.banner}`)
+    console.log('PASS 5 recap banner', JSON.stringify(out.banner))
     await ctx.close()
   }
 } finally {

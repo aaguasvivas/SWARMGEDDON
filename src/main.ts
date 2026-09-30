@@ -313,6 +313,7 @@ async function boot(): Promise<void> {
     modal.close()
     winPanel.hide()
     mainMenu.hide()
+    toast.hide()
     gameOver.hide()
     settingsPanel.hide()
     leaderboard.hide()
@@ -388,12 +389,16 @@ async function boot(): Promise<void> {
     screen = 'leaderboard'
     input.setEnabled(false)
     mainMenu.hide()
+    toast.hide()
     gameOver.hide()
     leaderboard.open()
   }
 
   mainMenu.onPlay = startRun
-  mainMenu.onSettings = () => settingsPanel.open(settings)
+  mainMenu.onSettings = () => {
+    toast.hide()
+    settingsPanel.open(settings)
+  }
   mainMenu.onLeaderboard = toLeaderboard
   gameOver.onRetry = () => startRun(world.mode)
   gameOver.onMenu = toMenu
@@ -490,7 +495,7 @@ async function boot(): Promise<void> {
     gameOver.layout(w, h)
     settingsPanel.layout(w, h)
     leaderboard.layout(w, h)
-    toast.layout(w, insets)
+    toast.layout(w, insets, mainMenu.toastSlot)
     // Pin the bloom to the visible window (not the whole 2800x1900 arena).
     layers.scene.filterArea = new Rectangle(0, 0, w, h)
     hurtOverlay.clear()

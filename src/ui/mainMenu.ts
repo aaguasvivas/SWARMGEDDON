@@ -5,6 +5,7 @@ import type { WorldBest } from '../state/persistence.ts'
 import { leaderboardEnabled } from '../net/leaderboard.ts'
 import type { RunMode } from '../game/world.ts'
 import { Button } from './button.ts'
+import type { ToastSlot } from './toast.ts'
 import { FONT, T } from './tokens.ts'
 
 function fmtTime(s: number): string {
@@ -21,6 +22,9 @@ export class MainMenu {
   onCyclePilot: () => void = () => {}
   onCycleArena: () => void = () => {}
   onCyclePaint: () => void = () => {}
+  /** Short screens: the column left of the buttons, under the title, where a
+   *  toast cannot cover the menu. Null when the top band above the title is free. */
+  toastSlot: ToastSlot | null = null
 
   private backdrop = new Graphics()
   private title: Text
@@ -125,6 +129,7 @@ export class MainMenu {
     const smallRow = short ? 50 : 54
     let y = h * 0.5 - (short ? 148 : 178)
     this.title.position.set(cx, y)
+    this.toastSlot = short ? { x: 16, y: y + this.title.height / 2 + 8, w: cx - 140 - 12 - 16 } : null
     y += titleH
     if (!short) {
       this.tagline.position.set(cx, y)
