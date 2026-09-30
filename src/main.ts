@@ -989,7 +989,10 @@ const RULE_HINT_MAX = 46
 function ruleHint(c: CharacterDef): string {
   let out = `${c.name} · ${c.ruleName}:`
   const head = out.length
-  for (const part of c.ruleDesc.split(/(?<=\.) /)) {
+  // No regex lookbehind: WebKit before Safari 16.4 rejects it at parse time (iOS target 13).
+  const parts = c.ruleDesc.split('. ')
+  for (let i = 0; i < parts.length; i++) {
+    const part = i < parts.length - 1 ? parts[i] + '.' : parts[i]!
     if (out.length > head && out.length + 1 + part.length > RULE_HINT_MAX) break
     out += ' ' + part
   }

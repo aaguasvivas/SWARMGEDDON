@@ -33,6 +33,9 @@ const DASH_KICK_PX = 4
 const BONUS_SFX: readonly SfxName[] = ['bonus_nuke', 'bonus_freeze', 'bonus_overdrive', 'bonus_shield', 'bonus_fireblast', 'bonus_vacuum']
 /** A16.3 trauma per BONUSES index (NUKE 0.6, FIREBLAST 0.25). */
 const BONUS_TRAUMA = [0.6, 0, 0, 0, 0.25, 0] as const
+/** A timed bonus ends with its own recipe an octave down and a `SHIELD OFF` label. */
+const BONUS_END_SEMIS = -12
+const BONUS_END_LABEL: readonly string[] = BONUSES.map((d) => `${d.name} OFF`)
 const EVOLVE_COLOR = 0xff9a4a
 
 const ALERT_HOLD_LONG = 3.0
@@ -304,6 +307,13 @@ export class FeelDirector {
           if (b === BONUS_NUKE) haptic('heavy')
           this.numbers.label(def.name, x, y, a > 0 ? 52 : 34, def.tint)
           if (a > 0) this.numbers.label(`${a} SECONDS`, x, y, 30, def.tint)
+          break
+        }
+        case FeelKind.BonusEnd: {
+          const def = BONUSES[b]
+          if (!def) break
+          this.audio.play(BONUS_SFX[b]!, BONUS_END_SEMIS)
+          this.numbers.label(BONUS_END_LABEL[b]!, x, y, 34, def.tint)
           break
         }
         case FeelKind.Win:

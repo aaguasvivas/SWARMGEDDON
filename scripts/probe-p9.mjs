@@ -10,13 +10,16 @@
 //            its reveal, the levels go to owned non-maxed perks (SHARPEN past
 //            them), +1 reroll and +1 banish (capped); the evolution offer and
 //            its result; one evolution completes EVOLVED (#37) and adds 1 to
-//            stats.evolutions
+//            stats.evolutions; a shard touched in the tick a core is taken waits
+//            for the reveal, so no perk passes its max
 //   shards   an elite kill drops a shard, the next one only 60 s later; contact
 //            gives +1 level to an owned perk, SHARPEN when every one is maxed
 //   bonuses  the first elite kill always drops one, the 8 s gap, the 40 s
-//            pity, at most 2 on the field; NUKE (kills without score, elites
-//            30%, bosses 6%, shots removed, BROOD and VOLATILE still fire, no
-//            bonus), FIREBLAST (24 shots, x1.5, pierce +3, no bonus), FREEZE,
+//            pity, at most 2 on the field; NUKE (outright kills without score,
+//            elites 30%, bosses 6%, flat under FREEZE and INFERNO, an elite or
+//            boss it finishes scores, shots removed, BROOD and VOLATILE still
+//            fire, no bonus), FIREBLAST (24 shots, x1.5, pierce +3, no bonus,
+//            also from the burns its shots light), FREEZE,
 //            OVERDRIVE, SHIELD (and no Close Call), VACUUM
 //   pilots   NOVA takes pods at once and they home in, her salvage; EMBER's two
 //            charges, reload and x1.3; VESPER gets no medkit, kill healing
@@ -238,6 +241,29 @@ const CORES = `(async () => {
   w.core.reset()
   out.noOffer = { pairAt1: noPair, onBase: noHeld, sameAsBase: again, pass: noPair === '' && noHeld === '' && again === '' }
 
+  // A shard touched in the tick a core is taken waits for the reveal: the
+  // core's levels counted the stacks at contact (Adrenaline 4 of 5: one level
+  // of room, which the core's first level takes).
+  fresh()
+  for (let i = 0; i < 4; i++) w.choosePerk('adrenaline')
+  S.dropCore(0)
+  const c3 = w.pickups.active.find((p) => p.alive && p.kind === 'core')
+  c3.x = c3.prevX = pl.x
+  c3.y = c3.prevY = pl.y
+  M.pickups.dropShard(w, pl.x, pl.y)
+  const sh = w.pickups.active.find((p) => p.alive && p.kind === 'shard')
+  step(1)
+  const waiting = sh.alive && w.core.pending
+  const coreIds = w.core.ids.slice(0, w.core.levels)
+  S.takeCore(false)
+  step(1)
+  const adrenaline = w.perkStacks.get('adrenaline')
+  const sharpen = w.perkStacks.get('sharpen') ?? 0
+  out.shardWaits = {
+    waiting, coreIds, shardTaken: !sh.alive, adrenaline, sharpen,
+    pass: waiting && coreIds[0] === 'adrenaline' && !sh.alive && adrenaline === 5 && sharpen === coreIds.length,
+  }
+
   // The PRIME kill drops no core at the corpse (it comes with OVERTIME); a mid kill does.
   return out
 })()`
@@ -328,7 +354,8 @@ const BONUSES = `(async () => {
   shot.y = pl.y
   shot.vx = shot.vy = 0
   shot.life = 5
-  const score0 = w.score
+  const pts0 = w.killPts
+  const chain0 = w.chain
   const kills0 = w.kills
   const xp0 = w.xpDropped
   const alive0 = w.enemies.size
@@ -337,12 +364,40 @@ const BONUSES = `(async () => {
   const nearDead = near.every((e) => !e.alive)
   const res = {
     nearDead, farAlive: far.alive, eliteFrac: +(1 - elite.hp / eHp).toFixed(3), bossFrac: +(1 - boss.hp / bHp).toFixed(3),
-    broodDead: !brood.alive, shotRemoved: !shot.alive, scoreDelta: w.score - score0, kills: w.kills - kills0, xpDropped: +(w.xpDropped - xp0).toFixed(1),
+    broodDead: !brood.alive, shotRemoved: !shot.alive, killPts: w.killPts - pts0, chain: w.chain - chain0, kills: w.kills - kills0, xpDropped: +(w.xpDropped - xp0).toFixed(1),
     hazards: w.hazards.size - hz0, bonuses: count('bonus'),
   }
   sweep()
   res.broodSpawned = w.enemies.size - (alive0 - 13)
-  out.nuke = { ...res, pass: nearDead && far.alive && Math.abs(res.eliteFrac - 0.3) < 0.002 && Math.abs(res.bossFrac - 0.06) < 0.002 && res.broodDead && res.shotRemoved && res.scoreDelta === 0 && res.kills === 13 && res.xpDropped > 0 && res.hazards === 1 && res.bonuses === 0 && res.broodSpawned === 8 }
+  out.nuke = { ...res, pass: nearDead && far.alive && Math.abs(res.eliteFrac - 0.3) < 0.002 && Math.abs(res.bossFrac - 0.06) < 0.002 && res.broodDead && res.shotRemoved && res.killPts === 10 * brood.def.xp && res.chain === 1 && res.kills === 13 && res.xpDropped > 0 && res.hazards === 1 && res.bonuses === 0 && res.broodSpawned === 8 }
+
+  // A NUKE that finishes an elite or a boss scores it (points and chain) with
+  // no bonus; its hits stay flat under FREEZE and INFERNO (x1.2 and x1.25 on a
+  // burning target otherwise).
+  fresh()
+  w.time = 60
+  w.lastBonusAt = -100
+  S.give('inferno')
+  w.freezeT = 4
+  const low = spawnAt('guardian', 0, 150)
+  low.hp = low.maxHp * 0.2
+  const q = spawnAt('queen', -200, 0)
+  w.bossAlive = true
+  w.boss = q
+  w.bossFight.begin('mid1')
+  q.hp = q.maxHp * 0.05
+  const full = spawnAt('guardian', 150, 0)
+  full.burnT = 1
+  const fullHp = full.hp
+  const fp0 = w.killPts
+  const fc0 = w.chain
+  M.bonuses.takeBonus(w, BONUS_NUKE)
+  const fin = {
+    eliteDead: !low.alive, bossDead: !q.alive, killPts: w.killPts - fp0, want: 10 * (low.def.xp + q.def.xp), chain: w.chain - fc0,
+    burningFrac: +(1 - full.hp / fullHp).toFixed(4), bonuses: count('bonus'),
+  }
+  out.nukeFinish = { ...fin, pass: fin.eliteDead && fin.bossDead && fin.killPts === fin.want && fin.chain === 2 && Math.abs(fin.burningFrac - 0.3) < 1e-4 && fin.bonuses === 0 }
+  sweep()
 
   // FIREBLAST: 24 shots of the current weapon, x1.5, pierce +3; its kills drop no bonus.
   fresh()
@@ -359,6 +414,40 @@ const BONUSES = `(async () => {
   out.fireblast = {
     shots: ring.length, damage: dmg[0], pierce: pierce[0], noBonus: ring.every((p) => p.noBonus), kills: w.kills - k0, bonuses: count('bonus'),
     pass: ring.length === 24 && Math.abs(dmg[0] - 16 * 1.5) < 1e-6 && pierce.every((v) => v === 3) && w.kills - k0 >= 24 && count('bonus') === 0,
+  }
+
+  // FIREBLAST burns: with Incendiary its shots light the brutes they leave
+  // alive, and those burn kills drop no bonus (pity armed). A burn lit by any
+  // other hit still can.
+  fresh()
+  w.time = 60
+  w.lastBonusAt = -100
+  w.choosePerk('incendiary')
+  w.shieldT = 1e3 // the brutes reach the ship before they burn out
+  w.xpToNext = 1e9 // no draft pauses the run
+  M.bonuses.takeBonus(w, BONUS_FIREBLAST)
+  const lit = []
+  for (let i = 0; i < 24; i += 3) {
+    const ang = (i / 24) * Math.PI * 2 + pl.facing
+    const e = spawnAt('brute', Math.cos(ang) * 150, Math.sin(ang) * 150)
+    e.hp = e.maxHp = 30
+    lit.push(e)
+  }
+  const bk0 = w.kills
+  step(20)
+  const burning = lit.filter((e) => e.alive && e.burnT > 0 && e.burnNoBonus).length
+  step(100)
+  const burnKills = w.kills - bk0
+  const burnBonuses = count('bonus')
+  const ctrl = spawnAt('brute', 0, 300)
+  ctrl.hp = 1
+  ctrl.burnT = 1
+  ctrl.burnDps = 100
+  ctrl.burnNoBonus = false
+  step(2)
+  out.fireblastBurn = {
+    litAndAlive: burning, burnKills, bonuses: burnBonuses, controlDropped: count('bonus'),
+    pass: burning === lit.length && burnKills === lit.length && burnBonuses === 0 && !ctrl.alive && count('bonus') === 1,
   }
 
   // FREEZE: non-boss enemies stand still, hold fire and do not bite; +20% damage.

@@ -34,9 +34,11 @@ import type { World } from '../game/world.ts'
 const ENEMY_MAX_RADIUS = 58 // broad-phase padding: the largest body (EMBER TYRANT PRIME)
 /** XP multiplier of the kill being resolved (GUILLOTINE culls drop double). */
 let killXpMul = 1
-/** The damage being resolved comes from a NUKE (its kills score nothing) or
- *  from a NUKE or FIREBLAST (its kills, and the blasts they queue, drop no bonus). */
+/** The damage being resolved: a NUKE's outright kill (scores nothing), a NUKE
+ *  hit (flat: no FREEZE or INFERNO multiplier), or damage from a NUKE or a
+ *  FIREBLAST shot (its kills, and the blasts and burns they set off, drop no bonus). */
 let killSrc = KillSource.Weapon
+let flatHit = false
 let killNoBonus = false
 
 /** BLAST_NO_BONUS while the damage being resolved may drop no bonus. */
@@ -331,10 +333,12 @@ function lockOnMul(world: World, uid: number): number {
   return 1 + (b < EVO.lockMax ? b : EVO.lockMax)
 }
 
-/** Set a burn; it refreshes and does not stack (the stronger dps wins). */
+/** Set a burn; it refreshes and does not stack (the stronger dps wins). The
+ *  latest ignite decides whether its kill may drop a bonus. */
 function ignite(e: Enemy, dps: number): void {
   if (e.burnT <= 0 || dps > e.burnDps) e.burnDps = dps
   e.burnT = BURN_SEC
+  e.burnNoBonus = killNoBonus
 }
 
 function burnTick(world: World, e: Enemy, dt: number): void {
@@ -342,7 +346,9 @@ function burnTick(world: World, e: Enemy, dt: number): void {
   if (e.submerged) return
   world.lastHitVx = 0
   world.lastHitVy = 0
+  killNoBonus = e.burnNoBonus
   damageEnemy(world, e, vsTarget(world, e, e.burnDps * dt))
+  killNoBonus = false
 }
 
 /** RAM: once per dash, an enemy the dash passes takes thorns x ramThornsMul,
@@ -412,12 +418,15 @@ function dealDamage(world: World, e: Enemy, dmg: number): void {
 }
 
 /** Remove HP and resolve death; burning enemies take more while INFERNO is
- *  held, frozen ones while FREEZE runs (not from the NUKE, whose fractions are
- *  exact), and a BROOD elite bursts once when it drops to half HP. */
+ *  held and frozen ones while FREEZE runs (neither from the NUKE, whose hits
+ *  are exact), and a BROOD elite bursts once when it drops to half HP. */
 function damageEnemy(world: World, e: Enemy, dmg: number): void {
   if (!e.alive) return
-  if (world.freezeT > 0 && !e.def.boss && killSrc === KillSource.Weapon) dmg *= BONUS_FX.freezeDmgMul
-  e.hp -= e.burnT > 0 && world.weapon.evo === 'ignite' ? dmg * EVO.infernoBurnMul : dmg
+  if (!flatHit) {
+    if (world.freezeT > 0 && !e.def.boss) dmg *= BONUS_FX.freezeDmgMul
+    if (e.burnT > 0 && world.weapon.evo === 'ignite') dmg *= EVO.infernoBurnMul
+  }
+  e.hp -= dmg
   if ((e.affix & AF_BROOD) !== 0 && !e.halfBurst && e.hp <= e.maxHp * BROOD.atHpFrac) {
     e.halfBurst = true
     broodBurst(world, e)
@@ -433,15 +442,18 @@ export function blastHit(world: World, e: Enemy, dmg: number, noBonus: boolean):
   killNoBonus = false
 }
 
-/** A NUKE hit: flat damage, no multipliers; its kills give kills and XP but
- *  no score, and drop no bonus. */
+/** A NUKE hit: flat damage, no multipliers, and its kills drop no bonus. The
+ *  enemies it kills outright give kills and XP but no score; an elite or boss
+ *  its fraction finishes scores like any kill. */
 export function nukeHit(world: World, e: Enemy, dmg: number): void {
-  killSrc = KillSource.NoScore
+  if (!e.def.elite && !e.def.boss) killSrc = KillSource.NoScore
+  flatHit = true
   killNoBonus = true
   world.lastHitVx = 0
   world.lastHitVy = 0
   dealDamage(world, e, dmg)
   killSrc = KillSource.Weapon
+  flatHit = false
   killNoBonus = false
 }
 

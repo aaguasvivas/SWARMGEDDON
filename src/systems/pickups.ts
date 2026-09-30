@@ -372,8 +372,9 @@ export function vacuumPickups(world: World): void {
  * Magnetic) are captured and home in at XP.homeStart to XP.homeMax u/s, never
  * letting go. Gems never expire; medkits last XP.medkitLife until captured.
  * The uncaptured bank gem trails the player at XP.bankLeash at most. Shards,
- * Hive Cores and bonuses are taken on contact only; a Hive Core waits while
- * another one's reveal is pending.
+ * Hive Cores and bonuses are taken on contact only. A Hive Core or a shard
+ * waits while a core's reveal is pending: the core's levels counted the
+ * stacks at contact, so a shard taken before they apply could pass a max.
  */
 export function pickupSystem(world: World, dt: number): void {
   podTimer(world, dt)
@@ -396,7 +397,7 @@ export function pickupSystem(world: World, dt: number): void {
         p.alive = false
         continue
       }
-      if (kind === 'core' && world.core.pending) continue
+      if (kind !== 'bonus' && world.core.pending) continue
       const dx = pl.x - p.x
       const dy = pl.y - p.y
       const rr = p.radius + pl.radius
