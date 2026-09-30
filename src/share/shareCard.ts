@@ -1,4 +1,4 @@
-import type { RunResult } from '../state/persistence.ts'
+import type { RunResult } from '../state/runResult.ts'
 import { characterById } from '../content/characters.ts'
 import { arenaById } from '../content/arenas.ts'
 

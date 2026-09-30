@@ -4,9 +4,11 @@ import { COLORS } from '../config.ts'
 import { leaderboardEnabled } from '../net/leaderboard.ts'
 import { characterById } from '../content/characters.ts'
 import { arenaById } from '../content/arenas.ts'
-import type { RunResult, WorldBestGains } from '../state/persistence.ts'
+import { WORLD_SCRIPTS } from '../content/runScripts.ts'
+import type { WorldBestGains } from '../state/persistence.ts'
+import type { RunResult } from '../state/runResult.ts'
 import { Button } from './button.ts'
-import { FONT } from './tokens.ts'
+import { FONT, T } from './tokens.ts'
 
 /** Taps are ignored this long after the screen appears, so a tap meant for the
  *  game cannot land on RETRY. */
@@ -41,7 +43,8 @@ export class GameOver {
   constructor() {
     this.title = new Text({ text: 'OVERRUN', style: { fontFamily: FONT.display, fontSize: 40, fontWeight: '900', fill: COLORS.hurtFlash, letterSpacing: 3 } })
     this.title.anchor.set(0.5)
-    this.title.filters = [new GlowFilter({ color: COLORS.hurtFlash, distance: 14, outerStrength: 2, innerStrength: 0, quality: 0.3 })]
+    this.glow = new GlowFilter({ color: COLORS.hurtFlash, distance: 14, outerStrength: 2, innerStrength: 0, quality: 0.3 })
+    this.title.filters = [this.glow]
     this.best = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 15, fontWeight: 'bold', fill: 0xffe066 } })
     this.best.anchor.set(0.5)
     this.rank = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 14, fontWeight: 'bold', fill: 0x57c8ff, align: 'center', wordWrap: true, wordWrapWidth: 500, lineHeight: 19 } })
@@ -65,6 +68,7 @@ export class GameOver {
   }
 
   private hasUnlockBanner = false
+  private readonly glow: GlowFilter
 
   acceptsInput(): boolean {
     return performance.now() >= this.readyAt
@@ -110,6 +114,10 @@ export class GameOver {
     // line was added, and the rank slot doubles as the unlock banner (which can
     // wrap). Fixed offsets let them print over each other (owner playtest bug).
     const short = h < 560
+    // Long headers (THE QUEEN ESCAPED) shrink to the width instead of clipping.
+    this.title.scale.set(1)
+    const room = w - 32
+    if (this.title.width > room) this.title.scale.set(room / this.title.width)
     // Never above the top edge (phone landscape is only 375 tall).
     let y = Math.max(h * 0.5 - (short ? 170 : 156), this.title.height / 2 + 4)
     this.title.position.set(cx, y)
@@ -134,19 +142,29 @@ export class GameOver {
     }
   }
 
-  show(result: RunResult, isHigh: boolean, gains: WorldBestGains): void {
-    // Prefer the per-world record callout (what the player is chasing now); fall
-    // back to the score-based global best.
-    this.best.text =
-      gains.time && gains.kills
+  show(result: RunResult, gains: WorldBestGains): void {
+    const text = WORLD_SCRIPTS[result.arena]!.text
+    const [head, color]: [string, number] =
+      result.end === 'clear'
+        ? [text.win, T.accentGold]
+        : result.end === 'stalemate'
+          ? [text.stalemate, T.accentDanger]
+          : result.end === 'death'
+            ? ['OVERRUN', COLORS.hurtFlash]
+            : ['RUN ENDED', T.textPrimary]
+    this.title.text = head
+    this.title.style.fill = color
+    this.glow.color = color
+    // The world best score leads; time and kills records follow.
+    this.best.text = gains.score
+      ? '★ NEW BEST SCORE ★'
+      : gains.time && gains.kills
         ? '★ BEST TIME + MOST KILLS ★'
         : gains.time
           ? '★ NEW BEST TIME ★'
           : gains.kills
             ? '★ MOST KILLS ★'
-            : isHigh
-              ? '★ NEW BEST ★'
-              : ''
+            : ''
     this.rank.text = '' // filled in async by setRank() once the submit returns
     this.hasUnlockBanner = false
     this.rank.style.fill = 0x57c8ff
@@ -155,7 +173,7 @@ export class GameOver {
       `${characterById(result.character).name} · ${arenaById(result.arena).name}\n` +
       `survived  ${fmtTime(result.time)}\n` +
       `kills  ${result.kills}     level  ${result.level}\n` +
-      `score  ${result.score}`
+      `score  ${result.score.toLocaleString('en-US')}     peak  x${result.peakTier}`
     this.relayout()
     this.view.visible = true
     this.readyAt = performance.now() + INPUT_LOCK_MS

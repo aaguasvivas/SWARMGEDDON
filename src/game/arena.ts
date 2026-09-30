@@ -1,7 +1,8 @@
 import { Container, Graphics } from 'pixi.js'
 import { ARENA_H, ARENA_W } from '../config.ts'
 import { clamp } from '../core/vec.ts'
-import { Rng, seedFromString } from '../core/rng.ts'
+import { Rng } from '../core/rng.ts'
+import { seedFromString } from '../core/rules.ts'
 import { ARENAS, type ArenaTheme } from '../content/arenas.ts'
 
 export interface Bounds {

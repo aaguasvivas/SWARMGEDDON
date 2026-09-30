@@ -179,3 +179,9 @@ export const BOSS_SPAWN_MIN_DIST = 160
 export const DEFER_AFTER_KILL = 10
 export const DEFER_GAP = 12
 export const DEFER_DROP_LATE = 60
+
+// P10: score, RunResult v2, stats (docs/NEXT-LEVEL.md 5, 7.3, A14)
+/** Multiplier tier colors, indexed by tier (1 to 8); all at least 6.5:1 on INK. */
+export const TIER_COLOR: readonly number[] = [0x7da99c, 0x7da99c, 0x7dffd6, 0x57c8ff, 0xb886ff, 0xffe066, 0xffb066, 0xff6a6a, 0xff6cf0]
+/** A run shorter than this adds seconds, kills and damage to the lifetime stats, but no run. */
+export const STATS_MIN_RUN_S = 10

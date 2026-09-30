@@ -4,11 +4,12 @@ import { Pool } from '../core/pool.ts'
 import { RunRngs, SALT, hash32 } from '../core/rng.ts'
 import { hueShiftHex } from '../core/color.ts'
 import { SpatialHash } from '../core/spatialHash.ts'
-import { DEFAULT_WEAPON_ID, WEAPONS, type WeaponDef } from '../content/weapons.ts'
+import { DEFAULT_WEAPON_ID, WEAPONS, WEAPON_LIST, type WeaponDef } from '../content/weapons.ts'
 import { resolveScript, type ResolvedScript } from '../content/runScripts.ts'
 import { PERKS, baseModifiers, perkById, type Modifiers, type PerkDef } from '../content/perks.ts'
 import { CHARACTERS, type CharacterDef } from '../content/characters.ts'
 import { ARENAS, type ArenaTheme } from '../content/arenas.ts'
+import { ENEMY_IDS } from '../content/enemies.ts'
 import { FeelKind, FeelQueue, RunAlertRing } from '../effects/feelQueue.ts'
 import { Director } from '../systems/director.ts'
 import type { Layers } from '../render/app.ts'
@@ -126,8 +127,40 @@ export class World {
   closeCallSeq = 0
   /** HP removed by hurtPlayer this run. */
   damageTaken = 0
-  /** Source of the last damage: -1 enemy (P10 adds the def index), -2 acid, -3 hazard. */
+  /** Source of the last damage: an EnemyDef.idx, -1 unknown, -2 acid, -3 hazard. */
   lastHitBy = -1
+
+  // P10: score, RunResult v2, stats
+  /** THREAT level of this run; the score scales with it. */
+  threat = 0
+  score = 0
+  killPts = 0
+  /** def.xp of every kill (unscaled), the cap on killPts. */
+  xpSum = 0
+  chain = 0
+  tier = 1
+  bestChain = 0
+  peakTier = 1
+  /** Seconds since the last scoring kill; the chain halves each CHAIN_DECAY_S. */
+  chainT = 0
+  hits = 0
+  /** `hits` when the current boss spawned: a kill with no new hits is flawless. */
+  hitsAtBossSpawn = 0
+  noHitTime = 0
+  longestNoHit = 0
+  /** Continuous damage (bites, acid) not yet counted as a hit, and seconds since the last of it. */
+  contAcc = 0
+  contIdle = 0
+  bossesSlain = 0
+  bossesFlawless = 0
+  elitesSlain = 0
+  podsEquipped = 0
+  /** 1 per WEAPON_LIST entry equipped from a pod this run. */
+  readonly weaponsUsed = new Uint8Array(WEAPON_LIST.length)
+  /** Kills per ENEMY_IDS entry. */
+  readonly killsByDef = new Int32Array(ENEMY_IDS.length)
+  /** Sim time in ms of the kill that cleared the run; 0 while uncleared. */
+  clearMs = 0
 
   // P4: director core
   /** The arena's run script, resolved once per run. The sim reads only this. */
@@ -166,7 +199,7 @@ export class World {
     )
     this.enemyProjectiles = new Pool<Projectile>(
       () => { const s = texReg.makeSprite('acidGlob'); layers.entities.addChild(s); return new Projectile(s) },
-      (p) => { p.sprite.visible = false; p.leavesAcid = false },
+      (p) => { p.sprite.visible = false; p.leavesAcid = false; p.ownerIdx = -1 },
       64,
     )
     this.particles = new Pool<Particle>(
@@ -235,6 +268,28 @@ export class World {
     this.alerts.reset()
     this.lastHitVx = 0
     this.lastHitVy = 0
+    this.threat = 0
+    this.score = 0
+    this.killPts = 0
+    this.xpSum = 0
+    this.chain = 0
+    this.tier = 1
+    this.bestChain = 0
+    this.peakTier = 1
+    this.chainT = 0
+    this.hits = 0
+    this.hitsAtBossSpawn = 0
+    this.noHitTime = 0
+    this.longestNoHit = 0
+    this.contAcc = 0
+    this.contIdle = 0
+    this.bossesSlain = 0
+    this.bossesFlawless = 0
+    this.elitesSlain = 0
+    this.podsEquipped = 0
+    this.weaponsUsed.fill(0)
+    this.killsByDef.fill(0)
+    this.clearMs = 0
     this.dashCharges = this.maxDashCharges
     this.dashRecharge = 0
     this.dashBufferT = 0
@@ -267,10 +322,6 @@ export class World {
   /** Grace after a draft or core reveal closes. */
   resumeFromDraft(): void {
     this.player.grantInvuln(GRACE.draft, 2)
-  }
-
-  get score(): number {
-    return Math.floor(this.time * 10 + this.kills * 5 + this.level * 50)
   }
 
   // --- weapons ---------------------------------------------------------------
@@ -349,6 +400,7 @@ export class World {
   beginBossFight(): void {
     this.rngs.boss.reseed(hash32(this.seed, SALT.boss, this.bossFights))
     this.bossFights++
+    this.hitsAtBossSpawn = this.hits
   }
 }
 

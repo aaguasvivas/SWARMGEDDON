@@ -1258,6 +1258,7 @@ Run each phase's acceptance plus this standard block:
 1. **Determinism.**
    - `node scripts/measure.mjs 375 667 det`, `node scripts/measure.mjs 667 375 det` and `node scripts/measure.mjs 375 667 det` again (rerun) give three identical hashes for hive, depths and wastes.
    - From Phase 4 on, also `det-long`.
+   - From Phase 10 on, also `det-death`: real HP, the det bot until death or 600 s, one hash over the RunResult (all fields but the date) and the 7 streams, so the damage, death and `endRun` paths are hashed too.
    - From Phase 2 on, also with the settings injection `{"shake":0,"reduceMotion":true,"damageNumbers":"off","flashes":false,"glow":0}`.
    - From Phase 13 on, also Daily mode with a fresh save and a fully unlocked save.
 2. **Perf.**

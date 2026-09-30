@@ -257,6 +257,9 @@ async function runSize(browser, size) {
       w.player.maxHp = w.character.maxHp
       w.player.hp = Math.round(w.character.maxHp * 0.62)
       w.kills = 1287
+      w.score = 1234567
+      w.chain = 180
+      w.tier = 5
       S.jumpTo(754) // past every beat, so no stacked alerts fire on the next step
       w.pendingLevelUps = 0
       w.paused = true
@@ -288,6 +291,8 @@ async function runSize(browser, size) {
       w.kills = 212
       w.level = 9
       w.time = 372.4
+      w.score = 48210
+      w.peakTier = 6
       S.endRun()
     })
     await sleep(900)

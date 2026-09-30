@@ -1,92 +1,44 @@
 import { loadJSON, saveJSON } from '../platform/storage.ts'
+import type { RunResult } from './runResult.ts'
 
-/** A single run's result, used for high scores and the share card. */
-export interface RunResult {
-  mode: 'endless' | 'daily'
-  time: number // seconds survived
-  kills: number
-  level: number
-  score: number
-  seed: number
-  date: string // YYYY-MM-DD when played
-  /** Run identity (pilot + arena theme ids). */
-  character: string
-  arena: string
-}
-
-export interface BestRecord {
-  score: number
-  time: number
-  kills: number
-  level: number
-}
-
-const EMPTY_BEST: BestRecord = { score: 0, time: 0, kills: 0, level: 0 }
-
-/** Per-world personal bests. `time` and `kills` are tracked INDEPENDENTLY:
- *  each is the max over every run in that world, so a long-survival run and a
- *  high-kill run can each hold their own record. */
+/** Per-world personal bests under `best:world:<id>`. Each field is its own
+ *  maximum over every run in that world; `scoreDate` is the day of the best
+ *  score. v1 saves hold only `{ time, kills }` and load over the defaults. */
 export interface WorldBest {
   time: number
   kills: number
+  score: number
+  chain: number
+  level: number
+  scoreDate: string
 }
 
-const EMPTY_WORLD_BEST: WorldBest = { time: 0, kills: 0 }
+const EMPTY_WORLD_BEST: WorldBest = { time: 0, kills: 0, score: 0, chain: 0, level: 0, scoreDate: '' }
 
 export function loadWorldBest(arenaId: string): WorldBest {
-  return { ...EMPTY_WORLD_BEST, ...loadJSON(`best:world:${arenaId}`, {}) }
+  return { ...EMPTY_WORLD_BEST, ...loadJSON<Partial<WorldBest>>(`best:world:${arenaId}`, {}) }
 }
 
-/** What a run newly beat in its world (for a game-over callout). */
+/** What a run newly beat in its world (for the recap callout). */
 export interface WorldBestGains {
   time: boolean
   kills: boolean
+  score: boolean
 }
 
-/** Score formula: rewards survival, kills, and depth roughly equally. */
-export function computeScore(time: number, kills: number, level: number): number {
-  return Math.floor(time * 10 + kills * 5 + level * 50)
-}
-
-export function loadBest(mode: 'endless' | 'daily'): BestRecord {
-  return { ...EMPTY_BEST, ...loadJSON(`best:${mode}`, {}) }
-}
-
-/** Record a run if it beats the stored best for its mode. Returns true if it
- *  set a new high score. */
-export function recordRun(result: RunResult): boolean {
-  const best = loadBest(result.mode)
-  const isHigh = result.score > best.score
-  if (isHigh) {
-    saveJSON(`best:${result.mode}`, {
-      score: result.score,
-      time: result.time,
-      kills: result.kills,
-      level: result.level,
-    })
-  }
-  // Track the most recent daily completion so the menu can show "done today".
-  if (result.mode === 'daily') {
-    saveJSON('daily:last', { date: result.date, score: result.score })
-  }
-  return isHigh
-}
-
-/** Update the per-world bests for the world this run was played in (any mode).
- *  Returns which records were newly beaten, for a game-over callout. */
-export function recordWorldBest(result: RunResult): WorldBestGains {
-  const wb = loadWorldBest(result.arena)
-  const gains: WorldBestGains = { time: result.time > wb.time, kills: result.kills > wb.kills }
-  if (gains.time || gains.kills) {
-    saveJSON(`best:world:${result.arena}`, {
-      time: Math.max(wb.time, result.time),
-      kills: Math.max(wb.kills, result.kills),
+/** Update the bests of the world this run was played in (any mode). */
+export function recordWorldBest(r: RunResult): WorldBestGains {
+  const wb = loadWorldBest(r.arena)
+  const gains: WorldBestGains = { time: r.time > wb.time, kills: r.kills > wb.kills, score: r.score > wb.score }
+  if (gains.time || gains.kills || gains.score || r.bestChain > wb.chain || r.level > wb.level) {
+    saveJSON(`best:world:${r.arena}`, {
+      time: Math.max(wb.time, r.time),
+      kills: Math.max(wb.kills, r.kills),
+      score: Math.max(wb.score, r.score),
+      chain: Math.max(wb.chain, r.bestChain),
+      level: Math.max(wb.level, r.level),
+      scoreDate: gains.score ? r.date : wb.scoreDate,
     })
   }
   return gains
-}
-
-export function dailyCompletedToday(today: string): boolean {
-  const last = loadJSON<{ date: string }>('daily:last', { date: '' })
-  return last.date === today
 }

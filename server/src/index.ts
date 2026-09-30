@@ -231,7 +231,7 @@ function dailySeed(day: string): number {
 }
 
 /**
- * MUST MATCH src/core/rng.ts seedFromString in the game client, bit for bit —
+ * MUST MATCH src/core/rules.ts seedFromString in the game client, bit for bit:
  * it's how the worker verifies a daily submission really played today's seed.
  */
 function seedFromString(str: string): number {

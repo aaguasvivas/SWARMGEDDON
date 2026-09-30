@@ -318,6 +318,7 @@ function fireEnemyShot(world: World, e: Enemy, ux: number, uy: number): void {
   p.life = 3.5
   p.pierce = 0
   p.leavesAcid = def.leavesAcid ?? false
+  p.ownerIdx = def.idx
 
   const s = p.sprite
   s.visible = true

@@ -1,7 +1,8 @@
 import { Container, Graphics, Rectangle, Sprite, Text } from 'pixi.js'
 import { COLORS, DASH, DEFAULT_SEED, FIXED_DT, MAX_FRAME_TIME } from './config.ts'
 import { GameLoop } from './core/time.ts'
-import { Rng, seedFromString } from './core/rng.ts'
+import { Rng } from './core/rng.ts'
+import { seedFromString } from './core/rules.ts'
 import { initSafeArea, getInsets } from './platform/safeArea.ts'
 import { setHapticsEnabled } from './platform/haptics.ts'
 import { initNative, onAppPause, registerBackButton } from './platform/native.ts'
@@ -38,7 +39,9 @@ import { tweens } from './ui/tween.ts'
 import { numGlyphs } from './ui/digits.ts'
 import { flushStorage, initStorage, loadJSON, saveJSON } from './platform/storage.ts'
 import { loadSettings, saveSettings, type Settings } from './state/settings.ts'
-import { recordRun, recordWorldBest, loadWorldBest, type RunResult } from './state/persistence.ts'
+import { recordWorldBest, loadWorldBest } from './state/persistence.ts'
+import { buildRunResult, type RunEnd, type RunResult } from './state/runResult.ts'
+import { updateLifetime } from './state/stats.ts'
 import { shareRunCard } from './share/shareCard.ts'
 import { flushUpdatePrompt, setupUpdatePrompt } from './pwa/updatePrompt.ts'
 import { CHARACTERS, DEFAULT_CHARACTER_ID, characterById } from './content/characters.ts'
@@ -53,9 +56,12 @@ import { pickupSystem } from './systems/pickups.ts'
 import { collisionSystem } from './systems/collision.ts'
 import { acidSystem } from './systems/acid.ts'
 import { dashSystem } from './systems/dash.ts'
+import { scoreStep } from './game/scoring.ts'
 import { particleSystem } from './systems/particles.ts'
 
 type Screen = 'menu' | 'playing' | 'gameover' | 'leaderboard'
+/** Where the player goes once a run is recorded. */
+type AfterRun = 'recap' | 'menu' | 'retry'
 
 /**
  * Phase 3 bootstrap + game state machine. boot -> menu -> playing -> gameover.
@@ -181,6 +187,8 @@ async function boot(): Promise<void> {
   let screen: Screen = 'menu'
   let lastResult: RunResult | null = null
   let submitToken = 0
+  /** UTC day the current run started on (a run belongs to its start date). */
+  let runDate = ''
 
   // Register the SW + "new version" toast, but never mid-run ("Update"
   // reloads the page, which would destroy an active run). Parked toasts are
@@ -237,6 +245,7 @@ async function boot(): Promise<void> {
 
   function startRun(mode: RunMode): void {
     const { char, theme } = resolveLoadout(mode)
+    runDate = todayStr()
     world.beginRun(runSeed(mode), mode, char, theme)
     audio.setTheme(theme.music)
     feel.reset()
@@ -257,30 +266,29 @@ async function boot(): Promise<void> {
     leaderboard.hide()
   }
 
-  function endRun(): void {
-    const result: RunResult = {
-      mode: world.mode,
-      time: world.time,
-      kills: world.kills,
-      level: world.level,
-      score: world.score,
-      seed: world.seed,
-      date: todayStr(),
-      character: world.character.id,
-      arena: world.arenaTheme.id,
-    }
+  /** Every exit from a live run comes through here (death, quit, clear,
+   *  stalemate, a page closed mid-run): the run is recorded exactly once, then
+   *  the player moves on to the recap, the menu or a fresh run. */
+  function endRun(end: RunEnd, after: AfterRun = 'recap'): void {
+    // Until the Daily lifecycle and paints exist, every Daily is ranked and the paint is factory.
+    const result = buildRunResult(world, end, { date: runDate, ranked: world.mode === 'daily', dailyNumber: 0, paint: 'factory' })
     lastResult = result
     feel.time.reset()
-    const isHigh = recordRun(result)
-    const gains = recordWorldBest(result) // per-world best time / most kills
-    gameOver.show(result, isHigh, gains)
-    // Earned unlocks: banner them and refresh the menu selectors.
+    updateLifetime(result)
+    const gains = recordWorldBest(result)
     const fresh = evaluateUnlocks(result)
-    feel.runEnded(isHigh, fresh.length > 0)
-    if (fresh.length > 0) {
-      gameOver.setUnlocks(fresh)
-      refreshLoadoutUI()
+    if (fresh.length > 0) refreshLoadoutUI()
+    if (after === 'menu') {
+      toMenu()
+      return
     }
+    if (after === 'retry') {
+      startRun(world.mode)
+      return
+    }
+    gameOver.show(result, gains)
+    feel.runEnded(gains.score, fresh.length > 0)
+    if (fresh.length > 0) gameOver.setUnlocks(fresh)
     screen = 'gameover'
     input.setEnabled(false)
     // Submit to the global leaderboard (no-op if unconfigured). The token pins
@@ -305,7 +313,6 @@ async function boot(): Promise<void> {
     settingsPanel.hide()
     leaderboard.hide()
     refreshLoadoutUI() // re-read the selected world's best (a run may have set one)
-    mainMenu.refresh(todayStr())
     mainMenu.show()
     // Reset the whole presentation to the hive home base. The menu idles a live
     // arena behind it (see the player.spawn at world center), so music, floor
@@ -420,12 +427,21 @@ async function boot(): Promise<void> {
       return true
     }
     if (modal.isOpen()) return true // swallow back while choosing a perk
+    if (screen === 'playing') {
+      quitRun('menu')
+      return true
+    }
     if (screen !== 'menu') {
       toMenu()
       return true
     }
     return false // already at the menu -> let the OS exit the app
   })
+
+  /** The player leaves a live run: a quit, or the death already under way. */
+  function quitRun(after: AfterRun): void {
+    endRun(world.pendingGameOver ? 'death' : 'quit', after)
+  }
 
   window.addEventListener('keydown', (e) => {
     // Typing in a real text field (the leaderboard name prompt) must never be
@@ -441,8 +457,8 @@ async function boot(): Promise<void> {
     if (debug && e.key === '`') {
       debug.toggle()
     } else if (screen === 'playing') {
-      if (e.key === 'Escape') toMenu()
-      else if (e.key === 'r' || e.key === 'R') startRun(world.mode)
+      if (e.key === 'Escape') quitRun('menu')
+      else if (e.key === 'r' || e.key === 'R') quitRun('retry')
     } else if (screen === 'gameover') {
       if (e.key === 'Enter' && gameOver.acceptsInput()) startRun(world.mode)
       else if (e.key === 'Escape') toMenu()
@@ -499,6 +515,7 @@ async function boot(): Promise<void> {
     pickupSystem(world, dt)
     collisionSystem(world, dt)
     acidSystem(world, dt)
+    scoreStep(world, dt)
     particleSystem(world, dt)
     player.update(dt, input.move, input.aimDir, arena.bounds, world.mods.moveSpeedMul, world.pullX, world.pullY)
     if (player.hp > 0 && world.mods.regenPerSec > 0) {
@@ -515,11 +532,16 @@ async function boot(): Promise<void> {
   // Leaving the death sequence early: a fresh tap after the skip beat, or the
   // app going to the background, goes straight to the recap.
   app.canvas.addEventListener('pointerdown', () => {
-    if (screen === 'playing' && world.pendingGameOver && feel.time.deathMs >= DEATH_SKIP_MS) endRun()
+    if (screen === 'playing' && world.pendingGameOver && feel.time.deathMs >= DEATH_SKIP_MS) endRun('death')
   })
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) return
-    if (screen === 'playing' && world.pendingGameOver) endRun()
+    if (screen === 'playing' && world.pendingGameOver) endRun('death')
+    void flushStorage()
+  })
+  // A page closed or reloaded mid-run still records the run.
+  window.addEventListener('pagehide', () => {
+    if (screen === 'playing') endRun(world.pendingGameOver ? 'death' : 'interrupted', 'menu')
     void flushStorage()
   })
   onAppPause(() => void flushStorage())
@@ -550,7 +572,7 @@ async function boot(): Promise<void> {
           postFX.shiftSaturation(-0.6)
           vignette.view.alpha = 0.85
         }
-        if (time.deathMs >= DEATH_RECAP_MS) endRun()
+        if (time.deathMs >= DEATH_RECAP_MS) endRun('death')
       }
       loop.timeScale = time.scale(world.paused)
       const playing = screen === 'playing'
@@ -721,7 +743,10 @@ async function boot(): Promise<void> {
         return screen
       },
       startRun: (mode: RunMode) => startRun(mode),
-      endRun: () => endRun(),
+      endRun: (end: RunEnd = 'death', after: AfterRun = 'recap') => endRun(end, after),
+      get lastResult() {
+        return lastResult
+      },
       pickPerk: (id: string) => pickPerk(id),
       get settings() {
         return settings

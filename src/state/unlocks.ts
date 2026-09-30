@@ -1,7 +1,7 @@
 import { loadJSON, saveJSON } from '../platform/storage.ts'
 import { CHARACTERS, type UnlockMeta } from '../content/characters.ts'
 import { ARENAS } from '../content/arenas.ts'
-import type { RunResult } from './persistence.ts'
+import type { RunResult } from './runResult.ts'
 
 /**
  * Earned-unlock persistence. One flat id set: character and arena ids share the

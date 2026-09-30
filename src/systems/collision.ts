@@ -16,6 +16,7 @@ import { closeCall, closeCallArmed } from './dash.ts'
 import { dropGem, dropHealth, spawnWeaponDrop } from './pickups.ts'
 import { directorBossKilled } from './director.ts'
 import { spawnEnemy } from './spawn.ts'
+import { KillSource, scoreKill } from '../game/scoring.ts'
 import type { Enemy } from '../game/enemy.ts'
 import type { Projectile } from '../game/projectile.ts'
 import type { World } from '../game/world.ts'
@@ -68,6 +69,7 @@ export function collisionSystem(world: World, dt: number): void {
   let b3 = 0
   let bx = 0
   let by = 0
+  let bIdx = -1
   const enemies = world.enemies.active
   for (let i = 0; i < enemies.length; i++) {
     const e = enemies[i]!
@@ -95,7 +97,7 @@ export function collisionSystem(world: World, dt: number): void {
           closeCall(world)
           armed = false
         }
-        if (hurtPlayer(world, e.damage * mul, 'discrete', -1, e.x, e.y, FF_RAM) > 0) {
+        if (hurtPlayer(world, e.damage * mul, 'discrete', e.def.idx, e.x, e.y, FF_RAM) > 0) {
           e.dashHit = true
           if (m.thorns > 0) thornsDamage(world, e, m.thorns)
         }
@@ -113,6 +115,7 @@ export function collisionSystem(world: World, dt: number): void {
       b1 = v
       bx = e.x
       by = e.y
+      bIdx = e.def.idx
     } else if (v > b2) {
       b3 = b2
       b2 = v
@@ -123,7 +126,7 @@ export function collisionSystem(world: World, dt: number): void {
   }
   if (b1 > 0 && pl.biteCd <= 0 && pl.invuln <= 0) {
     const bite = Math.min(b1 + BITE.w2 * b2 + BITE.w3 * b3, BITE.capFracOfMaxHp * pl.maxHp)
-    hurtPlayer(world, bite, 'bite', -1, bx, by)
+    hurtPlayer(world, bite, 'bite', bIdx, bx, by)
     pl.biteCd = BITE.window
   }
 
@@ -138,7 +141,7 @@ export function collisionSystem(world: World, dt: number): void {
         closeCall(world)
         armed = false
       }
-      if (hurtPlayer(world, p.damage, 'discrete', -1, p.x, p.y) > 0) {
+      if (hurtPlayer(world, p.damage, 'discrete', p.ownerIdx, p.x, p.y) > 0) {
         if (p.leavesAcid) spawnAcidPool(world, p.x, p.y)
         p.alive = false
       }
@@ -296,8 +299,8 @@ function explode(world: World, x: number, y: number, radius: number, dmg: number
 function killEnemy(world: World, e: Enemy): void {
   if (!e.alive) return
   e.alive = false
-  world.kills++
   const def = e.def
+  scoreKill(world, def, KillSource.Weapon)
 
   world.ichor.queueStamp(e.x, e.y, world.rngs.fx)
   spawnGibs(world, e.x, e.y, def.gibCount, e.gibTint, world.lastHitVx, world.lastHitVy)
