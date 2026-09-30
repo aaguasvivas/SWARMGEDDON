@@ -139,7 +139,7 @@ export class FeelDirector {
         case FeelKind.BossKill:
           this.shake.add(0.85, 1)
           this.time.play(TimePreset.BossKill)
-          announce(this.world, this.world.arenaTheme.slainText, x, y - 36, 0xffe066)
+          announce(this.world, this.world.script.text.slain, x, y - 36, 0xffe066)
           break
         case FeelKind.CloseCall:
           this.time.play(TimePreset.CloseCall)

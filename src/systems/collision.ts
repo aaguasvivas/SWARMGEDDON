@@ -12,6 +12,7 @@ import {
 import { FF_AOE, FF_BOSS, FF_CONTACT, FF_CRIT, FF_DISCRETE, FF_ELITE, FF_RAM, FeelKind } from '../effects/feelQueue.ts'
 import { spawnAcidPool } from './acid.ts'
 import { dropGem, dropHealth, spawnWeaponDrop } from './pickups.ts'
+import { directorBossKilled } from './director.ts'
 import { spawnEnemy } from './spawn.ts'
 import type { Enemy } from '../game/enemy.ts'
 import type { Projectile } from '../game/projectile.ts'
@@ -74,14 +75,14 @@ export function collisionSystem(world: World, dt: number): void {
       if (e.def.behavior === 'charger' && (e.phase === 1 || e.phase === 2)) {
         if (e.phase === 2 && !e.dashHit) {
           e.dashHit = true
-          const ram = e.damage * (1 - m.damageReduction)
+          const ram = e.damage * world.dmgMul * (1 - m.damageReduction)
           pl.hp -= ram
           world.feel.emit(FeelKind.PlayerHurt, FF_DISCRETE | FF_RAM, e.x, e.y, ram, 0, e.def)
           if (m.thorns > 0) thornsDamage(world, e, m.thorns)
         }
         continue
       }
-      const bite = e.damage * dt * (1 - m.damageReduction)
+      const bite = e.damage * world.dmgMul * dt * (1 - m.damageReduction)
       pl.hp -= bite
       world.feel.emit(FeelKind.PlayerHurt, FF_CONTACT, e.x, e.y, bite, 0, e.def)
       if (m.thorns > 0) thornsDamage(world, e, m.thorns * dt)
@@ -268,7 +269,7 @@ function killEnemy(world: World, e: Enemy): void {
     world.player.hp = Math.min(world.player.maxHp, world.player.hp + world.mods.lifestealPerKill)
   }
 
-  dropGem(world, e.x, e.y, def.xp)
+  dropGem(world, e.x, e.y, def.elite || def.boss ? def.xp : def.xp * world.xpScale)
 
   // Perk-free sustain: kills can drop a medkit, biased toward HARD MOMENTS. The
   // lower your HP, the likelier a kill coughs one up, so a horde that's chipping
@@ -303,8 +304,7 @@ function killEnemy(world: World, e: Enemy): void {
   }
 
   if (def.boss) {
-    world.bossAlive = false
-    world.boss = null
+    directorBossKilled(world)
     explode(world, e.x, e.y, 140, 0)
     spawnWeaponDrop(world, e.x, e.y, loot.pick(PICKUP_WEAPON_IDS))
     for (let i = 0; i < 6; i++) {

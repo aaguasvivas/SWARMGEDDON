@@ -7,6 +7,7 @@
 // nothing is submitted to the leaderboard).
 (() => {
   const DT = 1 / 60
+  const ALERT_KIND = ['', 'boss', 'final', 'event', 'elite', 'lull', 'debut']
   const xpForLevel = (l) => Math.floor(5 + l * 4 + l * l * 0.55)
 
   function xpTotal(w) {
@@ -247,6 +248,15 @@
       pickupCapStepsChunk: 0,
       equipsChunk: 0,
       perks: [],
+      alertSeq: w.alerts.seq,
+      alertsChunk: 0,
+      aliveSumChunk: 0,
+      spawnsChunk: 0,
+      lullStepsChunk: 0,
+      bossStepsChunk: 0,
+      satStepsChunk: 0,
+      overRowChunk: -Infinity,
+      maxSpeedByType: {},
     }
     window.__PT = st
     S.input.update = function () {
@@ -375,6 +385,21 @@
       }
 
       const n = w.enemies.size
+      st.aliveSumChunk += n
+      const lull = w.time < w.director.lullUntil
+      const row = w.script.minutes[Math.min(11, Math.floor(w.time / 60))]
+      if (lull) st.lullStepsChunk++
+      if (w.bossAlive) st.bossStepsChunk++
+      else if (!lull && n >= 0.95 * row.maxAlive) st.satStepsChunk++
+      if (n - row.maxAlive > st.overRowChunk) st.overRowChunk = n - row.maxAlive
+      while (st.alertSeq < w.alerts.seq) {
+        const a = w.alerts.slots[st.alertSeq % w.alerts.slots.length]
+        if (a.seq === st.alertSeq) {
+          st.events.push({ t: +a.t.toFixed(2), type: 'alert', kind: ALERT_KIND[a.kind] || a.kind, title: a.title, sub: a.sub })
+          st.alertsChunk++
+        }
+        st.alertSeq++
+      }
       if (n > st.maxEnemies) st.maxEnemies = n
       if (n > st.maxEnemiesChunk) st.maxEnemiesChunk = n
       if (n >= 700) {
@@ -384,11 +409,16 @@
       const act = w.enemies.active
       for (let i = 0; i < act.length; i++) {
         const e = act[i]
+        if (e.alive && !(e.def.behavior === 'charger' && e.phase === 2)) {
+          const v = Math.hypot(e.vx, e.vy)
+          if (!(v <= (st.maxSpeedByType[e.def.id] || 0))) st.maxSpeedByType[e.def.id] = +v.toFixed(1)
+        }
         if (e.bornAt !== w.time) continue
+        st.spawnsChunk++
         const id = e.def.id
         if (st.firstSeen[id] === undefined) st.firstSeen[id] = +w.time.toFixed(2)
         if (e.def.elite) st.events.push({ t: +w.time.toFixed(2), type: 'elite', id, hp: Math.round(e.maxHp) })
-        if (e.def.boss) st.events.push({ t: +w.time.toFixed(2), type: 'bossSpawn', id, hp: Math.round(e.maxHp) })
+        if (e.def.boss) st.events.push({ t: +w.time.toFixed(2), type: 'bossSpawn', id, title: w.director.bossTitle, hp: Math.round(e.maxHp), dist: Math.round(Math.hypot(e.x - w.player.x, e.y - w.player.y)) })
       }
       if (st.lastBossAlive && !w.bossAlive) st.events.push({ t: +w.time.toFixed(2), type: 'bossKill' })
       st.lastBossAlive = w.bossAlive
@@ -474,6 +504,14 @@
       enemyProj: w.enemyProjectiles.size,
       frozenSteps: st.frozenSteps,
       score: w.score,
+      aliveMean: st.simStepsChunk ? +(st.aliveSumChunk / st.simStepsChunk).toFixed(1) : 0,
+      spawns: st.spawnsChunk,
+      lullSteps: st.lullStepsChunk,
+      bossSteps: st.bossStepsChunk,
+      satSteps: st.satStepsChunk,
+      overRowMax: st.overRowChunk === -Infinity ? null : st.overRowChunk,
+      rowMaxAlive: w.script.minutes[Math.min(11, Math.floor(w.time / 60))].maxAlive,
+      alerts: st.alertsChunk,
     }
     st.killsPrev = w.kills
     st.levelUpsChunk = 0
@@ -486,6 +524,13 @@
     st.podsSeenChunk = 0
     st.pickupCapStepsChunk = 0
     st.equipsChunk = 0
+    st.alertsChunk = 0
+    st.aliveSumChunk = 0
+    st.spawnsChunk = 0
+    st.lullStepsChunk = 0
+    st.bossStepsChunk = 0
+    st.satStepsChunk = 0
+    st.overRowChunk = -Infinity
     st.chunks.push(c)
     return c
   }
@@ -513,6 +558,7 @@
       firstSeen: st.firstSeen,
       perks: st.perks,
       perkStacks: Object.fromEntries(w.perkStacks),
+      maxSpeedByType: st.maxSpeedByType,
       events: st.events,
       chunks: st.chunks,
       hpHist: st.hpHist,

@@ -1879,9 +1879,9 @@ export const PURGE_SEC = 1.2, PURGE_RADIUS = 1500, WIN_PANEL_DELAY = 2.0
 
 | t | Beat | script draws |
 |---|---|---|
-| 0.3 | Pack A (8 units on a full circle, r 250 + 50u) | 8 |
+| 0.3 | Pack A (8 units evenly on a full circle, r 250 + 50u each) | 8 |
 | 2.0 | Pulses start (RING_NEAR) | 0 |
-| 6.0 | Pack B (100 degree arc, r 420 to 460) | 1 |
+| 6.0 | Pack B (evenly along a 100 degree arc, r 420 to 460 by position) | 1 |
 | 1:30 | Teaching elite (0 affixes, hpMul 0.6) | 1 |
 | 2:30 | EVENT 1 (warn 2:27) | per event |
 | 3:00 | Lull 15 s (minAlive x0.5) | 0 |
@@ -1894,7 +1894,7 @@ export const PURGE_SEC = 1.2, PURGE_RADIUS = 1500, WIN_PANEL_DELAY = 2.0
 | 8:15 | Elite x2, 1 affix each | 4 |
 | 8:45 | EVENT 3 | per event |
 | 9:10 | Elite x3, 1 affix each | 6 |
-| 9:40 | Lull 20 s, alert `FINAL SWARM / IN 20 SECONDS` | 0 |
+| 9:40 | Lull 20 s (minAlive x0.5), alert `FINAL SWARM / IN 20 SECONDS` | 0 |
 | 10:00 | EVENT 4: FINAL SWARM | per event |
 | 10:30 | BOSS final: PRIME (warn 10:27) | 1 |
 
@@ -1966,6 +1966,8 @@ xpScale values below already include the no-expiry factor (x0.85, row 0 pinned a
 | 9 | row 8 | 66 | 215 | 0.7 x 5 | 0.30 | 66-151 | elites x3, lull |
 | 10 | row 8 | 80 | 250 | 0.6 x 5 | 0.38 | 80-175 | FINAL SWARM, TYRANT PRIME |
 | 11 | biter 6, beetle 6, cinderCharger 4 | 30 | 110 | 1.2 x 3 | 0.43 | cage | frenzy |
+
+Debut alerts (`NEW BUG`) use `EnemyDef.displayName`: BROODMOTHER, ABYSSAL MAW, DEEP CALLER, CINDER MORTARCH.
 
 **Script texts** (title max 18 chars, sub max 24):
 

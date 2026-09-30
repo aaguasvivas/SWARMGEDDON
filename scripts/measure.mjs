@@ -10,18 +10,32 @@
 //                                  determinism probe: ?seed=777, flood(200), a scripted
 //                                  bot (aim at nearest, fire, walk to pickups or circle,
 //                                  always pick card 1), `steps` ticks (default 600). One line
-//                                  per world with an FNV hash of enemies, player, progress
-//                                  and all 7 RNG stream states. Default world: all three.
-//                                  Hashes MUST match across viewports, DPR, injected
-//                                  settings and reruns (hard invariant).
+//                                  per world with an FNV hash of enemies, player, progress,
+//                                  director state and all 7 RNG stream states. Default
+//                                  world: all three. Hashes MUST match across viewports,
+//                                  DPR, injected settings and reruns (hard invariant).
+//   det-long [charId] [arenaId|all] [seconds]
+//                                  the full run arc: invincible, no flood, move
+//                                  (cos 0.7t, sin 0.9t), aim at the nearest enemy, fire
+//                                  always, pick card 1, `seconds` of sim (default 780 =
+//                                  12:00 + 60 s). Same hash, same invariant as det.
+//   opening [viewW viewH]          A1 opening probe: 5 seeds per world, stationary, aim
+//                                  at the nearest enemy in view. Reports first enemy in
+//                                  view, first kill and empty-view seconds over the first
+//                                  60 s. The view is W x H world units (1:1 camera) unless
+//                                  viewW viewH give the world area the camera shows.
 //   perf                           6s live combat at flood(500) + auto-fire; reports
 //                                  fps / p95 / max / long(>20ms) / bad(>33.4ms) frames.
+//   perf-final [charId] [arenaId]  S.jumpTo(600) (the FINAL SWARM beat fires at once),
+//                                  then 10 s of live combat; same stats plus peak alive.
 //   thrash                         perf variant re-injecting layout thrash (A/B baseline).
 //   shot <charId> <arenaId> <out>  screenshot of live combat with a varied enemy pack
 //                                  pulled into view (for visual audits / galleries).
 //   --dpr=N                        device pixel ratio for the page (default 1).
 //   --settings=JSON                settings merged into the save before boot, e.g.
 //                                  '{"shake":0,"reduceMotion":true,"damageNumbers":"off","flashes":false,"glow":0}'
+//   --mode=daily                   det / det-long start Daily runs (the date picks the
+//                                  world, so the arena argument is ignored).
 //
 // Notes: drives the DEV build's __SWARM handle (world/step/flood/give/setLoadout/loop).
 // rAF runs normally in headless "new"; sim-only checks use step() (no wall clock).
@@ -40,12 +54,143 @@ const [W, H] = [parseInt(pos[0] || '1920'), parseInt(pos[1] || '1080')]
 const MODE = pos[2] || 'perf'
 const DPR = flags.dpr ? parseFloat(flags.dpr) : 1
 const SETTINGS = flags.settings ? JSON.parse(flags.settings) : null
+const RUN_MODE = flags.mode === 'daily' ? 'daily' : 'endless'
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+
+// In-page determinism driver. Installed with page.evaluate(DET_HELPER); state
+// lives on window.__DET between chunked run() calls so a 13-minute run never
+// hits the protocol timeout. The render loop is stopped so only run() steps the
+// sim. Input is a pure function of sim state.
+const DET_HELPER = `(() => {
+  const S = window.__SWARM
+  const w = S.world
+  const inp = S.input
+  let st = null
+  const nearest = () => {
+    const pl = w.player
+    let best = null
+    let bd = Infinity
+    for (const e of w.enemies.active) {
+      if (!e.alive || e.submerged) continue
+      const d2 = (e.x - pl.x) ** 2 + (e.y - pl.y) ** 2
+      if (d2 < bd) { bd = d2; best = e }
+    }
+    return best ? [best, Math.sqrt(bd) || 1] : null
+  }
+  const botShort = () => {
+    const pl = w.player
+    const n = nearest()
+    if (n) {
+      inp.aimDir.x = (n[0].x - pl.x) / n[1]
+      inp.aimDir.y = (n[0].y - pl.y) / n[1]
+      inp.firing = true
+    } else {
+      inp.aimDir.x = 0
+      inp.aimDir.y = 0
+      inp.firing = false
+    }
+    let gem = null
+    let gd = 600 * 600
+    for (const p of w.pickups.active) {
+      const d2 = (p.x - pl.x) ** 2 + (p.y - pl.y) ** 2
+      if (p.alive && d2 < gd) { gd = d2; gem = p }
+    }
+    if (gem) {
+      const d = Math.sqrt(gd) || 1
+      inp.move.x = (gem.x - pl.x) / d
+      inp.move.y = (gem.y - pl.y) / d
+    } else {
+      inp.move.x = Math.cos(w.time * 0.7) * 0.8
+      inp.move.y = Math.sin(w.time * 0.7) * 0.8
+    }
+  }
+  const botLong = () => {
+    const pl = w.player
+    const n = nearest()
+    inp.firing = true
+    if (n) {
+      inp.aimDir.x = (n[0].x - pl.x) / n[1]
+      inp.aimDir.y = (n[0].y - pl.y) / n[1]
+    } else {
+      inp.aimDir.x = 1
+      inp.aimDir.y = 0
+    }
+    inp.move.x = Math.cos(0.7 * w.time)
+    inp.move.y = Math.sin(0.9 * w.time)
+  }
+  window.__DET = {
+    start(c, a, runMode, long) {
+      S.loop.stop()
+      if (runMode !== 'daily') S.setLoadout(c, a)
+      else S.setLoadout(c, 'hive')
+      S.startRun(runMode)
+      w.player.maxHp = 1e9
+      w.player.hp = 1e9
+      if (!long) S.flood(200)
+      st = { drafts: 0, bosses: 0, realUpdate: inp.update, wasBoss: false }
+      inp.update = long ? botLong : botShort
+    },
+    run(n) {
+      for (let i = 0; i < n; i++) {
+        S.step(1)
+        while (w.paused && w.pendingLevelUps > 0 && w.draftCards.length > 0) {
+          st.drafts++
+          S.pickPerk(w.draftCards[0].id)
+        }
+        if (w.bossAlive && !st.wasBoss) st.bosses++
+        st.wasBoss = w.bossAlive
+        w.player.maxHp = 1e9
+        w.player.hp = 1e9
+      }
+    },
+    finish() {
+      inp.update = st.realUpdate
+      let h = 0x811c9dc5
+      const byte = (v) => { h ^= v & 0xff; h = Math.imul(h, 0x01000193) }
+      const mix = (n) => { const v = Math.round(n * 16); byte(v); byte(v >> 8); byte(v >> 16); byte(v >> 24) }
+      const mix32 = (v) => { byte(v); byte(v >>> 8); byte(v >>> 16); byte(v >>> 24) }
+      const byType = {}
+      for (const e of w.enemies.active) {
+        mix(e.x); mix(e.y); mix(e.hp); mix32(e.uid)
+        byType[e.def.id] = (byType[e.def.id] ?? 0) + 1
+      }
+      for (const p of w.pickups.active) { mix(p.x); mix(p.y); mix(p.xp) }
+      mix(w.player.x); mix(w.player.y)
+      mix(w.kills); mix(w.level); mix(w.xp); mix(w.time); mix(w.ammo)
+      mix(w.projectiles.size); mix(w.enemyProjectiles.size); mix(w.acid.size); mix(w.particles.size)
+      for (const ch of w.weapon.id) byte(ch.charCodeAt(0))
+      for (const [id, n] of w.perkStacks) { for (const ch of id) byte(ch.charCodeAt(0)); mix(n) }
+      const d = w.director
+      const director = {
+        beat: d.beatCursor, warn: d.warnCursor, pulseT: +d.pulseT.toFixed(3), topupAcc: +d.topupAcc.toFixed(3),
+        lullUntil: d.lullUntil, bossBeat: d.bossBeat, lastBossKillAt: d.lastBossKillAt > 0 ? +d.lastBossKillAt.toFixed(2) : null,
+        deferred: Array.from(d.deferred),
+      }
+      mix(d.beatCursor); mix(d.warnCursor); mix(d.pulseT); mix(d.topupAcc); mix(d.lullUntil); mix(d.bossBeat)
+      mix(d.lastBossKillAt > 0 ? d.lastBossKillAt : 0)
+      for (let k = 0; k < d.deferred.length; k++) mix(d.deferred[k])
+      for (let k = 0; k < d.beatAng.length; k++) { mix(d.beatAng[k]); mix(d.beatAffix[k]) }
+      mix(w.boss ? w.boss.hp : -1); mix(w.boss && w.boss.enraged ? 1 : 0); mix(st.bosses)
+      const streams = {}
+      for (const k of ['spawn', 'script', 'boss', 'loot', 'draft', 'combat', 'fx']) {
+        const s = w.rngs[k].state
+        mix32(s)
+        streams[k] = s.toString(16)
+      }
+      return {
+        hash: (h >>> 0).toString(16), arena: w.arenaTheme.id, enemies: w.enemies.active.length, kills: w.kills,
+        level: w.level, drafts: st.drafts, pickups: w.pickups.active.length, time: +w.time.toFixed(2),
+        bosses: st.bosses, director, byType, streams,
+      }
+    },
+  }
+})()`
 
 await acquireChromeLock('measure')
 const browser = await puppeteer.launch({
   executablePath: CHROME,
   headless: true,
+  protocolTimeout: 900000,
   args: [`--window-size=${W},${H}`, '--hide-scrollbars', '--mute-audio', '--enable-gpu', '--use-angle=metal'],
   defaultViewport: { width: W, height: H, deviceScaleFactor: DPR },
 })
@@ -128,122 +273,107 @@ if (MODE === 'shot') {
   await new Promise((r) => setTimeout(r, 450))
   await page.screenshot({ path: outfile, type: 'jpeg', quality: 62 })
   console.log(JSON.stringify({ mode: 'shot', charId, arenaId, simSeconds, outfile }))
-} else if (MODE === 'det') {
+} else if (MODE === 'det' || MODE === 'det-long') {
   // Runs the same (seed, pilot, arena) sim TWICE in one page: hash1 must equal
   // hash2 (catches state leaking across beginRun), and both must match the
   // other-viewport / other-settings invocations (device independence).
+  const long = MODE === 'det-long'
   const charId = pos[3] || 'nova'
   const arenaArg = pos[4] || 'all'
-  const steps = parseInt(pos[5] || '600')
-  const arenas = arenaArg === 'all' ? ['hive', 'depths', 'wastes'] : [arenaArg]
+  const steps = long ? Math.round(parseFloat(pos[5] || '780') * 60) : parseInt(pos[5] || '600')
+  const arenas = RUN_MODE === 'daily' ? ['daily'] : arenaArg === 'all' ? ['hive', 'depths', 'wastes'] : [arenaArg]
   const applied = await page.evaluate(() => window.__SWARM.settings)
+  await page.evaluate(DET_HELPER)
+  const CHUNK = 3600
   for (const arenaId of arenas) {
-    const res = await page.evaluate((c, a, nSteps) => {
-      const S = window.__SWARM
-      const w = S.world
-      const inp = S.input
-      // Scripted input: a pure function of sim state, so the camera, viewport
-      // and pointer never reach the sim.
-      const bot = () => {
-        const pl = w.player
-        let best = null
-        let bd = Infinity
-        for (const e of w.enemies.active) {
-          if (!e.alive || e.submerged) continue
-          const d2 = (e.x - pl.x) ** 2 + (e.y - pl.y) ** 2
-          if (d2 < bd) { bd = d2; best = e }
-        }
-        if (best) {
-          const d = Math.sqrt(bd) || 1
-          inp.aimDir.x = (best.x - pl.x) / d
-          inp.aimDir.y = (best.y - pl.y) / d
-          inp.firing = true
-        } else {
-          inp.aimDir.x = 0
-          inp.aimDir.y = 0
-          inp.firing = false
-        }
-        // Walk to the nearest pickup, else circle-strafe.
-        let gem = null
-        let gd = 600 * 600
-        for (const p of w.pickups.active) {
-          const d2 = (p.x - pl.x) ** 2 + (p.y - pl.y) ** 2
-          if (p.alive && d2 < gd) { gd = d2; gem = p }
-        }
-        if (gem) {
-          const d = Math.sqrt(gd) || 1
-          inp.move.x = (gem.x - pl.x) / d
-          inp.move.y = (gem.y - pl.y) / d
-        } else {
-          inp.move.x = Math.cos(w.time * 0.7) * 0.8
-          inp.move.y = Math.sin(w.time * 0.7) * 0.8
-        }
+    const runs = []
+    for (let pass = 0; pass < 2; pass++) {
+      await page.evaluate((c, a, m, lg) => window.__DET.start(c, a, m, lg), charId, arenaId, RUN_MODE, long)
+      for (let done = 0; done < steps; done += CHUNK) {
+        await page.evaluate((n) => window.__DET.run(n), Math.min(CHUNK, steps - done))
       }
-      const runOnce = () => {
-        S.setLoadout(c, a)
-        S.startRun('endless')
-        w.player.maxHp = 1e9
-        w.player.hp = 1e9
-        S.flood(200)
-        const realUpdate = inp.update
-        inp.update = bot
-        let drafts = 0
-        try {
-          for (let i = 0; i < nSteps; i++) {
-            S.step(1)
-            while (w.paused && w.pendingLevelUps > 0 && w.draftCards.length > 0) {
-              drafts++
-              S.pickPerk(w.draftCards[0].id)
-            }
-            w.player.maxHp = 1e9
-            w.player.hp = 1e9
-          }
-        } finally {
-          inp.update = realUpdate
-        }
-        let h = 0x811c9dc5
-        const byte = (v) => { h ^= v & 0xff; h = Math.imul(h, 0x01000193) }
-        const mix = (n) => { const v = Math.round(n * 16); byte(v); byte(v >> 8); byte(v >> 16); byte(v >> 24) }
-        const mix32 = (v) => { byte(v); byte(v >>> 8); byte(v >>> 16); byte(v >>> 24) }
-        const byType = {}
-        for (const e of w.enemies.active) {
-          mix(e.x); mix(e.y); mix(e.hp); mix32(e.uid)
-          byType[e.def.id] = (byType[e.def.id] ?? 0) + 1
-        }
-        for (const p of w.pickups.active) { mix(p.x); mix(p.y); mix(p.xp) }
-        mix(w.player.x); mix(w.player.y)
-        mix(w.kills); mix(w.level); mix(w.xp); mix(w.time); mix(w.ammo)
-        mix(w.projectiles.size); mix(w.enemyProjectiles.size); mix(w.acid.size); mix(w.particles.size)
-        for (const ch of w.weapon.id) byte(ch.charCodeAt(0))
-        for (const [id, n] of w.perkStacks) { for (const ch of id) byte(ch.charCodeAt(0)); mix(n) }
-        const streams = {}
-        for (const k of ['spawn', 'script', 'boss', 'loot', 'draft', 'combat', 'fx']) {
-          const st = w.rngs[k].state
-          mix32(st)
-          streams[k] = st.toString(16)
-        }
-        return {
-          hash: (h >>> 0).toString(16), enemies: w.enemies.active.length, kills: w.kills, level: w.level,
-          drafts, pickups: w.pickups.active.length, time: +w.time.toFixed(2), byType, streams,
-        }
-      }
-      const r1 = runOnce()
-      const r2 = runOnce()
-      return { r1, r2, rerunMatch: r1.hash === r2.hash }
-    }, charId, arenaId, steps)
-    const r = res.r1
+      runs.push(await page.evaluate(() => window.__DET.finish()))
+    }
+    const r = runs[0]
     console.log(JSON.stringify({
-      mode: 'det', W, H, dpr: DPR, settings: SETTINGS ? applied : null, charId, arenaId, steps,
-      hash: r.hash, rerunMatch: res.rerunMatch, enemies: r.enemies, kills: r.kills, level: r.level,
-      drafts: r.drafts, pickups: r.pickups, time: r.time, streams: r.streams, byType: r.byType,
+      mode: MODE, runMode: RUN_MODE, W, H, dpr: DPR, settings: SETTINGS ? applied : null, charId, arenaId: r.arena, steps,
+      hash: r.hash, rerunMatch: r.hash === runs[1].hash, enemies: r.enemies, kills: r.kills, level: r.level,
+      drafts: r.drafts, pickups: r.pickups, time: r.time, bosses: r.bosses, director: r.director, streams: r.streams, byType: r.byType,
     }))
   }
-  if (pageErrors.length) console.log(JSON.stringify({ mode: 'det', pageErrors }))
+  if (pageErrors.length) console.log(JSON.stringify({ mode: MODE, pageErrors }))
+} else if (MODE === 'opening') {
+  const res = await page.evaluate((hw, hh) => {
+    const S = window.__SWARM
+    S.loop.stop()
+    const out = {}
+    for (const arena of ['hive', 'depths', 'wastes']) {
+      for (const seed of [777, 1001, 2002, 3003, 4004]) {
+        S.setLoadout('nova', arena)
+        S.startRun('endless')
+        const w = S.world
+        w.beginRun(seed, 'endless')
+        w.player.maxHp = w.player.hp = 1e9
+        const inView = (e) => e.alive && !e.submerged && Math.abs(e.x - w.player.x) < hw && Math.abs(e.y - w.player.y) < hh
+        const realUpdate = S.input.update
+        S.input.update = () => {
+          const pl = w.player
+          let best = null
+          let bd = Infinity
+          for (const e of w.enemies.active) {
+            if (!inView(e)) continue
+            const d = Math.hypot(e.x - pl.x, e.y - pl.y)
+            if (d < bd) { bd = d; best = e }
+          }
+          S.input.move.x = S.input.move.y = 0
+          if (best) {
+            S.input.aimDir.x = (best.x - pl.x) / bd
+            S.input.aimDir.y = (best.y - pl.y) / bd
+            S.input.firing = true
+          } else {
+            S.input.aimDir.x = S.input.aimDir.y = 0
+            S.input.firing = false
+          }
+        }
+        const r = { firstInView: null, firstKill: null, emptyViewSec: 0 }
+        try {
+          while (w.time < 60) {
+            const t0 = w.time
+            S.step(1)
+            while (w.paused && w.pendingLevelUps > 0 && w.draftCards.length > 0) S.pickPerk(w.draftCards[0].id)
+            w.player.maxHp = w.player.hp = 1e9
+            if (w.time === t0) continue
+            if (w.enemies.active.some(inView)) {
+              if (r.firstInView === null) r.firstInView = +w.time.toFixed(2)
+            } else r.emptyViewSec += 1 / 60
+            if (r.firstKill === null && w.kills > 0) r.firstKill = +w.time.toFixed(2)
+          }
+        } finally {
+          S.input.update = realUpdate
+        }
+        r.emptyViewSec = +r.emptyViewSec.toFixed(2)
+        r.killsAt60 = w.kills
+        r.levelAt60 = w.level
+        out[arena + '_' + seed] = r
+      }
+    }
+    return out
+  }, (parseFloat(pos[3]) || W) / 2, (parseFloat(pos[4]) || H) / 2)
+  const worst = { firstInView: 0, firstKill: 0, emptyViewSec: 0 }
+  for (const [k, v] of Object.entries(res)) {
+    console.log(JSON.stringify({ mode: 'opening', W, H, view: [pos[3] || W, pos[4] || H], run: k, ...v }))
+    for (const m of Object.keys(worst)) worst[m] = Math.max(worst[m], v[m] ?? Infinity)
+  }
+  const pass = worst.firstInView <= 1.0 && worst.firstKill <= 2.5 && worst.emptyViewSec <= 2.0
+  console.log(JSON.stringify({ mode: 'opening', W, H, view: [pos[3] || W, pos[4] || H], worst, pass }))
+  if (pageErrors.length) console.log(JSON.stringify({ mode: 'opening', pageErrors }))
 } else {
   // perf [charId] [arenaId]: live combat in any world (default nova/hive).
+  // perf-final: the same live measure from the FINAL SWARM beat (10 s).
+  const final = MODE === 'perf-final'
   const pChar = pos[3] || 'nova'
   const pArena = pos[4] || 'hive'
-  await page.evaluate((c, a) => {
+  await page.evaluate((c, a, fin) => {
     const S = window.__SWARM
     S.setLoadout(c, a)
     S.startRun('endless')
@@ -251,9 +381,13 @@ if (MODE === 'shot') {
     S.world.player.hp = 1e9
     S.input.autoFire = true
     S.give('hailstorm')
+    if (fin) {
+      S.jumpTo(600)
+      return
+    }
     S.flood(500)
     S.step(90 * 60) // deep into the run: full roster, elites, projectile hail
-  }, pChar, pArena)
+  }, pChar, pArena, final)
   if (MODE === 'thrash') {
     await page.evaluate(() => {
       const canvas = document.querySelector('canvas')
@@ -269,12 +403,22 @@ if (MODE === 'shot') {
       })
     })
   }
-  await page.mouse.move(W / 2 + 180, H / 2 + 40)
-  await new Promise((r) => setTimeout(r, 1200))
-  await page.evaluate(() => window.__SWARM.perfReset())
-  for (let i = 0; i < 24; i++) {
-    await page.mouse.move(W / 2 + Math.sin(i * 0.7) * 320, H / 2 + Math.cos(i * 0.9) * 200, { steps: 40 })
-    await new Promise((r) => setTimeout(r, 210))
+  let peakAlive = 0
+  if (final) {
+    await page.evaluate(() => window.__SWARM.perfReset())
+    const t0 = Date.now()
+    for (let i = 0; Date.now() - t0 < 10000; i++) {
+      await page.mouse.move(W / 2 + Math.sin(i * 0.7) * 320, H / 2 + Math.cos(i * 0.9) * 200, { steps: 20 })
+      peakAlive = Math.max(peakAlive, await page.evaluate(() => window.__SWARM.world.enemies.size))
+    }
+  } else {
+    await page.mouse.move(W / 2 + 180, H / 2 + 40)
+    await new Promise((r) => setTimeout(r, 1200))
+    await page.evaluate(() => window.__SWARM.perfReset())
+    for (let i = 0; i < 24; i++) {
+      await page.mouse.move(W / 2 + Math.sin(i * 0.7) * 320, H / 2 + Math.cos(i * 0.9) * 200, { steps: 40 })
+      await new Promise((r) => setTimeout(r, 210))
+    }
   }
   const stats = await page.evaluate(() => {
     const S = window.__SWARM
@@ -289,6 +433,6 @@ if (MODE === 'shot') {
       particles: S.world.particles.active.length,
     }
   })
-  console.log(JSON.stringify({ mode: MODE, W, H, gl: String(glInfo).slice(0, 60), ...stats }))
+  console.log(JSON.stringify({ mode: MODE, W, H, gl: String(glInfo).slice(0, 60), ...stats, ...(final ? { peakAlive, simTime: +(await page.evaluate(() => window.__SWARM.world.time)).toFixed(1) } : {}) }))
 }
 await browser.close()
