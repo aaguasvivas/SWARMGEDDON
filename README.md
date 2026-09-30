@@ -97,8 +97,8 @@ src/
   config.ts          engine tunables + alien-hive palette
   core/              vec, rng (seeded PRNG), time (fixed-step loop), pool, spatialHash
   audio/             synthesized WebAudio engine (SFX + adaptive music)
-  content/           weapons, enemies, perks, waveDirector, assets (pure data)
-  systems/           spawn, ai, weapons, projectiles, collision, pickups, acid, particles
+  content/           weapons, enemies, perks, runScripts (per-world run arc), assets (pure data)
+  systems/           director (run arc: beats, bosses, spawning), spawn, ai, weapons, projectiles, collision, pickups, acid, particles
   effects/           juice (shake/hit-stop), fx (particles/gibs/numbers)
   game/              world (run state), arena, player, enemy/projectile/particle/pickup/acid
   render/            app (layers), textures (atlas bake), ichorLayer (RT), entityRenderer

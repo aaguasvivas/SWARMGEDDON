@@ -17,7 +17,7 @@ import {
 } from '../config.ts'
 import { clamp } from '../core/vec.ts'
 import { ENEMIES } from '../content/enemies.ts'
-import { AFFIX_BIT, BEAT_DRAW_SLOTS, type Beat, type MinuteRow } from '../content/runScripts.ts'
+import { AFFIX_BIT, BEAT_DRAW_SLOTS, DEFER_SLOTS, type Beat, type MinuteRow } from '../content/runScripts.ts'
 import { AlertKind, FF_BOSS, FF_ELITE, FeelKind } from '../effects/feelQueue.ts'
 import type { World } from '../game/world.ts'
 import { ringPointAt, ringSpawnPoint, ringOut, spawnEnemy } from './spawn.ts'
@@ -26,7 +26,6 @@ const TAU = Math.PI * 2
 const DEG = Math.PI / 180
 /** Spawn points stay this far inside the arena wall. */
 const EDGE_INSET = 24
-const DEFER_SLOTS = 4
 const NEW_BUG = 'NEW BUG'
 /** Indexed by the quadrant of the direction from the player (world up = screen up). */
 const FROM_WORD = ['FROM THE EAST', 'FROM THE SOUTH', 'FROM THE WEST', 'FROM THE NORTH'] as const
@@ -216,6 +215,8 @@ function fireBeat(world: World, i: number, late: boolean): void {
   }
 }
 
+/** resolveScript guarantees a slot for every event and elite beat, so a held
+ *  beat is never dropped for room and never fires inside the cage. */
 function defer(world: World, i: number): void {
   const d = world.director
   for (let k = 0; k < DEFER_SLOTS; k++) {
@@ -225,7 +226,6 @@ function defer(world: World, i: number): void {
       return
     }
   }
-  fireBeat(world, i, true)
 }
 
 function tickDeferred(world: World): void {
@@ -275,36 +275,48 @@ function tickBossArrival(world: World): void {
     return
   }
   const text = world.script.text[b.stage]
-  const ang = d.beatAng[world.script.drawOff[d.bossBeat]!]!
+  const slot = world.script.drawOff[d.bossBeat]!
   if (!d.bossWarned && t >= arrive - WARN_LEAD) {
     d.bossWarned = true
+    // The alert points where the boss will appear from where the player stands
+    // now, so the wall flip is decided here, before the alert goes out.
+    if (!bossPointAt(world, d.beatAng[slot]!)) {
+      d.beatAng[slot] = d.beatAng[slot]! + Math.PI
+      bossPointAt(world, d.beatAng[slot]!)
+    }
+    const pl = world.player
+    const len = Math.hypot(bossOut.x - pl.x, bossOut.y - pl.y) || 1
     const kind = b.stage === 'final' ? AlertKind.Final : AlertKind.Boss
-    world.alerts.push(world.feel, kind, text.title, text.sub, Math.cos(ang), Math.sin(ang), t, world.player.x, world.player.y)
+    world.alerts.push(world.feel, kind, text.title, text.sub, (bossOut.x - pl.x) / len, (bossOut.y - pl.y) / len, t, pl.x, pl.y)
   }
-  if (t >= arrive && spawnBossAt(world, ang)) {
+  if (t >= arrive && spawnBossAt(world, d.beatAng[slot]!)) {
     d.bossTitle = text.title
     d.bossBeat = -1
   }
 }
 
-/** The boss appears BOSS_SPAWN_DIST from the player along its rolled angle,
- *  flipped when the arena wall would pull it too close. P6a spawns
- *  `boss.primeId` for the final stage once the PRIME defs exist. */
-function spawnBossAt(world: World, ang: number): boolean {
-  const id = world.script.boss.midId
-  const def = ENEMIES[id]!
+const bossOut = { x: 0, y: 0 }
+
+/** Sets bossOut to BOSS_SPAWN_DIST from the player along `ang`, kept inside the
+ *  arena; false when the wall pulls that point within BOSS_SPAWN_MIN_DIST. */
+function bossPointAt(world: World, ang: number): boolean {
   const pl = world.player
   const b = world.arena.bounds
-  const inset = def.radius + EDGE_INSET
-  let x = clamp(pl.x + Math.cos(ang) * BOSS_SPAWN_DIST, b.x + inset, b.x + b.w - inset)
-  let y = clamp(pl.y + Math.sin(ang) * BOSS_SPAWN_DIST, b.y + inset, b.y + b.h - inset)
-  const dx = x - pl.x
-  const dy = y - pl.y
-  if (dx * dx + dy * dy < BOSS_SPAWN_MIN_DIST * BOSS_SPAWN_MIN_DIST) {
-    x = clamp(pl.x - Math.cos(ang) * BOSS_SPAWN_DIST, b.x + inset, b.x + b.w - inset)
-    y = clamp(pl.y - Math.sin(ang) * BOSS_SPAWN_DIST, b.y + inset, b.y + b.h - inset)
-  }
-  const boss = spawnEnemy(world, id, x, y)
+  const inset = ENEMIES[world.script.boss.midId]!.radius + EDGE_INSET
+  bossOut.x = clamp(pl.x + Math.cos(ang) * BOSS_SPAWN_DIST, b.x + inset, b.x + b.w - inset)
+  bossOut.y = clamp(pl.y + Math.sin(ang) * BOSS_SPAWN_DIST, b.y + inset, b.y + b.h - inset)
+  const dx = bossOut.x - pl.x
+  const dy = bossOut.y - pl.y
+  return dx * dx + dy * dy >= BOSS_SPAWN_MIN_DIST * BOSS_SPAWN_MIN_DIST
+}
+
+/** The boss appears BOSS_SPAWN_DIST from the player along its angle, flipped
+ *  when the arena wall would pull it too close. P6a spawns `boss.primeId` for
+ *  the final stage once the PRIME defs exist. */
+function spawnBossAt(world: World, ang: number): boolean {
+  const id = world.script.boss.midId
+  if (!bossPointAt(world, ang)) bossPointAt(world, ang + Math.PI)
+  const boss = spawnEnemy(world, id, bossOut.x, bossOut.y)
   if (!boss) return false
   world.beginBossFight()
   world.bossAlive = true
@@ -345,7 +357,9 @@ function fireElites(world: World, i: number): void {
   for (let k = 0; k < b.count; k++) {
     ringPointAt(world, d.beatAng[off + k]!, half)
     const e = spawnInside(world, world.script.eliteId, ringOut.x, ringOut.y)
-    if (e) world.feel.emit(FeelKind.EliteSpawn, FF_ELITE, e.x, e.y, 0, 0, e.def)
+    if (!e) continue
+    if (b.hpMul !== 1) e.hp = e.maxHp = Math.round(e.maxHp * b.hpMul)
+    world.feel.emit(FeelKind.EliteSpawn, FF_ELITE, e.x, e.y, 0, 0, e.def)
   }
 }
 

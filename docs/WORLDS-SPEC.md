@@ -21,6 +21,8 @@ spawn rhythm world 1 never taught you. This is the highest-value-per-line
 
 ## Engine plumbing (the only structural work)
 
+> v2 note: the run-arc director (docs/NEXT-LEVEL.md 4.1; `src/systems/director.ts` and `src/content/runScripts.ts`) replaced `ARENA_WAVES`, `waveDirector.ts`, `spawnSystem` and `pickEnemy`. Item 1 below is history.
+
 1. **`ARENA_WAVES` registry** (src/content/waveDirector.ts): keyed by arena id;
    each entry `{ table: WaveEntry[], interval: {base, slope, floor}, batch:
    {base, period}, elite: {id, first, interval, packEvery}, boss: {id, first,

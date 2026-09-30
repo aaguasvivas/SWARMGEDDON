@@ -118,7 +118,7 @@ export class World {
   /** The arena's run script, resolved once per run. The sim reads only this. */
   script: ResolvedScript = resolveScript(ARENAS[0]!.id)
   readonly director = new Director()
-  /** Enemy damage ramp for this tick: bites, enemy shots and acid. */
+  /** Enemy damage ramp for this tick: non-boss bites, rams, enemy shots and acid. */
   dmgMul = 1
   /** Gem XP multiplier of the minute row in force (non-elite, non-boss kills). */
   xpScale = 1

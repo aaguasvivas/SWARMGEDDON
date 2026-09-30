@@ -1,6 +1,6 @@
 import type { AudioEngine } from '../audio/audio.ts'
 import { COLORS } from '../config.ts'
-import type { EnemyDef } from '../content/enemies.ts'
+import { ENEMIES, type EnemyDef } from '../content/enemies.ts'
 import { WEAPON_LIST } from '../content/weapons.ts'
 import type { World } from '../game/world.ts'
 import type { InputManager } from '../input/input.ts'
@@ -26,6 +26,8 @@ const BIG_HIT = 15
 const HITSTOP_BIG_HIT_MS = 40
 const HITSTOP_ELITE_MS = 50
 const HITSTOP_REVIVE_MS = 120
+const ALERT_HOLD_LONG = 3.0
+const ALERT_HOLD_SHORT = 2.0
 
 /**
  * Turns the sim's FeelQueue into sound, shake, flashes, floating text and time
@@ -201,9 +203,12 @@ export class FeelDirector {
   private onAlert(x: number, y: number, slot: number): void {
     const s = this.world.alerts.slots[slot]
     if (!s) return
-    const boss = this.world.boss
-    const color = s.kind === AlertKind.Boss && boss ? this.world.broodTint(boss.def.tint) : 0xff6aa8
-    announce(this.world, s.title, x, y - 40, color)
+    const bossy = s.kind === AlertKind.Boss || s.kind === AlertKind.Final
+    const color = bossy ? this.world.broodTint(ENEMIES[this.world.script.boss.midId]!.tint) : 0xff6aa8
+    // A15 holds: boss, final and event alerts last until the beat lands.
+    const life = bossy || s.kind === AlertKind.Event ? ALERT_HOLD_LONG : ALERT_HOLD_SHORT
+    announce(this.world, s.title, x, y - 52, color, life)
+    if (s.sub) announce(this.world, s.sub, x, y - 30, color, life)
   }
 
   /** Kick the view `px` along the line from (sx, sy) to the player. */

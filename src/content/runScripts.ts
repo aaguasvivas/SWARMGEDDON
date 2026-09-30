@@ -71,6 +71,8 @@ export interface ResolvedScript extends WorldScript {
 
 /** Director.beatAng / beatAffix capacity. */
 export const BEAT_DRAW_SLOTS = 64
+/** Director.deferred capacity: every event and elite beat of a script fits. */
+export const DEFER_SLOTS = 12
 
 export const EVENT_TITLE: Readonly<Record<SwarmEventId, string>> = {
   stampede: 'STAMPEDE',
@@ -150,7 +152,7 @@ export const WORLD_SCRIPTS: Readonly<Record<string, WorldScript>> = {
   hive: {
     arenaId: 'hive',
     minutes: [
-      row([['swarmer', 10], ['biter', 4]], 12, 40, 1.0, 2, 1.0),
+      row([['swarmer', 10], ['biter', 4]], 16, 40, 1.0, 2, 1.0),
       row([['swarmer', 10], ['biter', 6], ['flyer', 3]], 24, 80, 0.8, 3, 0.51),
       row([['swarmer', 9], ['biter', 6], ['flyer', 4], ['spitter', 3]], 40, 120, 0.75, 4, 0.47),
       row(HIVE_R3, 40, 140, 0.8, 4, 0.38),
@@ -180,7 +182,7 @@ export const WORLD_SCRIPTS: Readonly<Record<string, WorldScript>> = {
   depths: {
     arenaId: 'depths',
     minutes: [
-      row([['biter', 8], ['flyer', 3]], 10, 40, 3.0, 6, 1.0),
+      row([['biter', 8], ['flyer', 3]], 14, 40, 3.0, 6, 1.0),
       row([['biter', 8], ['flyer', 5], ['wraith', 6]], 20, 70, 3.0, 9, 0.51),
       row(DEPTHS_R2, 30, 100, 3.0, 12, 0.44),
       row(DEPTHS_R3, 30, 110, 3.2, 14, 0.36, 'abyssalMaw'),
@@ -210,7 +212,7 @@ export const WORLD_SCRIPTS: Readonly<Record<string, WorldScript>> = {
   wastes: {
     arenaId: 'wastes',
     minutes: [
-      row([['biter', 6], ['beetle', 3]], 10, 35, 1.4, 2, 1.0),
+      row([['biter', 6], ['beetle', 3]], 14, 35, 1.4, 2, 1.0),
       row(WASTES_R1, 16, 60, 1.3, 2, 0.47),
       row(WASTES_R2, 22, 80, 1.2, 3, 0.44),
       row(WASTES_R3, 26, 100, 1.1, 3, 0.41),
@@ -262,6 +264,7 @@ export function resolveScript(arenaId: string): ResolvedScript {
   if (!s) throw new Error(`no run script for arena '${arenaId}'`)
   const drawOff = new Int16Array(s.beats.length)
   let off = 0
+  let held = 0
   const at: number[] = []
   const kind: number[] = []
   const label: string[] = []
@@ -269,6 +272,7 @@ export function resolveScript(arenaId: string): ResolvedScript {
     const b = s.beats[i]!
     drawOff[i] = off
     off += drawSlots(b)
+    if (b.kind === 'event' || b.kind === 'elite') held++
     if (b.kind === 'event') {
       at.push(b.at)
       kind.push(b.id === 'finalSwarm' ? MARKER_FINAL : MARKER_EVENT)
@@ -284,6 +288,7 @@ export function resolveScript(arenaId: string): ResolvedScript {
     }
   }
   if (off > BEAT_DRAW_SLOTS) throw new Error(`run script '${arenaId}' needs ${off} draw slots (max ${BEAT_DRAW_SLOTS})`)
+  if (held > DEFER_SLOTS) throw new Error(`run script '${arenaId}' has ${held} event and elite beats (max ${DEFER_SLOTS})`)
   return { ...s, drawOff, markers: { at: Float32Array.from(at), kind: Uint8Array.from(kind), label } }
 }
 

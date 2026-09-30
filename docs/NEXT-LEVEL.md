@@ -1618,6 +1618,12 @@ node scripts/measure.mjs 390 844 perf ; node scripts/measure.mjs 390 844 perf-fi
 | A18 | Build systems | dash bot survives 1.25x or more vs no-dash; 1 to 4 close calls per minute; 50% or more of priority runs take a fusion by 4:00; 40% or more of evolve runs that reach boss 2 evolve; XP collected 90% or more |
 | A-LB | Server | forged seed 400; wrong pilot 400; second Daily 409; 4th Daily per IP 429; 9th insert in 10 min 429; `killPts > 80 x xpSum` stored clamped; kills over 250/s 422; blocklisted name becomes `PILOT####`; burst of 12 accepts exactly the remaining budget; board returns one row per player; `me` present outside the top 50; no `player_id` in any response; `/api/score` 410 |
 
+**A1 note (P4 review).**
+- "Both phone views" means the P14 normalized camera views: 560 x 996 (portrait) and 996 x 560 (landscape). Measure them with `node scripts/measure.mjs 375 667 opening 560 996` and `node scripts/measure.mjs 375 667 opening 996 560`.
+- Without view arguments, `opening` uses a 1:1 view (375 x 667 world units). That view cannot pass before P14, because `RING_NEAR` stays off screen on the normalized views by design (C27). Measured worst empty view: 16.0 s at 375 x 667 and 15.3 s at 667 x 375.
+- With the first minute-0 minAlive values (Hive 12, Depths 10, Wastes 10), the normalized views failed: worst empty view 3.45 s portrait, 1.83 s landscape.
+- P4 raised minute-0 minAlive to Hive 16, Depths 14, Wastes 14 (A7.2). Measured worst: empty view 0.80 s portrait and 1.32 s landscape, first enemy in view 0.30 s, first kill 0.57 s. P19 may lower these values only while A1 still passes at both normalized views.
+
 ---
 
 ## 12. Later
@@ -1912,7 +1918,7 @@ xpScale values below already include the no-expiry factor (x0.85, row 0 pinned a
 
 | min | Mix (weights) | minAlive | maxAlive | every x batch | xpScale | Target alive | Debut / beats |
 |---|---|---|---|---|---|---|---|
-| 0 | swarmer 10, biter 4 | 12 | 40 | 1.0 x 2 | 1.00 | 12-28 | packs |
+| 0 | swarmer 10, biter 4 | 16 | 40 | 1.0 x 2 | 1.00 | 16-28 | packs |
 | 1 | swarmer 10, biter 6, flyer 3 | 24 | 80 | 0.8 x 3 | 0.51 | 24-56 | teaching elite |
 | 2 | swarmer 9, biter 6, flyer 4, spitter 3 | 40 | 120 | 0.75 x 4 | 0.47 | 40-84 | STAMPEDE |
 | 3 | swarmer 8, biter 5, flyer 4, spitter 3, splitter 3 | 40 | 140 | 0.8 x 4 | 0.38 | 40-98 | lull, elite |
@@ -1933,7 +1939,7 @@ xpScale values below already include the no-expiry factor (x0.85, row 0 pinned a
 
 | min | Mix | minAlive | maxAlive | every x batch | xpScale | Target alive | Beats |
 |---|---|---|---|---|---|---|---|
-| 0 | biter 8, flyer 3 | 10 | 40 | 3.0 x 6 | 1.00 | 10-28 | packs |
+| 0 | biter 8, flyer 3 | 14 | 40 | 3.0 x 6 | 1.00 | 14-28 | packs |
 | 1 | biter 8, flyer 5, wraith 6 | 20 | 70 | 3.0 x 9 | 0.51 | 20-49 | teaching elite |
 | 2 | biter 6, flyer 5, wraith 8, psychic 3 | 30 | 100 | 3.0 x 12 | 0.44 | 30-70 | RIPTIDE |
 | 3 | row 2 + abyssalMaw 2 | 30 | 110 | 3.2 x 14 | 0.36 | 30-77 | debut abyssalMaw; lull, elite |
@@ -1954,7 +1960,7 @@ xpScale values below already include the no-expiry factor (x0.85, row 0 pinned a
 
 | min | Mix | minAlive | maxAlive | every x batch | xpScale | Target alive | Beats |
 |---|---|---|---|---|---|---|---|
-| 0 | biter 6, beetle 3 | 10 | 35 | 1.4 x 2 | 1.00 | 10-25 | packs |
+| 0 | biter 6, beetle 3 | 14 | 35 | 1.4 x 2 | 1.00 | 14-25 | packs |
 | 1 | biter 6, beetle 6, cinderCharger 4 | 16 | 60 | 1.3 x 2 | 0.47 | 16-42 | teaching elite |
 | 2 | row 1 with biter 5, + stinger 3 | 22 | 80 | 1.2 x 3 | 0.44 | 22-56 | CINDER WALL |
 | 3 | row 2 + burrower 4 | 26 | 100 | 1.1 x 3 | 0.41 | 26-70 | lull, elite |
@@ -1983,10 +1989,12 @@ Debut alerts (`NEW BUG`) use `EnemyDef.displayName`: BROODMOTHER, ABYSSAL MAW, D
 pulseT, topupAcc, beatCursor, warnCursor, lullUntil, lullMin
 beatAng = new Float32Array(64); beatAffix = new Uint8Array(192); scratch = new Float32Array(64)
 cage = { active, x, y, r, formingFrom }; bossesAlive, fightIndex, fightStart, nextFrenzyAt, frenzy
-lastBossKillAt, bossStageNext; deferred = new Int16Array(4); deferredAt = new Float32Array(4)
+lastBossKillAt, bossStageNext; deferred = new Int16Array(12); deferredAt = new Float32Array(12)
 events = [EventRun x3]; runState, clearTime, purgeT, purgeX, purgeY, otCycle, otStart
 broodCount, bossesKilled, elitesKilled
 ```
+
+- `deferred` holds one slot per event and elite beat of the script (`DEFER_SLOTS = 12`; T0 scripts have 10). `resolveScript` throws if a script has more, so a held beat never overflows the queue and never fires inside the cage.
 
 ## A8. Swarm events (T0)
 

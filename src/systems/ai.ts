@@ -313,7 +313,7 @@ function fireEnemyShot(world: World, e: Enemy, ux: number, uy: number): void {
   p.vx = ux * speed
   p.vy = uy * speed
   p.facing = Math.atan2(uy, ux)
-  p.damage = (def.projectileDamage ?? 12) * world.dmgMul
+  p.damage = (def.projectileDamage ?? 12) * (def.boss ? 1 : world.dmgMul)
   p.radius = 7
   p.life = 3.5
   p.pierce = 0

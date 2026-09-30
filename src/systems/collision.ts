@@ -68,6 +68,8 @@ export function collisionSystem(world: World, dt: number): void {
     if (!e.alive || e.submerged) continue
     const rr = e.radius + pl.radius
     if (distSq(e.x, e.y, pl.x, pl.y) < rr * rr) {
+      // Authored boss damage never takes the time ramp (docs/NEXT-LEVEL.md 4.1).
+      const mul = e.def.boss ? 1 : world.dmgMul
       // Charger windup/dash is NOT a chip: the telegraph (phase 1) is safe to
       // stand near, and the dash (phase 2) lands ONE solid ram if its locked
       // line catches you. That is the payoff for the tell (a fast dt-scaled pass would
@@ -75,14 +77,14 @@ export function collisionSystem(world: World, dt: number): void {
       if (e.def.behavior === 'charger' && (e.phase === 1 || e.phase === 2)) {
         if (e.phase === 2 && !e.dashHit) {
           e.dashHit = true
-          const ram = e.damage * world.dmgMul * (1 - m.damageReduction)
+          const ram = e.damage * mul * (1 - m.damageReduction)
           pl.hp -= ram
           world.feel.emit(FeelKind.PlayerHurt, FF_DISCRETE | FF_RAM, e.x, e.y, ram, 0, e.def)
           if (m.thorns > 0) thornsDamage(world, e, m.thorns)
         }
         continue
       }
-      const bite = e.damage * world.dmgMul * dt * (1 - m.damageReduction)
+      const bite = e.damage * mul * dt * (1 - m.damageReduction)
       pl.hp -= bite
       world.feel.emit(FeelKind.PlayerHurt, FF_CONTACT, e.x, e.y, bite, 0, e.def)
       if (m.thorns > 0) thornsDamage(world, e, m.thorns * dt)
