@@ -12,7 +12,7 @@ import type { World } from '../game/world.ts'
 const SEPARATION = 0.9
 /** Total gravity-well drag on the player, units/sec, hard-capped well below
  *  the slowest pilot's speed so the move stick always wins (phone fairness). */
-const MAX_WELL_PULL = 140
+export const MAX_WELL_PULL = 140
 
 /** Rebuild the enemy spatial hash from current positions. */
 export function buildEnemyHash(world: World): void {

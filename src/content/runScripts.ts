@@ -286,7 +286,7 @@ export const WORLD_SCRIPTS: Readonly<Record<string, WorldScript>> = {
       title: 'FINAL SWARM', dir: 'none', sub: 'HOLD ON', fit: SHOAL_RUN.dist,
       parts: [{ ...RIPTIDE, slots: 36, count: 32, turn: HALF_TURN }, { ...SHOAL_RUN, delay: 3 }, { ...BLINK_STORM, delay: 8 }],
     },
-    boss: { midId: 'voidMatron', primeId: 'voidMatronPrime', worldMul: 0.9 },
+    boss: { midId: 'voidMatron', primeId: 'voidMatronPrime', worldMul: 1.0 },
     text: {
       mid1: { title: 'THE VOID MATRON', sub: 'STIRS' },
       mid2: { title: 'THE VOID MATRON', sub: 'RETURNS' },

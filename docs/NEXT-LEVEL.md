@@ -555,7 +555,7 @@ Crit, Giant Slayer, AoE and pickup weapons stay out of the estimate. The evolved
 **Hazards** (`src/game/hazard.ts`, `src/systems/hazards.ts`, `src/render/hazardRenderer.ts`):
 - The pool holds 48.
 - Shapes: 0 circle, 1 lane, 2 sweep.
-- Fields: `tele/teleMax` for the telegraph, `live` for the damage window, `damage` (0 = marker), one hit per cast, and `onEnd`: none, magma pool, blink target or spawn unit.
+- Fields: `tele/teleMax` for the telegraph, `live` for the damage window, `damage` (0 = marker), one hit per cast, and `onEnd`: none, magma pool or spawn unit.
 - Player tests use squared distance for circles and point-to-segment distance for lanes and sweeps.
 - Textures (disc, lane, 120 degree sector, cage ring) are baked once.
 
@@ -791,6 +791,8 @@ If the app goes to the background during the sequence, the game jumps straight t
 - **Boss.** Intro, phase ROAR, FRENZY tint and kill, per A15, A16 and A17. The kill gets rings, 40 gibs (fx stream) and a bloom pulse when flashes are on.
 - **Threat cues.** The charger windup lane decal (6 sprites, 253 x 2r, hazard tint, 8 Hz pulse). Off-screen arrows (8 sprites) with priority boss > elite > charger in windup > pod > bonus > core, plus a 3 s alert-direction arrow.
 - **Hazards and cage.** The telegraph fill alpha ramps from 0.25 to 0.55 over `tele/teleMax`. A white flash on detonation. The cage ring is formed by a 1.5 s scale-in.
+  - Markers (no damage of their own) take the boss color 15% toward white and ramp from 0.45 to 0.85 (0.45 while live), because a boss color sits close to its own world's floor and glow (P6b screenshots: violet lance lanes on the Depths floor, ember turret spots on the Wastes floor). A marker circle wider than 200 u (mothersCall) keeps the 0.25 to 0.55 ramp, so the cage-wide wash does not hide the swarm.
+  - A burning sweep dims its sector to 0.2 and draws its flame line at 0.8. While the sweep warns, its flame line waits on the start edge on the marker ramp (0.45 to 0.85), so the side it sweeps from shows before it burns (P6b review: the direction flips every cast).
 - **Kill pitch ladder:** `semis = min(12, 2 x (tier - 1))`.
 - **Gem ladder:** each gem within 350 ms of the last steps up the ratios `[1, 9/8, 5/4, 3/2, 5/3, 2, 9/4, 5/2, 3, 10/3, 4]` over 659 Hz.
 
@@ -1665,6 +1667,13 @@ node scripts/measure.mjs 390 844 perf ; node scripts/measure.mjs 390 844 perf-fi
   - mid1 median 69.8 s (10 kills, 26.4 to 89.6 s), mid2 median 67.3 s (6 kills, longest 108.5 s), final 74.6 s (1 kill), 1 win. No fight goes over 150 s, so the default-bot A6 check passes. Kill-to-next-arrival at least 110.8 s.
   - Seed 9009 died at 9:41, before the PRIME, so its 158.83 s W2 fight has no P8 counterpart.
   - Two changes move these numbers against W2: Vampiric kill healing is now capped (A2), and the harness bot stops on a pod it wants (hold to take, A5.1).
+- **P6b (W2 main + the Matron and Tyrant kits, before P7 and P8), after its review, seeds 1001 x 1 to 30 unless noted, `nova:priority`.** `node scripts/probe-fightdps.mjs <world> <config>...` prints the per-fight numbers below (damage rate by boss state, distance, aim).
+  - **Depths worldMul 0.9 to 1.0.** The focus bot's damage rate on the Matron does not depend on her kit state: idle, telegraph and recover sit at 0.98 to 1.15 of the fight's mean, and her active windows (the undertow pull included) are the lowest at 0.70 to 0.87. Its mean distance to her is 280 to 360 u (the Queen: 350 to 385 u). So her blinks and her pull do not hand the bot close-range damage. At the same build (same seed, equal buildScale) the bot deals her 1.2 to 1.4x the damage per second it deals the Queen, whose eggs and brood take part of its fire. At 0.9 her fights were the shortest of the three worlds (focus medians over 90 seeds: Depths 21.4, 18.9 and 21.9 s; Hive 25.1, 25.6 and 41.8 s). The default bot's longest Depths mid1 (124.6 s at 0.9) caps worldMul at 1.08.
+  - Depths, focus bot: mid1 median 25.68 s (29 kills, 8.1 to 38.9 s), mid2 22.58 s (15 kills), final 24.81 s (5 kills); over 90 seeds 23.29, 22.72 and 27.61 s (9 final kills). mid1 and mid2 pass.
+  - Depths, default bot: longest mid1 132.7 s, mid2 76.1 s, no final reached; over 90 seeds the longest are 132.7, 83.0 and 97.1 s. Every fight is under 150 s. Wins over 90 seeds: default 8, focus 9 (9 and 8 at 0.9).
+  - **A6 FAIL, Depths final (focus floor).** No worldMul passes both clauses: the final needs about 1.45x the HP it has at 1.0 (the default bot's longest final would then be about 141 s), and mid1 caps the world at 1.08. The Matron PRIME needs an HP factor of her own relative to the Queen PRIME (her signature adds no brood; the Queen's adds 24 swarmers). The appendix has no knob for it, so it is an owner or P19 decision. Hive's final shows the same tension on this build: focus median 41.75 s (27 kills) but the default bot's longest final is 165.1 s (90 seeds).
+  - Wastes (the review changed nothing there): focus mid1 median 29.32 s (23 kills), mid2 24.56 s (8), final 43.11 and 57.75 s, so the medians pass. Default bot: longest mid1 160.85 s, final 176.46 s, so **A6 FAILS on the default bot**, and 15 fights ended in the bot's death (13 mid1, 2 mid2), mostly by boss hazards. The harness bot sums a push away from each damaging circle, so the magma mortar's 5 circles cancel, and it treats the scorch sweep as a circle of r 30 on the boss. P7's harness change (as of `36acc76`) adds stream dodging only, so the bot needs a multi-circle and sweep dodge before the post-P7 re-measure can settle Wastes; P19 tunes from that re-measure.
+  - Kill-to-next-arrival at least 45 s in every world and bot.
 
 **A3 note (P7).**
 - Beat timing is measured from `Director.firedAt` (the sim time each beat fired, or -1 when a rule dropped or skipped it). `scripts/playtest/analyze.mjs` replays the deferral rules over each run's own cage intervals (held beats at kill + 10 s, then 12 s apart; an event more than 60 s late dropped; a lull inside a cage skipped; bosses at `max(at, last kill + 20)`, mid2 skipped past 570 s) and prints one `A3` line per run.
@@ -2042,7 +2051,7 @@ xpScale values below already include the no-expiry factor (x0.85, row 0 pinned a
 **VIOLET DEPTHS**
 - Pack A: 8 biters. Pack B: 5 flyers.
 - Elite `abyssalWarden` (WARDEN). Fodder `biter`.
-- Bosses `voidMatron` / `voidMatronPrime`, worldMul 0.9.
+- Bosses `voidMatron` / `voidMatronPrime`, worldMul 1.0 (P6b review: 0.9 made her fights the shortest of the three worlds; A6 note in section 11).
 - Affix pool: HASTED, VOLATILE, SHIELDED, BROOD. No acid in Depths.
 
 | min | Mix | minAlive | maxAlive | every x batch | xpScale | Target alive | Beats |
@@ -2152,7 +2161,7 @@ P7 rules (`src/content/affixes.ts`): the outline is a ring on the floor at the b
 - `voidMatronPrime`: scale 3.1, r 54, speed 40, damage 55, tint #ff4f86, XP 240.
 - `emberTyrantPrime`: scale 3.4, r 58, speed 30, damage 60, tint #ffd23d, XP 260.
 - `egg`: sprite splitter, scale 0.9, hp 40, speed 0, r 14, damage 0, XP 2, behavior `'egg'`, hpRamp 0. Hatches after 4.0 s into 3 swarmers.
-- `flakTurret`: sprite cinderMortarch, scale 1.0, hp 60, speed 0, r 16, XP 3, behavior `'spitter'`, fireCooldown 1.6, projectileSpeed 460, projectileDamage 11, hpRamp 0.1.
+- `flakTurret`: sprite cinderMortarch, scale 1.0, hp 60, speed 0, r 16, XP 3, behavior `'spitter'`, fireCooldown 1.6, projectileSpeed 460, projectileDamage 11, hpRamp 0.1. P6b: damage 0 (a rooted gun, no bite), tint #ff8a2a, gib #ffb05a x6, name `FLAK TURRET`, no acid. It is the fight's brood, so it shoots inside the cage. When its fight ends (kill, ascend or stalemate), every turret of that fight collapses with no credit: a speed-0 shooter would otherwise fire across the arena for the rest of the run.
 - Boss contact bites: queen 24, matron 22, tyrant 24.
 
 ### A10.2 Stages
@@ -2185,7 +2194,7 @@ Idle gap: queen 0.9 s, matron 0.7 s, tyrant 1.1 s. Cadence divides idleGap and r
 | C eggClutch | 0.60 | instant | 0.60 | 0 | 5 eggs (PRIME P3: 7) on r 150, 1 boss draw; at brood cap, cast A instead |
 | SIG mothersCall | 1.20 | instant | 1.00 | none | 24 swarmers (hp x1.5) on 27 slots at `cage.r - 40`; 3 empty slots face away from the queen |
 
-Decals: sporeNova a circle r 120 on the queen; royalLunge its lane, cut at the ring or the wall; eggClutch a circle r 164 (the egg ring plus an egg radius); mothersCall a circle of `cage.r - 40` on the cage center. Until P6b lands, the VOID MATRON and EMBER TYRANT cast the QUEEN's attacks with their own idle movement and gaps.
+Decals: sporeNova a circle r 120 on the queen; royalLunge its lane, cut at the ring or the wall; eggClutch a circle r 164 (the egg ring plus an egg radius); mothersCall a circle of `cage.r - 40` on the cage center.
 
 **THE VOID MATRON** (idle: strafes at 260 u)
 
@@ -2196,6 +2205,8 @@ Decals: sporeNova a circle r 120 on the queen; royalLunge its lane, cut at the r
 | C undertow | 0.70 | 3.0 | 0.60 | 0 | pulls the player at 150 u/s (clamped by MAX_WELL_PULL 140); 6 wraiths at r 90 |
 | SIG riftStorm | 0.70 x3 | 0.15 each | 1.00 | 22 | 3 riftBlinks in a row, r 120, each aimed at its own tele start |
 
+Decals (P6b): riftBlink and riftStorm the slam circle on the player's spot, and she lands in it as it slams: the circle detonates and hits at the end of one tick, and she arrives on her cast tick, the next one; the next riftStorm blink telegraphs at the player's spot on that tick. psiLance its 3 lanes, and each bolt ends where its lane ends; bolts are drawn 60% toward white. undertow a circle r 104 on her (the wraith ring plus a wraith radius) that stays up through the 3.0 s pull; the pull adds to any gravity well inside the one MAX_WELL_PULL clamp and stops when the bodies touch; the wraith ring starts toward the player (no draw).
+
 **THE EMBER TYRANT** (idle: approaches to 300 u at 0.6x speed)
 
 | Attack | tele | active | recover | dmg | Parameters |
@@ -2204,6 +2215,10 @@ Decals: sporeNova a circle r 120 on the queen; royalLunge its lane, cut at the r
 | B flakTurrets | 0.80 | instant | 0.60 | 11 per shot | 3 turrets on r 170 around her (1 draw); max 6 alive, otherwise cast A |
 | C scorchSweep | 0.90 | 1.40 | 0.80 | 28 | 120 degree sector, r 460; flame line halfW 30 sweeps from player angle -60 degrees; direction alternates |
 | SIG cinderfall | 1.00 each | 0.15 | 1.00 | 20 | 12 circles r 80 on a spiral (radius 90 + 27k, angle 50k degrees + 1 draw), one every 0.25 s |
+
+Decals (P6b): magmaMortar its 5 circles, placed around the player's spot at the tele start (the center one leaves the magma pool). flakTurrets a marker circle r 34 at each turret spot (on r 170 around her, clamped inside the cage), and the turret rises from it (hazard `onEnd` spawn); "max 6 alive" means slot A casts when the live turrets plus 3 would pass 6. scorchSweep its 120 degree sector from her position at the tele start, with the flame line waiting on the edge it starts from, then, while it burns, the flame line moving across (the sector dims). cinderfall its circles; the spiral is centered on the player's spot at the cast start, and a circle that lies wholly outside the cage (it cannot reach the caged player) is not cast.
+
+A multi-part attack (riftStorm, cinderfall) holds the boss until its last part lands, then recovers, so only one attack's telegraph is live at a time. A phase change cancels every boss telegraph still warning and every boss marker, and the parts still to come; damage already live finishes. The end of a fight (a kill, an ascend or a stalemate) ends every boss hazard of it.
 
 **Arrival and fight sanity** (effective DPS = estimate x 0.6):
 

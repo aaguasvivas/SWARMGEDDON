@@ -129,7 +129,10 @@ async function checks() {
       const e = w.boss
       if (!e) break
       worst = Math.max(worst, outside(e))
-      if (f.state === BS_TELE && prev !== BS_TELE && f.tele && f.attack === 1) lane = f.tele.len - e.radius
+      if (f.state === BS_TELE && prev !== BS_TELE && f.attack === 1) {
+        const h = w.hazards.active.find((z) => z.alive && z.boss && z.shape === 1)
+        if (h) lane = h.len - e.radius
+      }
       if (prev === BS_ACTIVE && f.state !== BS_ACTIVE) {
         lunges++
         laneMiss = Math.max(laneMiss, Math.abs(Math.hypot(e.x - f.lungeX, e.y - f.lungeY) - lane))
