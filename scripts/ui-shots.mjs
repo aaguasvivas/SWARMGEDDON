@@ -257,7 +257,7 @@ async function runSize(browser, size) {
       w.player.maxHp = w.character.maxHp
       w.player.hp = Math.round(w.character.maxHp * 0.62)
       w.kills = 1287
-      w.time = 754
+      S.jumpTo(754) // past every beat, so no stacked alerts fire on the next step
       w.pendingLevelUps = 0
       w.paused = true
       S.feel.hurtFlash = 0

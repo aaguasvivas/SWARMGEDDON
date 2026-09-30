@@ -557,7 +557,7 @@ async function boot(): Promise<void> {
 
       if (playing && showGemHint && world.firstGemAt >= 0) {
         showGemHint = false
-        numbers.label('COLLECT FOR XP', world.firstGemX, world.firstGemY - 18, COLORS.gem)
+        numbers.label('COLLECT FOR XP', world.firstGemX, world.firstGemY, 18, COLORS.gem)
         saveJSON('seenGemHint', true)
       }
 
@@ -745,6 +745,7 @@ async function boot(): Promise<void> {
       },
       addXp: (n: number) => world.addXp(n),
       give: (id: string) => world.equipWeapon(id),
+      saveJSON,
     }
   }
 }

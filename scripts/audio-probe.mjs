@@ -189,7 +189,7 @@ try {
     au.stats.dropped = 0
     au.stats.stolen = 0
     w.mods.thorns = 1e7
-    w.bossTimer = 0
+    S.jumpTo(240) // the mid1 boss beat: its warn and arrival both land on the next step
     const kills0 = w.kills
     const t0 = au.ctx.currentTime
     S.step(1)

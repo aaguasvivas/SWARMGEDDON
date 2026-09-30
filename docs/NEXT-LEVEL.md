@@ -2460,7 +2460,7 @@ Mode `big` shows crits, heals and any number whose total reaches 10. Every pilot
 
 FX (section 6.4): directional gibs throw `round(0.6 x count)` gibs within ±0.6 rad of the killing shot's velocity and the rest radially (fx stream, one draw per angle as before). The muzzle is 2 sparks plus one additive flash quad: a 22 x 10 soft diamond along the aim, centered 11 px ahead of the muzzle, muzzle tint, 60 ms life, shrinking at 6/s. Rail and beam carry `WeaponDef.tracer`; their shots stretch along travel by `1 + speed / 1800`.
 
-World labels (until the P15 callout lane replaces them): 8 pooled lines, JetBrains Mono 800 16 px with a 4 px INK stroke, 1.1 s life, 14 px rise, color through `ensureContrast`. They carry pickup names, alerts, boss kills and the gem hint.
+World labels (until the P15 callout lane replaces them): 8 pooled lines, JetBrains Mono 800 16 px with a 4 px INK stroke, 1.1 s life, 14 px rise, color through `ensureContrast`. They carry pickup names, alerts, boss kills and the gem hint. Each line sits a fixed number of screen px above its world anchor (the lift is divided by the camera zoom), so two-line alerts keep their 22 px line gap at every zoom.
 
 Font coverage: the shipped subsets hold U+0020-007E (Orbitron has no `^`) and U+00B7 (JetBrains Mono only). U+2192 is not in the upstream latin files, so `→` renders in the fallback face.
 

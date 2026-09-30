@@ -23,8 +23,9 @@
 //   opening [viewW viewH]          A1 opening probe: 5 seeds per world, stationary, aim
 //                                  at the nearest enemy in view. Reports first enemy in
 //                                  view, first kill and empty-view seconds over the first
-//                                  60 s. The view is W x H world units (1:1 camera) unless
-//                                  viewW viewH give the world area the camera shows.
+//                                  60 s. The view is the camera's world view at W x H
+//                                  (W / baseZoom by H / baseZoom) unless viewW viewH
+//                                  override it.
 //   perf                           6s live combat at flood(500) + auto-fire; reports
 //                                  fps / p95 / max / long(>20ms) / bad(>33.4ms) frames.
 //   perf-final [charId] [arenaId]  S.jumpTo(600) (the FINAL SWARM beat fires at once),
@@ -310,6 +311,8 @@ if (MODE === 'shot') {
   }
   if (pageErrors.length) console.log(JSON.stringify({ mode: MODE, pageErrors }))
 } else if (MODE === 'opening') {
+  const zoom = await page.evaluate(() => window.__SWARM.camera.baseZoom)
+  const view = [parseFloat(pos[3]) || +(W / zoom).toFixed(1), parseFloat(pos[4]) || +(H / zoom).toFixed(1)]
   const res = await page.evaluate((hw, hh) => {
     const S = window.__SWARM
     S.loop.stop()
@@ -365,14 +368,14 @@ if (MODE === 'shot') {
       }
     }
     return out
-  }, (parseFloat(pos[3]) || W) / 2, (parseFloat(pos[4]) || H) / 2)
+  }, view[0] / 2, view[1] / 2)
   const worst = { firstInView: 0, firstKill: 0, emptyViewSec: 0 }
   for (const [k, v] of Object.entries(res)) {
-    console.log(JSON.stringify({ mode: 'opening', W, H, view: [pos[3] || W, pos[4] || H], run: k, ...v }))
+    console.log(JSON.stringify({ mode: 'opening', W, H, view, run: k, ...v }))
     for (const m of Object.keys(worst)) worst[m] = Math.max(worst[m], v[m] ?? Infinity)
   }
   const pass = worst.firstInView <= 1.0 && worst.firstKill <= 2.5 && worst.emptyViewSec <= 2.0
-  console.log(JSON.stringify({ mode: 'opening', W, H, view: [pos[3] || W, pos[4] || H], worst, pass }))
+  console.log(JSON.stringify({ mode: 'opening', W, H, view, worst, pass }))
   if (pageErrors.length) console.log(JSON.stringify({ mode: 'opening', pageErrors }))
 } else {
   // perf [charId] [arenaId]: live combat in any world (default nova/hive).

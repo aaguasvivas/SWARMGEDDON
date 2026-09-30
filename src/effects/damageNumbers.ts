@@ -67,6 +67,7 @@ export class DamageNumbers {
   private readonly labelLife = new Float32Array(LABEL_CAP)
   private readonly labelX = new Float32Array(LABEL_CAP)
   private readonly labelY = new Float32Array(LABEL_CAP)
+  private readonly labelLift = new Float32Array(LABEL_CAP)
   private now = 0
   private readonly em: number
 
@@ -133,7 +134,8 @@ export class DamageNumbers {
     this.start(i, x, y, KIND_HEAL, hp, 0, true)
   }
 
-  label(text: string, x: number, y: number, color: number, life = 1.1): void {
+  /** A text line `liftPx` screen px above world point (x, y), whatever the zoom. */
+  label(text: string, x: number, y: number, liftPx: number, color: number, life = 1.1): void {
     let slot = 0
     for (let i = 0; i < LABEL_CAP; i++) {
       if (!this.labels[i]!.visible) {
@@ -150,6 +152,7 @@ export class DamageNumbers {
     this.labelLife[slot] = life * 1000
     this.labelX[slot] = x
     this.labelY[slot] = y
+    this.labelLift[slot] = liftPx
   }
 
   /** Once per render frame on the real clock; `zoom` keeps the size constant on screen. */
@@ -191,7 +194,7 @@ export class DamageNumbers {
       }
       const k = 1 - age / life
       const u = Math.min(1, age / 700)
-      t.position.set(this.labelX[i]!, this.labelY[i]! - LABEL_RISE_PX * (1 - (1 - u) * (1 - u)) * inv)
+      t.position.set(this.labelX[i]!, this.labelY[i]! - (this.labelLift[i]! + LABEL_RISE_PX * (1 - (1 - u) * (1 - u))) * inv)
       t.alpha = k
       t.scale.set((1 + (1 - k) * 0.3) * inv)
     }

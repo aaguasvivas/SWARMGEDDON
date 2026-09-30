@@ -155,7 +155,7 @@ export class FeelDirector {
           this.heavyThenSuccess(nowMs)
           this.time.hitStop(HITSTOP_REVIVE_MS, true)
           this.time.play(TimePreset.Revive)
-          this.numbers.label('SECOND WIND', x, y - 30, 0x7dffd6)
+          this.numbers.label('SECOND WIND', x, y, 30, 0x7dffd6)
           break
         case FeelKind.GemCollect:
           this.onGem(nowMs)
@@ -171,7 +171,7 @@ export class FeelDirector {
           this.audio.play('weapon')
           haptic('medium')
           this.shake.add(0.1, 0.35)
-          if (w) this.numbers.label(w.name, x, y - 26, w.tint)
+          if (w) this.numbers.label(w.name, x, y, 26, w.tint)
           break
         }
         case FeelKind.WeaponEmpty:
@@ -203,7 +203,7 @@ export class FeelDirector {
           this.heavyThenSuccess(nowMs)
           this.shake.add(0.85, 1)
           this.time.play(TimePreset.BossKill)
-          this.numbers.label(this.world.script.text.slain, x, y - 36, 0xffe066)
+          this.numbers.label(this.world.script.text.slain, x, y, 36, 0xffe066)
           break
         case FeelKind.ChargerWindup:
           this.audio.play('chargerWindup', 0, 1, panOf(x, view))
@@ -223,7 +223,7 @@ export class FeelDirector {
           this.audio.play('closecall')
           haptic('medium')
           this.time.play(TimePreset.CloseCall)
-          this.numbers.label('CLOSE CALL', x, y - 30, 0x7dffd6)
+          this.numbers.label('CLOSE CALL', x, y, 30, 0x7dffd6)
           break
         case FeelKind.Alert:
           this.onAlert(x, y, b)
@@ -390,8 +390,8 @@ export class FeelDirector {
     const color = bossy ? this.world.broodTint(ENEMIES[this.world.script.boss.midId]!.tint) : 0xff6aa8
     // A15 holds: boss, final and event alerts last until the beat lands.
     const life = bossy || s.kind === AlertKind.Event ? ALERT_HOLD_LONG : ALERT_HOLD_SHORT
-    this.numbers.label(s.title, x, y - 52, color, life)
-    if (s.sub) this.numbers.label(s.sub, x, y - 30, color, life)
+    this.numbers.label(s.title, x, y, 52, color, life)
+    if (s.sub) this.numbers.label(s.sub, x, y, 30, color, life)
   }
 
   /** Kick the view `px` along the line from (sx, sy) to the player. */
