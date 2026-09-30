@@ -11,10 +11,18 @@
 // shows a keystone of the pilot family. Then replays one run twice and
 // compares every card (determinism), and runs the exhaustion case: every perk
 // maxed and every fusion owned, 6 drafts in a row, each 3 fallback cards.
-import { DraftState, openDraft, rerollDraft, banishCard, pickCard, skipDraft, canReroll, canBanish, TAG_NEW } from '../src/systems/draft.ts'
-import { PERKS, FUSIONS, FAMILY_OF_PILOT, FALLBACKS } from '../src/content/perks.ts'
-import { WEAPONS, PICKUP_WEAPON_IDS } from '../src/content/weapons.ts'
-import { RunRngs, Rng } from '../src/core/rng.ts'
+import { spawnSync } from 'node:child_process'
+
+// draft.ts reaches feelQueue.ts (through damage.ts), whose const enum needs
+// Node's type transform, not only type stripping: re-run with it.
+if (!process.execArgv.includes('--experimental-transform-types')) {
+  const r = spawnSync(process.execPath, ['--experimental-transform-types', '--no-warnings', ...process.argv.slice(1)], { stdio: 'inherit' })
+  process.exit(r.status ?? 1)
+}
+const { DraftState, openDraft, rerollDraft, banishCard, pickCard, skipDraft, canReroll, canBanish, TAG_NEW } = await import('../src/systems/draft.ts')
+const { PERKS, FUSIONS, FAMILY_OF_PILOT, FALLBACKS, baseModifiers } = await import('../src/content/perks.ts')
+const { WEAPONS, PICKUP_WEAPON_IDS } = await import('../src/content/weapons.ts')
+const { RunRngs, Rng } = await import('../src/core/rng.ts')
 
 const TOTAL = parseInt(process.argv[2] || '10000')
 const PILOTS = ['nova', 'ember', 'vesper']
@@ -37,6 +45,8 @@ function makeWorld(seed, pilot, pool) {
     weapon: WEAPONS.pistol,
     baseWeaponId: 'pistol',
     player: { hp: 100, maxHp: 100 },
+    mods: baseModifiers(),
+    overshield: 0,
     choosePerk(id) {
       this.perkStacks.set(id, (this.perkStacks.get(id) ?? 0) + 1)
     },

@@ -140,7 +140,8 @@ for (const f of files) {
  * intervals and compare each beat's fire time with where the rules put it.
  * An elite or event beat due while a cage is up waits; each boss kill
  * schedules every held beat, in beat order, 10 s after the kill and 12 s
- * apart; an event more than 60 s late is dropped; a lull inside a cage is
+ * apart (a held beat still waiting when the next cage rises waits for that
+ * fight's kill); an event more than 60 s late is dropped; a lull inside a cage is
  * skipped. Bosses arrive at max(at, last kill + 20), mid2 not after 570 s.
  */
 function beatFidelity(r) {
@@ -185,6 +186,9 @@ function beatFidelity(r) {
     } else if (m.type === 1) {
       cageOn = true
       openedAt = m.t
+      // A held beat not yet due when the next cage rises waits again, for
+      // that fight's kill (directorBossKilled reschedules every held beat).
+      for (const h of held) h.due = NaN
     } else {
       cageOn = false
       cageSpans.push([openedAt, m.t])

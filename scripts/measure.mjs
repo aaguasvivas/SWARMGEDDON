@@ -72,6 +72,8 @@
 //                                  the fresh save plus the pilot and world, the start pools).
 //                                  A 600-step det hashes the same for both saves, so it
 //                                  cannot show a pool difference; det-long and det-death can.
+//   --perks=a,b,...                perf modes take these perks and fusions at run start
+//                                  (P8: --perks=cryo_rounds,explosive_rounds,f_shatter).
 //   --paint=<id>                   det modes fly this paint (granted first). Paints are
 //                                  cosmetic, so the hash must not change.
 //                                  Every det pass restores the owned set it started from,
@@ -97,6 +99,7 @@ const DPR = flags.dpr ? parseFloat(flags.dpr) : 1
 const SETTINGS = flags.settings ? JSON.parse(flags.settings) : null
 const RUN_MODE = flags.mode === 'daily' ? 'daily' : 'endless'
 const SAVE_PREP = { unlocked: flags.save === 'unlocked', paint: flags.paint || null }
+const PERF_PERKS = flags.perks ? flags.perks.split(',') : []
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
 // In-page determinism driver. Installed with page.evaluate(DET_HELPER); state
@@ -624,10 +627,11 @@ if (MODE === 'shot') {
   const final = MODE === 'perf-final'
   const pChar = pos[3] || 'nova'
   const pArena = pos[4] || 'hive'
-  await page.evaluate((c, a, fin) => {
+  await page.evaluate((c, a, fin, perks) => {
     const S = window.__SWARM
     S.setLoadout(c, a)
     S.startRun('endless')
+    for (const id of perks) S.world.choosePerk(id)
     S.world.player.maxHp = 1e9
     S.world.player.hp = 1e9
     S.input.autoFire = true
@@ -638,7 +642,7 @@ if (MODE === 'shot') {
     }
     S.flood(500)
     S.step(90 * 60) // deep into the run: full roster, elites, projectile hail
-  }, pChar, pArena, final)
+  }, pChar, pArena, final, PERF_PERKS)
   // Keep the window live: a level-up draft would otherwise pause the sim about
   // 0.5 s in and the stats would time a frozen scene. Drafts are answered with
   // card 1 (as the det bot does), the ship stays invincible (a pick recomputes
@@ -707,6 +711,6 @@ if (MODE === 'shot') {
       picks: window.__PERF_PICKS,
     }
   })
-  console.log(JSON.stringify({ mode: MODE, W, H, gl: String(glInfo).slice(0, 60), ...stats, ...(final ? { peakAlive, simTime: +(await page.evaluate(() => window.__SWARM.world.time)).toFixed(1) } : {}) }))
+  console.log(JSON.stringify({ mode: MODE, W, H, ...(PERF_PERKS.length ? { perks: PERF_PERKS } : {}), gl: String(glInfo).slice(0, 60), ...stats, ...(final ? { peakAlive, simTime: +(await page.evaluate(() => window.__SWARM.world.time)).toFixed(1) } : {}) }))
 }
 await browser.close()

@@ -386,23 +386,33 @@ function podChecks() {
   const l2 = lifeOf(['quartermaster', 'quartermaster'])
   out.podLife = { plain: l0, quartermaster2: l2, pass: near(l0, 20, 1e-3) && near(l2, 30, 1e-3) }
 
-  // Type: affinity 0.5 toward owned pairs; the held weapon never drops.
-  fresh(['adrenaline'])
-  w.equipWeapon('shotgun')
-  const counts = {}
-  w.rngs.loot.reseed(99)
-  for (let i = 0; i < 2000; i++) {
-    for (const q of pods()) q.alive = false
-    w.pickups.sweep()
-    w.weaponDropTimer = DT / 2
-    w.ammo = 1e9
-    step(1)
-    const q = pods()[0]
-    counts[q.weaponId] = (counts[q.weaponId] ?? 0) + 1
+  // Type: affinity 0.5 toward owned pairs; the held weapon never drops. The
+  // pool is this run's (P12b): the 6 start weapons on a fresh save, then all 11
+  // once every feat reward is owned. Expected share 0.5 + 0.5 / (pool - 1).
+  const affinity = () => {
+    fresh(['adrenaline'])
+    w.equipWeapon('shotgun')
+    const counts = {}
+    w.rngs.loot.reseed(99)
+    for (let i = 0; i < 2000; i++) {
+      for (const q of pods()) q.alive = false
+      w.pickups.sweep()
+      w.weaponDropTimer = DT / 2
+      w.ammo = 1e9
+      step(1)
+      const q = pods()[0]
+      counts[q.weaponId] = (counts[q.weaponId] ?? 0) + 1
+    }
+    const smgShare = (counts.smg ?? 0) / 2000
+    const poolN = w.weaponPool.length
+    const want = 0.5 + 0.5 / (poolN - 1)
+    return { pool: poolN, smgShare: r3(smgShare), want: r3(want), held: counts.shotgun ?? 0, kinds: Object.keys(counts).length,
+      ok: Math.abs(smgShare - want) < 0.04 && !counts.shotgun && Object.keys(counts).length === poolN - 1 }
   }
-  const smgShare = (counts.smg ?? 0) / 2000
-  // 11 pickup weapons, the held one excluded: 0.5 + 0.5 / 10.
-  out.podAffinity = { smgShare: r3(smgShare), held: counts.shotgun ?? 0, kinds: Object.keys(counts).length, pass: Math.abs(smgShare - 0.55) < 0.04 && !counts.shotgun && Object.keys(counts).length === 10 }
+  const startPool = affinity()
+  S.unlockAll()
+  const fullPool = affinity()
+  out.podAffinity = { startPool, fullPool, pass: startPool.ok && fullPool.ok && startPool.pool === 6 && fullPool.pool === 11 }
 
   // Elites drop a pod at 0.35.
   fresh()
