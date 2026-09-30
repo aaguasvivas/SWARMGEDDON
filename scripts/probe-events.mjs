@@ -60,7 +60,7 @@ async function checks() {
     S.setLoadout('nova', arena)
     S.startRun('endless')
     S.loop.stop()
-    w.beginRun(seed >>> 0, 'endless') // keeps the pilot and world startRun set
+    S.beginSeed(seed) // keeps the pilot and world startRun set
     god()
   }
   const stepTo = (t) => {

@@ -37,17 +37,24 @@ Xcode Archive and Android via a signed .aab from Android Studio or Gradle.
   expect 12+ / E10+. Category: Games > Arcade. Devices: iPhone only.
 - Encryption: `ITSAppUsesNonExemptEncryption` false already in Info.plist.
 
-## Leaderboard: DONE (live since 2026-08-14)
+## Leaderboard
 - Worker: https://swarmgeddon-leaderboard.adelsonaguasvivas.workers.dev
-- D1: `swarmgeddon` (id in server/wrangler.toml), schema migrated.
-- Client wiring: `VITE_LEADERBOARD_URL` in the repo-root `.env` (gitignored;
-  recreate from `.env.example` + the Worker URL above if this machine changes).
-  Every `npm run build` / `build:cap` picks it up automatically.
-- privacy page describes the leaderboard (nickname + run results, removal by
-  email). Verified end to end: in-game submit returned a live rank, the LEADERS
-  board renders, test rows wiped after.
-- Store privacy labels MUST be the Not-Linked-to-You set in
-  docs/store-listing.md (the build in review has the leaderboard on).
+- D1: `swarmgeddon` (id in server/wrangler.toml).
+- Live since 2026-08-14 with the v1 routes. The v2 worker (docs/NEXT-LEVEL.md
+  section 8.4) is built and tested locally but NOT deployed: the owner steps
+  (IP_SALT secret, the table replace that drops the v1 `scores` rows, the deploy)
+  are in server/README.md and ship in the same release as the v2 clients. Until
+  then v2 clients show `The leaderboard is offline.` and post nothing.
+- Client wiring (v2): production builds (`npm run build`, `build:cap`, and the
+  Cloudflare git build) post to the Worker URL above, committed as a constant in
+  `src/net/leaderboard.ts`, so no `.env` file is needed. `VITE_LEADERBOARD_URL`
+  still overrides it. Dev builds (`npm run dev`) never post unless
+  `VITE_LEADERBOARD_DEV_SUBMIT` is set (only for a local worker); see
+  `.env.example`.
+- Posting is opt-in (section 8.1): a fresh install sends nothing.
+- Before the v2 store build: publish the section 8.6 store and privacy copy
+  (the privacy page must describe the v2 fields and REMOVE MY SCORES), and keep
+  the store privacy labels on the Not-Linked-to-You set in docs/store-listing.md.
 
 ## iOS
 ```bash
@@ -112,8 +119,7 @@ assets/splash.svg. Regenerate any time with `npm run assets:generate`.
 2. DONE: native shell smoke test passed on the iOS simulator (boot, menu, run,
    touch, game over, per-world records). Boot has a one-retry guard for
    transient WebGL context failures on cold webviews.
-3. Leaderboard accounts step (owner), then Claude wires + reprivacies. See the
-   Leaderboard section above.
+3. Leaderboard v2 deploy (owner, with the v2 clients): server/README.md.
 4. TestFlight pass on a real phone: only the owner.
 5. Google Play account standing + tester recruitment: only the owner.
 6. First Archive + upload needs the owner logged into Xcode with the Apple ID.

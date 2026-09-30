@@ -607,9 +607,11 @@ export const CONTACT_ACC_RESET_S = 1.0
 export const CLEAR_BONUS = 50_000
 export const CLEAR_SPEED_PTS = 100          // per second the clear beats 14:00
 export const STALEMATE_S = 840
-export const CLEAR_MIN_MS = 633_000
 export const MAX_THREAT = 4
 export const CLOSE_CALL_CHAIN = 15
+export const PRIME_AT_S = 630, PRIME_DELAY_MAX_S = 20, PRIME_STALEMATE_S = 210   // A7.1 beat, BOSS_MIN_GAP, STALEMATE_AFTER
+export const CLEAR_MIN_MS = PRIME_AT_S * 1000                                     // 630_000
+export const UNCLEARED_MAX_MS = (PRIME_AT_S + PRIME_DELAY_MAX_S + PRIME_STALEMATE_S) * 1000 + 5000   // 865_000
 export function clearBonus(clearMs: number): number {
   return CLEAR_BONUS + CLEAR_SPEED_PTS * Math.max(0, STALEMATE_S - Math.floor(clearMs / 1000))
 }
@@ -621,6 +623,12 @@ export function scoreOf(killPts: number, xpSum: number, clearMs: number, threat:
 ```
 
 `seedFromString` moves into `rules.ts`, and every import is updated (no re-export from `rng.ts`). `rules.ts` also holds `DAILY_EPOCH`, `ROTATIONS`, `DAILY_THREAT_CYCLE`, `KNOWN_WORLDS`, `KNOWN_PILOTS`, `dailySpec()`, `dayIndex()`, `isoWeek()` and `implausible()`.
+
+**Clear bounds (P13).** The first draft had `CLEAR_MIN_MS = 633_000`, but a PRIME killed as it becomes targetable clears at 631.02 s, so the server would have refused real wins. The bounds now come from the run script:
+- A PRIME never arrives before its 10:30 beat, and it spends `BOSS_EMERGE` (1.0 s) untargetable, so the earliest kill is 631 s plus a tick. `CLEAR_MIN_MS` is the arrival itself, 630,000 ms, and the emerge second is the margin.
+- A mid boss killed just before 10:30 delays the PRIME by up to `BOSS_MIN_GAP` (20 s), and its stalemate comes 210 s after it arrives, so an uncleared run can last to 860 s. `UNCLEARED_MAX_MS` is 865,000 ms (the first draft's 845,000 would have refused that stalemate).
+- A mid boss still alive at the PRIME beat ascends with no credit, so a clear can have one boss kill.
+- `node scripts/test-rules.mjs` checks the three constants against every world script and `config.ts`, and `scripts/attack.mjs` posts a clear at 631.017 s (accepted) and at 629.999 s (422). `scripts/probe-lb.mjs clear` kills the PRIME at its first targetable tick in the real build and posts it: `clearMs` 631,017, accepted as a Standard EXTRACT and as the ranked Daily.
 
 **`src/game/scoring.ts`** (no RNG, integer points, zero allocation):
 - `scoreKill(w, def, src)`:
@@ -914,8 +922,15 @@ export function dailySpec(date: string): DailySpec {
   - `12 DAILIES PLAYED` never decreases.
   - No reward depends on the streak.
 - **Card and countdown copy:** A15.
-
-### 7.6 Save keys (all prefixed `swarmgeddon:`)
+- **Built in P13:**
+  - `DAILY_EPOCH` is `'2026-09-30'` in `src/core/rules.ts`, marked as the owner's release-day decision. The seed does not depend on it; the number, world, pilot and threat do.
+  - `RunConfig` (in `src/game/world.ts`) is the only input of `World.beginRun(cfg)`, which stores it as `world.run`. `main.buildRunConfig(mode, date)` builds it: the Daily takes the date's spec (locks ignored, canonical pools), Standard the owned selection. The paint is the player's in both modes (cosmetic).
+  - The Daily plays its date's seed even under the DEV `?seed=` override, and `__SWARM.startDaily(date)` starts any day's Daily for tests. `__SWARM.beginSeed(seed, over)` restarts the current config on a seed with the canonical pools (the harness path that called `beginRun(seed, 'endless')`).
+  - `src/state/daily.ts` holds `DailyDayRecord` (`rankedStarted`, `ranked` as the post fields of the run, or `{ legacy: true }` from migration, `practiceBest`, `practiceRuns`), `daily:streak` (`last`, `run`, `played`), the 14-day prune (at boot) and the checkpoint. The checkpoint is a full RunResult written every 10 s of sim time from the render loop, on `visibilitychange` to hidden and on app `pause`, for the ranked run only. A leftover one becomes that day's ranked result at boot (stats, bests, feats, streak, post), with the A15 toast.
+  - (P13 review) The page whose ranked run is live holds the Web Lock `swarmgeddon:ranked-run` from `startRun` to `endRun`, and the browser drops it with the page. Boot recovers a checkpoint only while no page on the origin holds that lock, so a second tab or window (a browser tab beside the installed PWA) never files a live run as interrupted and posts it. Without Web Locks (WebViews before iOS 15.4, which run one page) a leftover checkpoint always counts as lost. `node scripts/probe-lb.mjs ckpt` checks both cases.
+  - The menu's Daily button reads `DAILY #12` while today's ranked attempt is open (it opens the ranked confirm sheet, `src/ui/confirmSheet.ts`) and `DAILY #12 PRACTICE` after it. A Daily retry goes through the same check, and R on a Daily shows the recap instead of a quick retry.
+  - Parity: `measure.mjs det --mode=daily --date=2026-10-02` at 375x667 with a fresh save and factory paint, and at 667x375 with an unlocked save, the MAGMA paint and the extreme settings, give the same hash, score and draft-offer hash; so does `det-death` at 390x844 and 844x390 (its RunResult hash leaves out date, ranked and paint).
+ (all prefixed `swarmgeddon:`)
 
 | Key | Status |
 |---|---|
@@ -982,13 +997,13 @@ Indexes: `(board, world, week, score DESC)`, `(board, world, score DESC)`, `(boa
    - `1_000 <= timeMs <= 3_600_000`
    - `kills <= 250 x timeMs / 1000 + 100`
    - `kills <= xpSum <= 30 x kills + 450 x bosses`
-   - `0 <= killPts <= 80 x xpSum`
+   - `killPts >= 0`. A larger killPts is not refused: it is clamped to `80 x xpSum` and stored clamped, as `scoreOf` does (P13 kept the A-LB behavior; an honest client never exceeds the clamp)
    - `0 <= closeCalls <= 7 x timeMs / 1000` (a Close Call pays at most once per dash, and a dash lasts 9 ticks)
    - `bestChain <= kills + CLOSE_CALL_CHAIN x closeCalls` (the chain grows by 1 per scored kill and by 15 per Close Call, so an honest run can have `bestChain > kills`). `closeCalls` is sent for this check and is not stored.
    - `hits <= 20 x timeMs / 1000 + 10`
    - `1 <= level <= 500`
-   - `cleared` implies `CLEAR_MIN_MS <= clearMs <= timeMs`, and `bosses >= 3` (2 when mid2 was skipped, so the check is `bosses >= 2`)
-   - `!cleared` implies `timeMs <= 845_000`
+   - `cleared` implies `CLEAR_MIN_MS <= clearMs <= timeMs`, and `bosses >= 1` (a mid boss alive at the PRIME beat ascends with no credit; section 5, clear bounds)
+   - `!cleared` implies `clearMs = 0` and `timeMs <= UNCLEARED_MAX_MS` (865,000; section 5)
    - `bosses <= 3 + ceil(max(0, timeMs - clearMs) / 180_000)`
 5. **Daily only:**
    - the day is today or yesterday UTC
@@ -1016,6 +1031,14 @@ Indexes: `(board, world, week, score DESC)`, `(board, world, score DESC)`, `(boa
 1. `wrangler secret put IP_SALT`
 2. `npm run db:migrate`
 3. `npm run deploy`, in the same release as the clients.
+
+**Built in P13:**
+- Response shapes. `POST /api/v2/run` 200: `{ ok, score, name, renamed, ranks }` with `ranks.day` (Daily) or `ranks.week` and `ranks.all` (Standard), each `{ rank, of }`; a rank is where the score places among the other players' bests. `GET /api/v2/board`: `{ rows: [{ rank, name, country, pilot, paint, threat, score, timeMs, kills, level, cleared }], total, me: { rank, of, pct, score } | null }`.
+- The client posts `v, player, name, mode, day, world, pilot, paint, threat, seed, timeMs, kills, level, xpSum, killPts, bosses, bestChain, hits, closeCalls, cleared, clearMs, client` (`closeCalls` feeds the chain rule and is not stored). `day` is the run's start day; the server files a Standard run under today and this ISO week.
+- Without `IP_SALT` the worker answers 503 and stores nothing. A cleared Daily must end within 3 s of the clear. The board orders ties by the earlier post.
+- The client makes at most one request per run and never retries. 404 or 410 (a server without the v2 routes) and 426 switch it off for the session; network errors, timeouts, 429 and 5xx show `Score not posted. Check your connection.`. A run that scored nothing never posts. Production builds post to the committed worker URL; `VITE_LEADERBOARD_URL` overrides it; dev builds post only with `VITE_LEADERBOARD_DEV_SUBMIT`.
+- The name prompt closes from the backdrop only for a pointerdown that started there 350 ms or more after open, and it keeps the field focused through the mouse events a touch browser sends after the tap that opened it.
+- Acceptance: `scripts/attack.mjs` (27 cases, every A-LB row), `scripts/test-rules.mjs` (400-date `dailySpec` parity with the worker), `scripts/probe-lb.mjs` (fresh save 0 requests over 5 runs, the prompt under touch emulation, the earliest clear, 404/410/426/abort/500 handling). How to run them: `server/README.md`.
 
 ### 8.5 Leaderboard screen
 
@@ -1570,6 +1593,11 @@ Run each phase's acceptance plus this standard block:
   - A fresh save makes 0 leaderboard requests over 5 runs.
   - A tap on the name field keeps the prompt open under touch emulation.
   - A client parity script matches the worker on `dailySpec` over 400 dates.
+- P13 hand-offs:
+  - P11: Standard threat goes into `RunConfig.threat` in `main.buildRunConfig` (it is 0 there today; the Daily takes its spec's threat), and `World.beginRun` sets `world.threat` from the config. The harness sets a threat with `S.beginSeed(seed, { threat })`.
+  - P15: the `dailyIntro` callout and the HUD Daily tag read `world.run.dailyNumber` and `world.run.ranked`.
+  - P16: the recap keeps `GameOver.setRankLine(text, tone)`, `GameOver.expectRankLine()`, the opt-in card (`src/ui/optInCard.ts`, shown by `gameOver.setOptInVisible`) and `GameOver.toastSlot` (recap toasts: `NO THANKS` and the server rename). The rank line has its own row above the unlock banner (P13 review: the first ranked Daily always completes DAYBREAK, so a shared slot hid its rank). The row is kept while a post is under way, so the answer moves nothing, and a short screen tightens the recap's spacing to fit both. `scripts/ui-shots.mjs` steps 18 and 18b fail when the rank line is missing beside an unlock banner. On a short screen with no room under the buttons, a recap toast shows at the top over the header for its 5 s (before the review it sat below the screen edge; step 23 checks it is on screen); the P16 recap should keep a toast slot free. R and Escape on a Daily should open the pause sheet (section 7.5).
+  - P17: ACCOUNT rows use `optInState`, `optIn`, `optOut`, `getPlayerName`, `setPlayerName` and `deleteMyScores` (`src/net/leaderboard.ts`), with `ConfirmSheet` for REMOVE MY SCORES. Until those rows exist the `NO THANKS` toast reads `You can join later from LEADERS.` (`gameOver.optIn.onDecline` in `src/main.ts`); P17 restores the A15 line `You can turn this on in Settings.` in the same change as the rows. `Leaderboard.onJoin` resolves with the posts JOIN started, and the board loads after they land, so it shows the ranked Daily just posted (P13 review). The Daily card reads `dailySpec`, `rankedAvailable`, `loadDay`, `loadStreak` and `rankedRun` (`src/state/daily.ts`). The leaderboard screen (section 8.5) builds on `fetchBoard`, which returns an offline reason instead of throwing. A fresh save makes no leaderboard request until the player opens LEADERS, so the menu must not fetch a board on its own.
 
 **P14: UI foundation and camera** (about 900 lines)
 - Files:
@@ -2430,7 +2458,7 @@ Other copy:
   - `12 DAILIES PLAYED · 3 IN A ROW`
 - **Ranked confirm:** `RANKED ATTEMPT` / `Your first Daily run today is the ranked one. After it, practice as much as you like.` / `START` `BACK`.
 - **Checkpoint toast:** `Ranked Daily #12 saved at 4:10 when the app closed.`
-- **Opt-in card:** `JOIN THE LEADERBOARD?` / `Post your scores under a nickname. The board shows your nickname, score, run stats, pilot, world and country.` / `CHOOSE A NAME` / `NO THANKS`. Toast: `You can turn this on in Settings.`
+- **Opt-in card:** `JOIN THE LEADERBOARD?` / `Post your scores under a nickname. The board shows your nickname, score, run stats, pilot, world and country.` / `CHOOSE A NAME` / `NO THANKS`. Toast: `You can turn this on in Settings.` (P13: `You can join later from LEADERS.` until P17 adds the Settings ACCOUNT rows.)
 - **Name prompt:**
   - `YOUR LEADERBOARD NAME`
   - `2 to 14 characters. Shown on the public board.`
@@ -2442,11 +2470,14 @@ Other copy:
   - `VIOLET DEPTHS: #12 THIS WEEK · #140 ALL TIME`
   - `Score not posted. Check your connection.`
   - `Your ranked Daily is already posted.`
+  - (P13) `Score not posted. The leaderboard is offline.` (404 or 410: a server without the v2 routes), `Score not posted. Update the game to post scores.` (426), `Score not posted.` (400 or 422)
 - **Leaderboard:**
   - `LEADERBOARD`, `DAILY`, `THIS WEEK`, `ALL TIME`
   - `YOU  #347 OF 2,118 · TOP 17%`, `YOU  no score on this board yet`
   - `You are not posting scores.` with `JOIN`
   - `No scores yet. Be the first.`, `Could not reach the leaderboard.`
+  - (P13) `The leaderboard is offline.` (404 or 410), `Update the game to see the leaderboard.` (426), `LOADING`, `TAP THE WORLD TO SWITCH IT`, `NAME: TESTER  (TAP TO EDIT)`
+- **Menu Daily button (P13, until the P17 Daily card):** `DAILY #12`, then `DAILY #12 PRACTICE` after the ranked start.
 - **Remove scores:** `Remove all your scores from the public board? This cannot be undone.` / `REMOVE` `CANCEL`.
 - **Settings help:** `Posts your nickname, score, run stats, pilot, world and country.`
 

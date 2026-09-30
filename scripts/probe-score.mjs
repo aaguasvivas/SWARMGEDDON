@@ -148,7 +148,7 @@ try {
     let oldChainRejects = 0
     let chainRejects = 0
     for (let s = 0; s < n; s++) {
-      w.beginRun(1000 + s, 'endless')
+      S.beginSeed(1000 + s)
       const threat = irand(0, 4)
       w.threat = threat
       const m = { chain: 0, peak: 1, best: 0, killPts: 0, xpSum: 0, hits: 0, sinceKill: 0, acc: 0, idle: 0, clearMs: 0, hitsAtBoss: 0, flawless: 0 }
