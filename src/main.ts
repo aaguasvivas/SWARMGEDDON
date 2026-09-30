@@ -4,7 +4,7 @@ import { clamp } from './core/vec.ts'
 import { GameLoop } from './core/time.ts'
 import { Rng, seedFromString } from './core/rng.ts'
 import { initSafeArea, getInsets } from './platform/safeArea.ts'
-import { buzz, setHapticsEnabled } from './platform/haptics.ts'
+import { setHapticsEnabled } from './platform/haptics.ts'
 import { initNative, registerBackButton } from './platform/native.ts'
 import { createRenderer } from './render/app.ts'
 import { TextureRegistry } from './render/textures.ts'
@@ -105,7 +105,7 @@ async function boot(): Promise<void> {
 
   const input = new InputManager(app.canvas)
   input.setEnabled(false)
-  const feel = new FeelDirector(world, audio, input)
+  const feel = new FeelDirector(world, audio)
   const vignette = new Vignette()
   // Per-world atmosphere: ambient motes (world-space) + screen-space overlay +
   // the color grade/tinted vignette. Bakes its textures once; only tints per world.
@@ -261,6 +261,7 @@ async function boot(): Promise<void> {
     gameOver.show(result, isHigh, gains)
     // Earned unlocks: banner them and refresh the menu selectors.
     const fresh = evaluateUnlocks(result)
+    feel.runEnded(isHigh, fresh.length > 0)
     if (fresh.length > 0) {
       gameOver.setUnlocks(fresh)
       refreshLoadoutUI()
@@ -340,14 +341,13 @@ async function boot(): Promise<void> {
     }
     world.paused = true
     modal.open(world.draftCards)
-    buzz(30)
-    input.rumble(90, 0.4)
+    feel.draftOpened()
     levelFlash = 1
   }
   function pickPerk(perkId: string): void {
     world.choosePerk(perkId)
     world.pendingLevelUps--
-    buzz(20)
+    feel.cardPicked()
     if (world.pendingLevelUps > 0) openDraft()
     else {
       modal.close()
@@ -570,7 +570,7 @@ async function boot(): Promise<void> {
       if (showTouchHint) touchHint.update(fd, touchMoveUsed, touchAimUsed)
 
       // Hurt vignette + a low-HP danger pulse so you feel the pressure.
-      feel.update(fd)
+      feel.update(fd, playing)
       let red = feel.hurtFlash * 0.45
       if (playing) {
         const frac = world.player.hp / world.player.maxHp

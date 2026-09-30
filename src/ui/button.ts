@@ -1,5 +1,6 @@
 import { Container, FederatedPointerEvent, Graphics, Rectangle, Text } from 'pixi.js'
 import { COLORS } from '../config.ts'
+import { haptic } from '../platform/haptics.ts'
 
 const MONO = 'ui-monospace, Menlo, Consolas, monospace'
 
@@ -25,6 +26,9 @@ export class Button {
     this.view.eventMode = 'static'
     this.view.cursor = 'pointer'
     this.view.hitArea = new Rectangle(0, 0, w, h)
+    this.view.on('pointerdown', () => {
+      if (this.enabled) haptic('light')
+    })
     this.view.on('pointertap', () => {
       if (this.enabled) this.onClick()
     })

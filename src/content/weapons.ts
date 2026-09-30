@@ -63,12 +63,12 @@ export const WEAPONS: Record<string, WeaponDef> = {
   railgun: {
     id: 'railgun', name: 'Rail Spike', fireRate: 1.5, damage: 90, projectileSpeed: 1700,
     spread: 0.004, projectilesPerShot: 1, pierce: 8, knockback: 320, projectileLife: 0.6,
-    projectileRadius: 5, tint: 0x86f7ff, ammo: 28, kickPx: 9, sfx: 'heavy',
+    projectileRadius: 5, tint: 0x86f7ff, ammo: 28, kickPx: 9, sfx: 'crack',
   },
   flamethrower: {
     id: 'flamethrower', name: 'Pyre', fireRate: 22, damage: 4.5, projectileSpeed: 460,
     spread: 0.26, projectilesPerShot: 2, pierce: 2, knockback: 14, projectileLife: 0.32,
-    projectileRadius: 6, tint: 0xff9a3c, ammo: 420, kickPx: 0.4, sfx: 'beam',
+    projectileRadius: 6, tint: 0xff9a3c, ammo: 420, kickPx: 0.4, sfx: 'whoosh',
   },
   rocket: {
     id: 'rocket', name: 'Bile Mortar', fireRate: 1.4, damage: 26, projectileSpeed: 560,
