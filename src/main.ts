@@ -1,12 +1,13 @@
-import { Container, Graphics, Rectangle, Text } from 'pixi.js'
+import { Container, Graphics, Rectangle, Sprite, Text } from 'pixi.js'
 import { COLORS, DEFAULT_SEED, FIXED_DT, MAX_FRAME_TIME } from './config.ts'
-import { clamp } from './core/vec.ts'
 import { GameLoop } from './core/time.ts'
 import { Rng, seedFromString } from './core/rng.ts'
 import { initSafeArea, getInsets } from './platform/safeArea.ts'
 import { buzz, setHapticsEnabled } from './platform/haptics.ts'
 import { initNative, registerBackButton } from './platform/native.ts'
 import { createRenderer } from './render/app.ts'
+import { Camera } from './render/camera.ts'
+import { loadFonts } from './render/fonts.ts'
 import { TextureRegistry } from './render/textures.ts'
 import { IchorLayer } from './render/ichorLayer.ts'
 import { renderEntities } from './render/entityRenderer.ts'
@@ -14,7 +15,7 @@ import { PostFX } from './render/postfx.ts'
 import { Vignette } from './render/vignette.ts'
 import { BackdropSystem } from './render/backdrop.ts'
 import { AudioEngine } from './audio/audio.ts'
-import { announce } from './effects/fx.ts'
+import { DamageNumbers } from './effects/damageNumbers.ts'
 import { FeelDirector } from './effects/feelDirector.ts'
 import { DEATH_BEAT_MS, DEATH_RECAP_MS, DEATH_SKIP_MS, TimePreset } from './effects/timeDirector.ts'
 import { Arena, type DecorSpeck } from './game/arena.ts'
@@ -31,6 +32,10 @@ import { Leaderboard } from './ui/leaderboard.ts'
 import { dismissNamePrompt } from './ui/namePrompt.ts'
 import { submitScore } from './net/leaderboard.ts'
 import { TouchHint } from './ui/touchHint.ts'
+import { bakeIcons } from './ui/icons.ts'
+import { FONT } from './ui/tokens.ts'
+import { tweens } from './ui/tween.ts'
+import { numGlyphs } from './ui/digits.ts'
 import { loadJSON, saveJSON } from './platform/storage.ts'
 import { loadSettings, saveSettings, type Settings } from './state/settings.ts'
 import { recordRun, recordWorldBest, loadWorldBest, type RunResult } from './state/persistence.ts'
@@ -57,6 +62,8 @@ type Screen = 'menu' | 'playing' | 'gameover' | 'leaderboard'
  */
 async function boot(): Promise<void> {
   initSafeArea()
+  // Fonts load alongside the renderer; every Text is created after both.
+  const fontsReady = loadFonts()
   const mount = document.getElementById('app')
   if (!mount) throw new Error('#app mount not found')
 
@@ -71,9 +78,11 @@ async function boot(): Promise<void> {
     renderer = await createRenderer(mount)
   }
   const { app, layers } = renderer
+  await fontsReady
 
   const texReg = new TextureRegistry(app.renderer)
   texReg.bakePlaceholders()
+  bakeIcons(app.renderer)
 
   const audio = new AudioEngine()
   audio.attachUnlock()
@@ -93,9 +102,11 @@ async function boot(): Promise<void> {
 
   const player = new Player()
   const world = new World(arena, player, ichor, layers, texReg)
-  // Camera window (world-space top-left + CSS px size). Presentation only: the
-  // sim never reads it.
-  const cam = { x: 0, y: 0, w: 1280, h: 720 }
+  // Presentation only: the sim never reads the camera.
+  const camera = new Camera()
+  const numbers = new DamageNumbers()
+  layers.overlay.addChild(numbers.view)
+  const camLayers = [layers.world, layers.overlay] as const
   layers.warpHost.addChild(player.view) // above the swarm, inside the warped/bloomed scene
 
   // Bloom + grade over the game scene (UI stays crisp & unbloomed). On `scene`
@@ -105,7 +116,7 @@ async function boot(): Promise<void> {
 
   const input = new InputManager(app.canvas)
   input.setEnabled(false)
-  const feel = new FeelDirector(world, audio, input)
+  const feel = new FeelDirector(world, audio, input, numbers)
   const vignette = new Vignette()
   // Per-world atmosphere: ambient motes (world-space) + screen-space overlay +
   // the color grade/tinted vignette. Bakes its textures once; only tints per world.
@@ -142,9 +153,7 @@ async function boot(): Promise<void> {
   // One-time "collect for XP" label on the first gem a new player ever sees.
   let showGemHint = !loadJSON('seenGemHint', false)
   let levelFlash = 0
-  // Death sequence camera punch (zoom added on the wreck) and whether the
-  // wreck visuals have landed this death.
-  let deathZoom = 0
+  // Whether the wreck visuals have landed this death.
   let deathBeat = false
 
   // --- settings ---
@@ -159,6 +168,9 @@ async function boot(): Promise<void> {
     input.autoFire = s.autoFire
     setHapticsEnabled(s.haptics)
     feel.time.reduceMotion = s.reduceMotion
+    camera.reduceMotion = s.reduceMotion
+    tweens.reduceMotion = s.reduceMotion
+    numbers.mode = s.damageNumbers
   }
   applySettings(settings)
 
@@ -225,10 +237,10 @@ async function boot(): Promise<void> {
     world.beginRun(runSeed(mode), mode, char, theme)
     audio.setTheme(theme.music)
     feel.reset()
-    deathZoom = 0
     deathBeat = false
     backdrop.setTheme(theme, arena.glowSpots) // motes/atmosphere/grade/vignette/glows
-    applyCamera(player.x, player.y) // seed the camera before the first sim step
+    camera.reset()
+    followCamera(0, true) // seed the camera before the first sim step
     hud.reset() // don't let last run's dying bars sweep across the fresh run
     hud.announceWorld(theme.name, `vs ${theme.broodName.toUpperCase()}`, theme.borderGlow)
     touchMoveUsed = false
@@ -283,7 +295,7 @@ async function boot(): Promise<void> {
     screen = 'menu'
     input.setEnabled(false)
     feel.reset()
-    deathZoom = 0
+    camera.reset()
     deathBeat = false
     gameOver.hide()
     settingsPanel.hide()
@@ -362,8 +374,7 @@ async function boot(): Promise<void> {
     const w = app.screen.width
     const h = app.screen.height
     const insets = getInsets()
-    cam.w = w
-    cam.h = h
+    camera.resize(w, h)
     feel.shake.resize(w, h)
     hud.layout(w, h, insets)
     debug?.layout(insets)
@@ -434,14 +445,14 @@ async function boot(): Promise<void> {
     }
   })
 
-  // Follow camera: center on (px,py), clamped so we never show past the world
-  // wall. Writes cam.x/cam.y (world-space top-left of the visible window).
-  function applyCamera(px: number, py: number): void {
-    const b = world.arena.bounds
-    const w = cam.w
-    const h = cam.h
-    cam.x = b.w <= w ? b.x - (w - b.w) / 2 : clamp(px - w / 2, b.x, b.x + b.w - w)
-    cam.y = b.h <= h ? b.y - (h - b.h) / 2 : clamp(py - h / 2, b.y, b.y + b.h - h)
+  /** Follow the ship (interpolated position, or the sim position on a seed). */
+  function followCamera(fd: number, seed = false): void {
+    const playing = screen === 'playing'
+    const touchPortrait = playing && input.lastType === 'touch' && app.screen.height > app.screen.width
+    const boss = playing && world.bossAlive && world.boss ? world.boss : null
+    const sx = seed ? player.x : player.view.x
+    const sy = seed ? player.y : player.view.y
+    camera.update(fd, sx, sy, playing ? input.aimDir.x : 0, playing ? input.aimDir.y : 0, touchPortrait, boss, world.arena.bounds)
   }
 
   function sweepPools(): void {
@@ -449,7 +460,6 @@ async function boot(): Promise<void> {
     world.projectiles.sweep()
     world.enemyProjectiles.sweep()
     world.particles.sweep()
-    world.floaters.sweep()
     world.pickups.sweep()
     world.acid.sweep()
   }
@@ -472,7 +482,7 @@ async function boot(): Promise<void> {
     // Aim is cursor-relative to the player's SCREEN position, using the camera
     // from the last rendered frame (exactly what the player saw and aimed at).
     // The camera itself is recomputed each render from the interpolated position.
-    input.update(player.x - cam.x, player.y - cam.y)
+    input.update(camera.worldToScreenX(player.x), camera.worldToScreenY(player.y))
     spawnSystem(world, dt)
     buildEnemyHash(world)
     aiSystem(world, dt)
@@ -521,12 +531,12 @@ async function boot(): Promise<void> {
       // feeds the sim, never the sim step itself.
       const time = feel.time
       time.advance(loop.frameMs)
-      feel.drain(renderClock * 1000, cam)
+      feel.drain(renderClock * 1000, camera)
       if (screen === 'playing' && world.pendingGameOver) {
         time.startDeath()
         if (!deathBeat && time.deathMs >= DEATH_BEAT_MS) {
           deathBeat = true
-          deathZoom = settings.reduceMotion ? 0 : 0.25
+          camera.hold = 0.25
           postFX.shiftSaturation(-0.6)
           vignette.view.alpha = 0.85
         }
@@ -537,7 +547,7 @@ async function boot(): Promise<void> {
 
       if (playing && showGemHint && world.firstGemAt >= 0) {
         showGemHint = false
-        announce(world, '✦ collect for XP', world.firstGemX, world.firstGemY - 18, COLORS.gem)
+        numbers.label('COLLECT FOR XP', world.firstGemX, world.firstGemY - 18, COLORS.gem)
         saveJSON('seenGemHint', true)
       }
 
@@ -585,22 +595,18 @@ async function boot(): Promise<void> {
       levelFlash = Math.max(0, levelFlash - fd * 3.5)
       flashOverlay.alpha = levelFlash * 0.4
 
-      // Follow camera (from the interpolated player position) + shake. The
-      // transform pivots on the ship so rotation and the death zoom center on it.
+      // Follow camera (from the interpolated player position) + shake, onto the
+      // world and the unbloomed number overlay alike.
       const sh = feel.shake
       sh.update(fd, renderClock)
-      const px = player.view.x
-      const py = player.view.y
-      applyCamera(px, py)
-      const lw = layers.world
-      lw.pivot.set(px, py)
-      lw.position.set(px - cam.x + sh.offsetX * shakeMul, py - cam.y + sh.offsetY * shakeMul)
-      lw.scale.set(1 + deathZoom)
-      lw.rotation = sh.rotation * shakeMul
+      followCamera(fd)
+      camera.apply(camLayers, sh.offsetX * shakeMul, sh.offsetY * shakeMul, sh.rotation * shakeMul)
+      numbers.update(renderClock * 1000, camera.zoom)
+      tweens.update(renderClock * 1000)
 
       // Ambient backdrop (motes + atmosphere). AFTER the camera write above, so
       // camera-bounded mote recycling uses this frame's window (no edge popping).
-      backdrop.update(renderClock, fd, cam.x, cam.y, cam.w, cam.h)
+      backdrop.update(renderClock, fd, camera.x, camera.y, camera.w, camera.h)
 
       // Reality-warp distortion: scale/rotate around the player, inside the
       // bloomed scene (so the filter never sits on a transformed container).
@@ -631,7 +637,7 @@ async function boot(): Promise<void> {
           steps: loop.steps,
           enemies: world.enemies.size,
           projectiles: world.projectiles.size + world.enemyProjectiles.size,
-          particles: world.particles.size + world.floaters.size + world.pickups.size + world.acid.size,
+          particles: world.particles.size + world.pickups.size + world.acid.size,
           inputType: input.lastType,
           firing: input.firing,
           width: Math.round(app.screen.width),
@@ -646,9 +652,9 @@ async function boot(): Promise<void> {
   )
 
   // Warm the GPU paths Pixi otherwise builds on FIRST use mid-combat: the
-  // additive-blend batch pipeline (first spark/muzzle flash) and the Text
-  // rasterizer (first damage number). Warming them here keeps them from
-  // landing as an in-run hitch.
+  // additive-blend batch pipeline (first spark/muzzle flash), the number atlas
+  // (first damage number) and the Text rasterizer in both faces (first label).
+  // Warming them here keeps them from landing as an in-run hitch.
   // Sprite textures themselves are already GPU-resident (baked at boot).
   {
     const warm = new Container()
@@ -660,9 +666,13 @@ async function boot(): Promise<void> {
     additive.visible = true
     additive.blendMode = 'add'
     additive.x = 24
-    const text = new Text({ text: '0123456789!', style: { fontFamily: 'ui-monospace, Menlo, Consolas, monospace', fontSize: 14 } })
-    text.y = 24
-    warm.addChild(plain, additive, text)
+    const digit = new Sprite(numGlyphs().tex[48]!)
+    digit.x = 48
+    const mono = new Text({ text: 'SWARM 0123', style: { fontFamily: FONT.mono, fontWeight: '800', fontSize: 16 } })
+    mono.y = 24
+    const display = new Text({ text: 'SWARM', style: { fontFamily: FONT.display, fontWeight: '900', fontSize: 16 } })
+    display.y = 48
+    warm.addChild(plain, additive, digit, mono, display)
     app.stage.addChild(warm)
     app.render()
     app.stage.removeChild(warm)
@@ -680,6 +690,8 @@ async function boot(): Promise<void> {
       feel,
       hud,
       loop,
+      camera,
+      numbers,
       perfReset: () => loop.resetStats(),
       leaderboard,
       toLeaderboard: () => toLeaderboard(),

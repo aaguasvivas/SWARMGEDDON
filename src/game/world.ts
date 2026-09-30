@@ -16,7 +16,6 @@ import type { TextureRegistry } from '../render/textures.ts'
 import type { Arena } from './arena.ts'
 import { AcidPool } from './acidPool.ts'
 import { Enemy } from './enemy.ts'
-import { FloatingText } from './floatingText.ts'
 import { Particle } from './particle.ts'
 import { PICKUP_SLOT, PICKUP_SLOTS, Pickup } from './pickup.ts'
 import { Player } from './player.ts'
@@ -34,7 +33,6 @@ export class World {
   readonly projectiles: Pool<Projectile>
   readonly enemyProjectiles: Pool<Projectile>
   readonly particles: Pool<Particle>
-  readonly floaters: Pool<FloatingText>
   readonly pickups: Pool<Pickup>
   readonly acid: Pool<AcidPool>
 
@@ -149,11 +147,6 @@ export class World {
       (p) => { p.sprite.visible = false },
       256,
     )
-    this.floaters = new Pool<FloatingText>(
-      () => { const f = new FloatingText(); layers.fx.addChild(f.text); return f },
-      (f) => { f.text.visible = false },
-      16,
-    )
     this.pickups = new Pool<Pickup>(
       () => { const s = texReg.makeSprite('gem'); layers.fx.addChild(s); return new Pickup(s) },
       (p) => { p.sprite.visible = false; this.pickupN[PICKUP_SLOT[p.kind]]!-- },
@@ -226,7 +219,6 @@ export class World {
     this.projectiles.clear()
     this.enemyProjectiles.clear()
     this.particles.clear()
-    this.floaters.clear()
     this.pickups.clear()
     this.acid.clear()
     this.ichor.clear()

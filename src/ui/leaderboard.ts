@@ -1,10 +1,10 @@
 import { Container, Graphics, Rectangle, Text } from 'pixi.js'
 import { COLORS } from '../config.ts'
 import { Button } from './button.ts'
+import { FONT, T } from './tokens.ts'
 import { fetchBoard, getPlayerName, setPlayerName, leaderboardEnabled, type BoardEntry } from '../net/leaderboard.ts'
 import { promptName } from './namePrompt.ts'
 
-const MONO = 'ui-monospace, Menlo, Consolas, monospace'
 const ROWS = 12
 
 type Tab = 'global' | 'region' | 'daily'
@@ -34,36 +34,36 @@ export class Leaderboard {
   private reqId = 0
 
   constructor() {
-    this.title = new Text({ text: 'LEADERBOARD', style: { fontFamily: MONO, fontSize: 30, fontWeight: 'bold', fill: COLORS.player, letterSpacing: 2 } })
+    this.title = new Text({ text: 'LEADERBOARD', style: { fontFamily: FONT.display, fontSize: 28, fontWeight: '900', fill: COLORS.player, letterSpacing: 2 } })
     this.title.anchor.set(0.5)
 
-    this.nameLabel = new Text({ text: '', style: { fontFamily: MONO, fontSize: 13, fill: COLORS.hudText } })
+    this.nameLabel = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 13, fill: COLORS.hudText } })
     this.nameLabel.anchor.set(0.5)
     this.nameHit.addChild(this.nameLabel)
     this.nameHit.eventMode = 'static'
     this.nameHit.cursor = 'pointer'
     this.nameHit.on('pointertap', () => void this.editName())
 
-    this.subhead = new Text({ text: '', style: { fontFamily: MONO, fontSize: 12, fill: COLORS.hudDim, letterSpacing: 1 } })
+    this.subhead = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 12, fill: T.textMuted, letterSpacing: 1 } })
     this.subhead.anchor.set(0.5)
-    this.status = new Text({ text: '', style: { fontFamily: MONO, fontSize: 14, fill: COLORS.hudDim, align: 'center' } })
+    this.status = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 14, fill: T.textMuted, align: 'center' } })
     this.status.anchor.set(0.5)
 
     for (const t of TABS) {
-      const b = new Button(t.label, 110, 38, COLORS.player, 13)
+      const b = new Button(t.label, 110, 38, 'secondary', 13)
       b.onClick = () => this.select(t.key)
       this.tabBtns.push(b)
     }
 
     for (let i = 0; i < ROWS; i++) {
-      const left = new Text({ text: '', style: { fontFamily: MONO, fontSize: 15, fill: COLORS.hudText } })
+      const left = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 15, fill: COLORS.hudText } })
       left.anchor.set(0, 0.5)
-      const right = new Text({ text: '', style: { fontFamily: MONO, fontSize: 15, fontWeight: 'bold', fill: 0xffe066 } })
+      const right = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 15, fontWeight: 'bold', fill: 0xffe066 } })
       right.anchor.set(1, 0.5)
       this.rows.push({ left, right })
     }
 
-    this.back = new Button('BACK', 160, 46, COLORS.hudDim)
+    this.back = new Button('BACK', 160, 46, 'secondary', 16)
     this.back.onClick = () => this.onBack()
 
     this.view.addChild(this.backdrop, this.title, this.nameHit, this.subhead, this.underline)

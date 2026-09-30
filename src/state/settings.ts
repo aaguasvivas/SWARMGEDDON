@@ -1,3 +1,4 @@
+import type { DamageNumberMode } from '../effects/damageNumbers.ts'
 import { loadJSON, saveJSON } from '../platform/storage.ts'
 
 /**
@@ -16,6 +17,7 @@ export interface Settings {
   haptics: boolean
   /** Softer time effects (no hit-stop, gentler slow motion) and no camera punch. */
   reduceMotion: boolean
+  damageNumbers: DamageNumberMode
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -28,6 +30,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoFire: false, // off by default (hold-to-fire); opt in via Settings for trackpad/touch
   haptics: true,
   reduceMotion: prefersReducedMotion(),
+  damageNumbers: 'big',
 }
 
 function prefersReducedMotion(): boolean {

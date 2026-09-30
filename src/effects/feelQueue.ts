@@ -6,7 +6,7 @@
  */
 export const enum FeelKind {
   Shot = 1 /* a = aim angle, b = weapon index */,
-  Hit /* x = damage number anchor (fx jitter applied), a = damage, b = number rise speed, ref = enemy */,
+  Hit /* x = damage number anchor (fx jitter applied), a = damage, ref = enemy */,
   Kill /* a, b = killing projectile vx, vy (0, 0 for thorns); ref = EnemyDef */, Explosion /* a = radius */,
   PlayerHurt /* x, y = source, a = HP removed */, PlayerDeath, Revive, LevelUp /* a = new level */,
   GemCollect /* a = xp */, HealCollect /* a = HP gained */,

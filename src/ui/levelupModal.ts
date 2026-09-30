@@ -1,8 +1,7 @@
 import { Container, Graphics, Rectangle, Text } from 'pixi.js'
 import { COLORS } from '../config.ts'
 import type { PerkDef } from '../content/perks.ts'
-
-const MONO = 'ui-monospace, Menlo, Consolas, monospace'
+import { FONT, T } from './tokens.ts'
 
 interface Card {
   root: Container
@@ -36,12 +35,12 @@ export class LevelUpModal {
   constructor() {
     this.title = new Text({
       text: 'LEVEL UP',
-      style: { fontFamily: MONO, fontSize: 26, fontWeight: 'bold', fill: COLORS.xpBar },
+      style: { fontFamily: FONT.display, fontSize: 26, fontWeight: '900', fill: COLORS.xpBar },
     })
     this.title.anchor.set(0.5)
     this.hint = new Text({
       text: 'choose a perk   ·   click  or  press 1 / 2 / 3',
-      style: { fontFamily: MONO, fontSize: 13, fill: COLORS.hudDim },
+      style: { fontFamily: FONT.mono, fontSize: 13, fill: T.textMuted },
     })
     this.hint.anchor.set(0.5)
 
@@ -85,11 +84,11 @@ export class LevelUpModal {
       const bg = new Graphics()
       const hover = new Graphics()
       hover.visible = false
-      const index = new Text({ text: String(idx + 1), style: { fontFamily: MONO, fontSize: 16, fontWeight: 'bold', fill: COLORS.hudDim } })
+      const index = new Text({ text: String(idx + 1), style: { fontFamily: FONT.mono, fontSize: 16, fontWeight: 'bold', fill: T.textMuted } })
       const rarityColor = perk.rarity === 'rare' ? 0xffc24a : COLORS.hudText
-      const rarity = new Text({ text: perk.rarity.toUpperCase(), style: { fontFamily: MONO, fontSize: 10, fontWeight: 'bold', fill: rarityColor } })
-      const name = new Text({ text: perk.name, style: { fontFamily: MONO, fontSize: 18, fontWeight: 'bold', fill: 0xffffff } })
-      const desc = new Text({ text: perk.desc, style: { fontFamily: MONO, fontSize: 13, fill: 0xbfeee0, wordWrap: true, wordWrapWidth: 200 } })
+      const rarity = new Text({ text: perk.rarity.toUpperCase(), style: { fontFamily: FONT.mono, fontSize: 12, fontWeight: 'bold', fill: rarityColor } })
+      const name = new Text({ text: perk.name, style: { fontFamily: FONT.mono, fontSize: 18, fontWeight: 'bold', fill: 0xffffff } })
+      const desc = new Text({ text: perk.desc, style: { fontFamily: FONT.mono, fontSize: 13, fill: 0xbfeee0, wordWrap: true, wordWrapWidth: 200 } })
 
       root.addChild(bg, hover, index, rarity, name, desc)
       root.eventMode = 'static'

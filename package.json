@@ -6,9 +6,10 @@
   "description": "SWARMGEDDON — a top-down twin-stick alien-hive survival shooter. Web-first, cross-platform.",
   "scripts": {
     "dev": "vite",
-    "build": "npm run check:sim && tsc --noEmit && vite build",
-    "build:cap": "npm run check:sim && tsc --noEmit && vite build --mode capacitor",
+    "build": "npm run check:sim && npm run check:fonts && tsc --noEmit && vite build",
+    "build:cap": "npm run check:sim && npm run check:fonts && tsc --noEmit && vite build --mode capacitor",
     "check:sim": "node scripts/check-sim-purity.mjs",
+    "check:fonts": "node scripts/check-fonts.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "cap:sync": "npm run build:cap && cap sync",

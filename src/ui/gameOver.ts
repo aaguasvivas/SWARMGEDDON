@@ -6,8 +6,8 @@ import { characterById } from '../content/characters.ts'
 import { arenaById } from '../content/arenas.ts'
 import type { RunResult, WorldBestGains } from '../state/persistence.ts'
 import { Button } from './button.ts'
+import { FONT } from './tokens.ts'
 
-const MONO = 'ui-monospace, Menlo, Consolas, monospace'
 /** Taps are ignored this long after the screen appears, so a tap meant for the
  *  game cannot land on RETRY. */
 const INPUT_LOCK_MS = 450
@@ -39,22 +39,22 @@ export class GameOver {
   private readyAt = 0
 
   constructor() {
-    this.title = new Text({ text: 'OVERRUN', style: { fontFamily: MONO, fontSize: 40, fontWeight: 'bold', fill: COLORS.hurtFlash, letterSpacing: 3 } })
+    this.title = new Text({ text: 'OVERRUN', style: { fontFamily: FONT.display, fontSize: 40, fontWeight: '900', fill: COLORS.hurtFlash, letterSpacing: 3 } })
     this.title.anchor.set(0.5)
     this.title.filters = [new GlowFilter({ color: COLORS.hurtFlash, distance: 14, outerStrength: 2, innerStrength: 0, quality: 0.3 })]
-    this.best = new Text({ text: '', style: { fontFamily: MONO, fontSize: 15, fontWeight: 'bold', fill: 0xffe066 } })
+    this.best = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 15, fontWeight: 'bold', fill: 0xffe066 } })
     this.best.anchor.set(0.5)
-    this.rank = new Text({ text: '', style: { fontFamily: MONO, fontSize: 14, fontWeight: 'bold', fill: 0x57c8ff, align: 'center', wordWrap: true, wordWrapWidth: 500, lineHeight: 19 } })
+    this.rank = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 14, fontWeight: 'bold', fill: 0x57c8ff, align: 'center', wordWrap: true, wordWrapWidth: 500, lineHeight: 19 } })
     // Top-anchored: a long unlock banner (multiple items) wraps DOWNWARD into
     // space the layout reserves for it, never up into the title.
     this.rank.anchor.set(0.5, 0)
-    this.stats = new Text({ text: '', style: { fontFamily: MONO, fontSize: 16, fill: COLORS.hudText, align: 'center', lineHeight: 24 } })
+    this.stats = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 16, fill: COLORS.hudText, align: 'center', lineHeight: 24 } })
     this.stats.anchor.set(0.5)
 
-    this.retry = new Button('RETRY', 180, 52, COLORS.player)
-    this.menu = new Button('MENU', 180, 52, COLORS.hudDim)
-    this.share = new Button('SHARE RUN', 136, 46, 0x57c8ff, 14)
-    this.board = new Button('LEADERS', 136, 46, 0xffc24a, 14)
+    this.retry = new Button('RETRY', 160, 52, 'primary', 18)
+    this.menu = new Button('MENU', 160, 52, 'secondary', 18)
+    this.share = new Button('SHARE RUN', 136, 46, 'secondary', 14)
+    this.board = new Button('LEADERS', 136, 46, 'secondary', 14)
     this.retry.onClick = () => this.acceptsInput() && this.onRetry()
     this.menu.onClick = () => this.acceptsInput() && this.onMenu()
     this.share.onClick = () => this.acceptsInput() && this.onShare()
@@ -110,7 +110,8 @@ export class GameOver {
     // line was added, and the rank slot doubles as the unlock banner (which can
     // wrap). Fixed offsets let them print over each other (owner playtest bug).
     const short = h < 560
-    let y = h * 0.5 - (short ? 170 : 156)
+    // Never above the top edge (phone landscape is only 375 tall).
+    let y = Math.max(h * 0.5 - (short ? 170 : 156), this.title.height / 2 + 4)
     this.title.position.set(cx, y)
     y += 34
     this.best.position.set(cx, y)
@@ -119,7 +120,7 @@ export class GameOver {
     y += Math.max(22, this.rank.height + 6)
     this.stats.position.set(cx, y + this.stats.height / 2)
     y += this.stats.height + 22
-    this.retry.position(cx - 188, y)
+    this.retry.position(cx - 168, y)
     this.menu.position(cx + 8, y)
     y += 64
     // SHARE + LEADERS share a row; SHARE centers alone with no leaderboard backend.

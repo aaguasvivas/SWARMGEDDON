@@ -1,13 +1,12 @@
-import { COLORS, MAX_FLOATERS, MAX_PARTICLES } from '../config.ts'
+import { COLORS, MAX_PARTICLES } from '../config.ts'
 import type { Particle } from '../game/particle.ts'
 import type { World } from '../game/world.ts'
 
 /**
- * Particle / floating-text emitters. All respect the population caps
- * (skip-when-full) so worst-case combat can't blow the budget. Particle
- * scatter draws from the cosmetic `fx` stream inside the sim tick, so runs stay
- * reproducible and no emitter can shift a sim stream. Floating text is spawned
- * only by presentation (FeelDirector and main) and draws nothing.
+ * Particle emitters. All respect the population cap (skip-when-full) so
+ * worst-case combat can't blow the budget. Scatter draws from the cosmetic
+ * `fx` stream inside the sim tick, so runs stay reproducible and no emitter can
+ * shift a sim stream.
  */
 
 function begin(p: Particle, x: number, y: number, tint: number): void {
@@ -214,33 +213,4 @@ export function spawnChainArc(world: World, x1: number, y1: number, x2: number, 
     p.sprite.texture = world.sparkTex
     p.sprite.blendMode = 'add'
   }
-}
-
-/** Floating damage number (capped). Crits are larger and gold. The sim draws
- *  the jitter (`x` and `rise`) from the fx stream when it emits the hit. */
-export function spawnDamageNumber(world: World, x: number, y: number, dmg: number, crit: boolean, rise: number): void {
-  if (world.floaters.size >= MAX_FLOATERS) return
-  const f = world.floaters.acquire()
-  f.x = x
-  f.y = f.prevY = y - 8
-  f.vy = -rise
-  f.life = f.maxLife = crit ? 0.7 : 0.5
-  f.text.text = crit ? `${Math.round(dmg)}!` : String(Math.round(dmg))
-  f.text.style.fontSize = crit ? 20 : 14
-  f.text.style.fill = crit ? COLORS.critText : COLORS.damageText
-  f.text.visible = true
-}
-
-/** Floating announcement (e.g. weapon pickup name). */
-export function announce(world: World, text: string, x: number, y: number, color: number): void {
-  if (world.floaters.size >= MAX_FLOATERS) return
-  const f = world.floaters.acquire()
-  f.x = x
-  f.y = f.prevY = y
-  f.vy = -34
-  f.life = f.maxLife = 1.1
-  f.text.text = text
-  f.text.style.fontSize = 17
-  f.text.style.fill = color
-  f.text.visible = true
 }
