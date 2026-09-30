@@ -11,6 +11,9 @@
 //   client score must equal scoreOf() on the submitted fields (the server
 //   path) and an independent model written from section 5 must agree on the
 //   score, killPts, xpSum, hits, chain, bestChain, peakTier and flawless bosses.
+//   Every RunResult must also pass the 8.4 bound bestChain <= kills + 15 x
+//   closeCalls; oldChainRejects counts the runs the old bestChain <= kills
+//   rule would have rejected.
 import puppeteer from 'puppeteer-core'
 import { acquireChromeLock } from './lib/chromeLock.mjs'
 
@@ -120,6 +123,7 @@ try {
     const sc = await import('/src/game/scoring.ts')
     const { scoreOf } = await import('/src/core/rules.ts')
     const { buildRunResult } = await import('/src/state/runResult.ts')
+    const { closeCall } = await import('/src/systems/dash.ts')
     const { ENEMIES } = await import('/src/content/enemies.ts')
     const defs = Object.values(ENEMIES)
     S.loop.stop()
@@ -139,6 +143,10 @@ try {
     let clears = 0
     let maxScore = 0
     let first = null
+    // Section 8.4 chain bound: the old rule (bestChain <= kills) against the
+    // one that counts Close Calls.
+    let oldChainRejects = 0
+    let chainRejects = 0
     for (let s = 0; s < n; s++) {
       w.beginRun(1000 + s, 'endless')
       const threat = irand(0, 4)
@@ -171,7 +179,7 @@ try {
           m.idle = 0
           while (m.acc >= 10) { m.acc -= 10; hit() }
         } else if (r < 0.8) {
-          sc.addChain(w, 15)
+          closeCall(w)
           m.chain += 15
           m.best = Math.max(m.best, m.chain)
         } else if (r < 0.82) {
@@ -199,6 +207,8 @@ try {
       const cb = m.clearMs > 0 ? 50000 + 100 * Math.max(0, 840 - Math.floor(m.clearMs / 1000)) : 0
       const model = Math.floor(((kp + cb) * (10 + 2 * threat)) / 10)
       maxScore = Math.max(maxScore, w.score)
+      if (res.bestChain > res.kills) oldChainRejects++
+      if (res.bestChain > res.kills + 15 * res.closeCalls) chainRejects++
       const ok = w.score === server && w.score === model && res.score === w.score && res.killPts === m.killPts && res.xpSum === m.xpSum &&
         res.hits === m.hits && w.chain === m.chain && res.bestChain === m.best && res.peakTier === m.peak && res.bossesFlawless === m.flawless
       if (!ok) {
@@ -206,9 +216,9 @@ try {
         if (!first) first = { seq: s, client: w.score, server, model, killPts: [res.killPts, m.killPts], chain: [w.chain, m.chain], hits: [res.hits, m.hits], peak: [res.peakTier, m.peak], best: [res.bestChain, m.best], flawless: [res.bossesFlawless, m.flawless] }
       }
     }
-    return { sequences: n, ops, clears, maxScore, mismatches, first }
+    return { sequences: n, ops, clears, maxScore, mismatches, first, oldChainRejects, chainRejects }
   }, SEQUENCES)
-  console.log(JSON.stringify({ probe: 'parity', ...parity, pass: parity.mismatches === 0 }))
+  console.log(JSON.stringify({ probe: 'parity', ...parity, pass: parity.mismatches === 0 && parity.chainRejects === 0 }))
   if (pageErrors.length) console.log(JSON.stringify({ pageErrors }))
 } finally {
   await browser.close()

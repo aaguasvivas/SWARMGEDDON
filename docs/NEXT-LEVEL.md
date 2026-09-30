@@ -960,7 +960,8 @@ Indexes: `(board, world, week, score DESC)`, `(board, world, score DESC)`, `(boa
    - `kills <= 250 x timeMs / 1000 + 100`
    - `kills <= xpSum <= 30 x kills + 450 x bosses`
    - `0 <= killPts <= 80 x xpSum`
-   - `bestChain <= kills`
+   - `0 <= closeCalls <= 7 x timeMs / 1000` (a Close Call pays at most once per dash, and a dash lasts 9 ticks)
+   - `bestChain <= kills + CLOSE_CALL_CHAIN x closeCalls` (the chain grows by 1 per scored kill and by 15 per Close Call, so an honest run can have `bestChain > kills`). `closeCalls` is sent for this check and is not stored.
    - `hits <= 20 x timeMs / 1000 + 10`
    - `1 <= level <= 500`
    - `cleared` implies `CLEAR_MIN_MS <= clearMs <= timeMs`, and `bosses >= 3` (2 when mid2 was skipped, so the check is `bosses >= 2`)
@@ -1015,7 +1016,7 @@ ES (es-MX):
 - `48 logros desbloquean pilotos, mundos, armas, mejoras y pinturas para tu nave, todo ganado jugando.`
 
 `public/privacy.html`, section "The optional global leaderboard":
-- `The leaderboard is off until you turn it on in the game. When you opt in and finish a run, the game sends: the nickname you chose, a random id created on your device when you opted in (it identifies the device's entries, not you), your score and run stats (time, kills, level, multiplier chain, hits), the pilot, the world, your ship paint, and the day. Our host derives your country from the connection; we store only the country code. Your IP address is not stored; we keep a salted, daily-changing hash of it for rate limiting. You can remove every entry from Settings with REMOVE MY SCORES.`
+- `The leaderboard is off until you turn it on in the game. When you opt in and finish a run, the game sends: the nickname you chose, a random id created on your device when you opted in (it identifies the device's entries, not you), your score and run stats (time, kills, level, multiplier chain, hits, close calls), the pilot, the world, your ship paint, and the day. Our host derives your country from the connection; we store only the country code. Your IP address is not stored; we keep a salted, daily-changing hash of it for rate limiting. You can remove every entry from Settings with REMOVE MY SCORES.`
 - Short version: `The only data that can ever leave your device is an optional leaderboard entry, sent only after you opt in.`
 - Update "Last updated".
 
@@ -1625,7 +1626,7 @@ node scripts/measure.mjs 390 844 perf ; node scripts/measure.mjs 390 844 perf-fi
 | A16 | Allocation | no GC pause over 2 ms in a 10 s perf-final trace |
 | A17 | Human (owner) | about 1 win in 3 Hive T0 runs on iPhone for a player with 5 or more runs. If 0 of 3 while A7 passes: Hive rows 5 to 10 maxAlive -10% and hpBase -10%. If 3 of 3: raise both by 10%. |
 | A18 | Build systems | dash bot survives 1.25x or more vs no-dash; 1 to 4 close calls per minute; 50% or more of priority runs take a fusion by 4:00; 40% or more of evolve runs that reach boss 2 evolve; XP collected 90% or more |
-| A-LB | Server | forged seed 400; wrong pilot 400; second Daily 409; 4th Daily per IP 429; 9th insert in 10 min 429; `killPts > 80 x xpSum` stored clamped; kills over 250/s 422; blocklisted name becomes `PILOT####`; burst of 12 accepts exactly the remaining budget; board returns one row per player; `me` present outside the top 50; no `player_id` in any response; `/api/score` 410 |
+| A-LB | Server | forged seed 400; wrong pilot 400; second Daily 409; 4th Daily per IP 429; 9th insert in 10 min 429; `killPts > 80 x xpSum` stored clamped; kills over 250/s 422; `kills 5, closeCalls 2, bestChain 35` accepted; `bestChain > kills + 15 x closeCalls` 422; blocklisted name becomes `PILOT####`; burst of 12 accepts exactly the remaining budget; board returns one row per player; `me` present outside the top 50; no `player_id` in any response; `/api/score` 410 |
 
 **A1 note (P4 review).**
 - "Both phone views" means the P14 normalized camera views: 560 x 996 (portrait) and 996 x 560 (landscape). Measure them with `node scripts/measure.mjs 375 667 opening 560 996` and `node scripts/measure.mjs 375 667 opening 996 560`.

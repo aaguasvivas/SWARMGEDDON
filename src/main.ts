@@ -282,7 +282,8 @@ async function boot(): Promise<void> {
       toMenu()
       return
     }
-    if (after === 'retry') {
+    // A quick retry skips the recap only when the run has no news to show.
+    if (after === 'retry' && fresh.length === 0 && !gains.score && !gains.time && !gains.kills) {
       startRun(world.mode)
       return
     }
@@ -428,9 +429,10 @@ async function boot(): Promise<void> {
     }
     if (modal.isOpen()) return true // swallow back while choosing a perk
     if (screen === 'playing') {
-      quitRun('menu')
+      quitRun('recap')
       return true
     }
+    if (screen === 'gameover' && !gameOver.acceptsInput()) return true
     if (screen !== 'menu') {
       toMenu()
       return true
@@ -457,11 +459,11 @@ async function boot(): Promise<void> {
     if (debug && e.key === '`') {
       debug.toggle()
     } else if (screen === 'playing') {
-      if (e.key === 'Escape') quitRun('menu')
+      if (e.key === 'Escape') quitRun('recap')
       else if (e.key === 'r' || e.key === 'R') quitRun('retry')
     } else if (screen === 'gameover') {
       if (e.key === 'Enter' && gameOver.acceptsInput()) startRun(world.mode)
-      else if (e.key === 'Escape') toMenu()
+      else if (e.key === 'Escape' && gameOver.acceptsInput()) toMenu()
     } else if (screen === 'menu' && e.key === 'Enter' && !settingsPanel.isOpen()) {
       startRun('endless')
     }
