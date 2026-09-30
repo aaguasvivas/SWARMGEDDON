@@ -9,10 +9,16 @@ import { spawnHazard } from './hazards.ts'
 import { spawnEnemy } from './spawn.ts'
 
 const TAU = Math.PI * 2
+const QUARTER = Math.PI / 2
 /** Event spawn points stay this far inside the arena wall. */
 const EDGE_INSET = 24
-/** Sides tried when S or G is fitted to the arena: the roll, its opposite, then each quarter turn. */
-const FIT_TURNS = [0, Math.PI, Math.PI / 2, -Math.PI / 2] as const
+/** Sides tried when S or G is fitted to the arena, in quarter turns from the
+ *  roll: the roll, its opposite, then each quarter turn. */
+const FIT_QUARTERS = [0, 2, 1, 3] as const
+/** Unit vector of each side, indexed by quadrant(). Exact (not the cosine of
+ *  a float32 angle), so all of a wall's slots share one coordinate. */
+const SIDE_X = [1, 0, -1, 0] as const
+const SIDE_Y = [0, 1, 0, -1] as const
 
 /** Indexed by quadrant(): world up is screen up. */
 export const FROM_WORD = ['FROM THE EAST', 'FROM THE SOUTH', 'FROM THE WEST', 'FROM THE NORTH'] as const
@@ -32,8 +38,9 @@ export function quadrant(ang: number): number {
 export class EventRun {
   active = false
   begun = false
-  /** The script beat this part belongs to. */
+  /** The script beat this part belongs to, and its event. */
   beat = -1
+  def: SwarmEventDef | null = null
   part: EventPart | null = null
   /** First Director.beatAng slot of the part's own draws. */
   drawAt = 0
@@ -53,16 +60,24 @@ export class EventRun {
   hy = 0
 }
 
-/** The first of the rolled side, its opposite and the quarter turns that
- *  puts the point `dist` out along it inside the arena; no draws. */
+/** The first of the rolled side, its opposite and the quarter turns with
+ *  room for a point `dist` out from the player, as that side's angle; with no
+ *  such side, the side with the most room. No draws. */
 export function fitSide(world: World, ang: number, dist: number): number {
   if (dist <= 0) return ang
-  const pl = world.player
-  for (let k = 0; k < FIT_TURNS.length; k++) {
-    const a = ang + FIT_TURNS[k]!
-    if (inside(world, pl.x + Math.cos(a) * dist, pl.y + Math.sin(a) * dist)) return a
+  const q0 = quadrant(ang)
+  let best = q0
+  let bestRoom = -Infinity
+  for (let k = 0; k < FIT_QUARTERS.length; k++) {
+    const q = (q0 + FIT_QUARTERS[k]!) % 4
+    const r = roomOn(world, q)
+    if (r >= dist) return q * QUARTER
+    if (r > bestRoom) {
+      best = q
+      bestRoom = r
+    }
   }
-  return ang
+  return best * QUARTER
 }
 
 /** Warn time (script stream, a fixed count per event): S or G, one of the
@@ -72,7 +87,7 @@ export function fitSide(world: World, ang: number, dist: number): number {
 export function rollEvent(world: World, def: SwarmEventDef, off: number): void {
   const rng = world.rngs.script
   const ang = world.director.beatAng
-  ang[off] = fitSide(world, quadrant(rng.angle()) * (Math.PI / 2), def.fit)
+  ang[off] = fitSide(world, quadrant(rng.angle()) * QUARTER, def.fit)
   let k = off + 1
   for (let i = 0; i < def.parts.length; i++) {
     const p = def.parts[i]!
@@ -115,6 +130,7 @@ export function startEvent(world: World, beat: number, def: SwarmEventDef, off: 
       run.active = true
       run.begun = false
       run.beat = beat
+      run.def = def
       run.part = part
       run.drawAt = drawAt
       run.ang = s + part.turn
@@ -145,6 +161,7 @@ export function tickEvents(world: World, dt: number): void {
     while (run.emitted < want) emit(world, run, run.emitted++)
     if (run.emitted >= run.total) {
       run.active = false
+      run.def = null
       run.part = null
     }
   }
@@ -154,24 +171,50 @@ export function clearEvents(world: World): void {
   const runs = world.director.events
   for (let r = 0; r < runs.length; r++) {
     runs[r]!.active = false
+    runs[r]!.def = null
     runs[r]!.part = null
   }
 }
 
+/**
+ * A part fixes its geometry around where the player stands now. A stream keeps
+ * its full authored distance: when its side has no room for it any more, it
+ * turns to a side that has (fitSide), and an event that names its side plays
+ * the alert again with the new one. A wall keeps its side and distance, so a
+ * closing pair stays a pair: a wall that starts past the arena wall walks in,
+ * and it slides along its own line to lie inside the arena from end to end.
+ */
 function begin(world: World, run: EventRun): void {
   const p = run.part!
+  const pl = world.player
   run.begun = true
   run.t = 0
   run.total = p.count
   run.dur = p.kind === 'stream' ? p.dur : p.kind === 'mortar' ? p.count / p.perSec : 0
-  if (p.kind === 'stream' || p.kind === 'wall') {
-    const c = Math.cos(run.ang)
-    const s = Math.sin(run.ang)
-    const d = reach(world, c, s, p.dist)
-    run.ox = world.player.x + c * d
-    run.oy = world.player.y + s * d
-    run.hx = -c
-    run.hy = -s
+  if (p.kind === 'stream') {
+    let q = quadrant(run.ang)
+    if (roomOn(world, q) < p.dist) {
+      const fit = quadrant(fitSide(world, run.ang, p.dist))
+      if (fit !== q && run.def!.dir === 'from') eventAlert(world, run.def!, fit * QUARTER)
+      q = fit
+    }
+    run.ox = pl.x + SIDE_X[q]! * p.dist
+    run.oy = pl.y + SIDE_Y[q]! * p.dist
+    run.hx = -SIDE_X[q]!
+    run.hy = -SIDE_Y[q]!
+  } else if (p.kind === 'wall') {
+    const q = quadrant(run.ang)
+    const b = world.arena.bounds
+    const half = ((p.count - 1) / 2) * p.spacing
+    run.hx = -SIDE_X[q]!
+    run.hy = -SIDE_Y[q]!
+    if (SIDE_X[q] !== 0) {
+      run.ox = pl.x + SIDE_X[q]! * p.dist
+      run.oy = clamp(pl.y, b.y + EDGE_INSET + half, b.y + b.h - EDGE_INSET - half)
+    } else {
+      run.ox = clamp(pl.x, b.x + EDGE_INSET + half, b.x + b.w - EDGE_INSET - half)
+      run.oy = pl.y + SIDE_Y[q]! * p.dist
+    }
   }
 }
 
@@ -188,11 +231,9 @@ function emit(world: World, run: EventRun, k: number): void {
       return
     }
     case 'wall': {
+      if (!room(world)) return
       const off = (k - (p.count - 1) / 2) * p.spacing
-      const x = run.ox - run.hy * off
-      const y = run.oy + run.hx * off
-      if (!inside(world, x, y) || !room(world)) return
-      const e = spawnEnemy(world, p.unit, x, y)
+      const e = spawnEnemy(world, p.unit, run.ox - run.hy * off, run.oy + run.hx * off)
       if (e) makeStream(e, run, p.speed, p.ttl, 0, 0, 0)
       return
     }
@@ -253,16 +294,14 @@ function room(world: World): boolean {
   return world.enemies.size < MAX_ENEMIES - SPAWN_ROOM
 }
 
-/** The longest step up to `dist` from the player along (c, s) that stays inside the arena. */
-function reach(world: World, c: number, s: number, dist: number): number {
+/** How far the player can reach toward side `q` and stay EDGE_INSET inside the wall. */
+function roomOn(world: World, q: number): number {
   const b = world.arena.bounds
   const pl = world.player
-  let d = dist
-  if (c > 1e-6) d = Math.min(d, (b.x + b.w - EDGE_INSET - pl.x) / c)
-  else if (c < -1e-6) d = Math.min(d, (b.x + EDGE_INSET - pl.x) / c)
-  if (s > 1e-6) d = Math.min(d, (b.y + b.h - EDGE_INSET - pl.y) / s)
-  else if (s < -1e-6) d = Math.min(d, (b.y + EDGE_INSET - pl.y) / s)
-  return d > 0 ? d : 0
+  if (q === 0) return b.x + b.w - EDGE_INSET - pl.x
+  if (q === 1) return b.y + b.h - EDGE_INSET - pl.y
+  if (q === 2) return pl.x - b.x - EDGE_INSET
+  return pl.y - b.y - EDGE_INSET
 }
 
 function inside(world: World, x: number, y: number): boolean {

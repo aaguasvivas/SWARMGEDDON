@@ -253,9 +253,9 @@ const DET_HELPER = `(() => {
       }
       mix(d.beatCursor); mix(d.warnCursor); mix(d.pulseT); mix(d.topupAcc); mix(d.lullUntil); mix(d.bossBeat)
       mix(d.lastBossKillAt > 0 ? d.lastBossKillAt : 0)
-      for (let k = 0; k < d.deferred.length; k++) { mix(d.deferred[k]); byte(d.deferWarned[k]) }
+      for (let k = 0; k < d.deferred.length; k++) mix(d.deferred[k])
       for (const r of d.events) { byte(r.active ? 1 : 0); mix(r.beat); mix(r.wait); mix(r.emitted); mix(r.t); mix(r.ang); mix(r.ox); mix(r.oy) }
-      for (let k = 0; k < w.script.beats.length; k++) mix(Number.isNaN(d.firedAt[k]) ? -2 : d.firedAt[k])
+      for (let k = 0; k < w.script.beats.length; k++) { mix(Number.isNaN(d.firedAt[k]) ? -2 : d.firedAt[k]); byte(d.warned[k]) }
       for (let k = 0; k < d.beatAng.length; k++) { mix(d.beatAng[k]); mix(d.beatAffix[k]) }
       mix(w.boss ? w.boss.hp : -1); mix(st.bosses)
       const bf = w.bossFight

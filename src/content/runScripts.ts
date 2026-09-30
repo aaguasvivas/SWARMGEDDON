@@ -60,7 +60,7 @@ const RIPTIDE = { kind: 'ring', delay: 0, turn: 0, unit: 'wraith', slots: 30, co
 const SHOAL_RUN = { kind: 'stream', delay: 0, turn: 0, unit: 'flyer', count: 48, speed: 230, ttl: 8, dist: 760, band: 100, dur: 2.0, wobble: 60, wobbleFreq: 5.2, wobbleStep: 0.7 } as const
 const BLINK_STORM = { kind: 'blink', delay: 0, turn: 0, unit: 'psychic', count: 10, r: 280, markerR: 34, tele: 1.0 } as const
 const CINDER_WALL = { kind: 'wall', delay: 0, turn: 0, unit: 'beetle', count: 18, speed: 60, ttl: 16, dist: 600, spacing: 46 } as const
-const CHARGER_VOLLEY = { kind: 'volley', delay: 0, turn: 0, unit: 'cinderCharger', count: 10, r: 380, windup: 0.9 } as const
+const CHARGER_VOLLEY = { kind: 'volley', delay: 0, turn: 0, unit: 'cinderCharger', count: 10, r: 220, windup: 0.9 } as const
 const MORTAR_BARRAGE = { kind: 'mortar', delay: 0, turn: 0, count: 18, r: 70, dmg: 22, tele: 1.0, perSec: 3, spread: 160, magmaEvery: 3 } as const
 
 /** A8, the nine world events. Each world's FINAL SWARM is its WorldScript.finalSwarm. */

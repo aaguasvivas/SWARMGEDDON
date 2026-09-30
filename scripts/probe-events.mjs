@@ -7,9 +7,14 @@
 //     neither moves nor fires, every A8 event of every world runs from its warn:
 //     script draws per event, the alert, unit and hazard counts, stream
 //     heading, distance, speed and TTL exit with no credit, the FINAL SWARM
-//     body counts; then each A9 affix through the real elite beat; the name
-//     tag lines; and a held event and elite firing 10 and 22 s after a boss
-//     kill with their alerts their lead earlier.
+//     body counts, CHARGER VOLLEY rams that reach a ship standing still; the
+//     stream and wall events with the ship near each arena wall and in the
+//     corners (unit counts, distance, walk-in, the alert's side); then each A9
+//     affix through the real elite beat; the name tag lines; a held event and
+//     elite firing 10 and 22 s after a boss kill with their alerts their lead
+//     earlier; a held elite whose lead falls just before the next boss's
+//     cage, announced only for its new fire time; and an elite whose warn falls
+//     inside a cage that drops before it comes due, announced when it fires.
 //   shots: screenshots at 375x667, 667x375 and 390x844 (safe-area insets
 //     47/34) of elite name tags (0, 1 and 2 affixes) and of STAMPEDE and HIVE
 //     WALL crossing the view, into --out (default /tmp/swg-p7-shots).
@@ -108,6 +113,7 @@ async function checks() {
       const hz0 = w.hazardSeq
       const seen = new Map()
       const hz = new Map()
+      const ram = new Map()
       let first = null
       let maxSpeed = 0
       let lateral = 0
@@ -124,6 +130,11 @@ async function checks() {
           if (!seen.has(e.uid)) {
             seen.set(e.uid, { id: e.def.id, ev: e.eventUnit, stream: e.stream, x: e.x, y: e.y, dir: e.phaseDir, speed: e.speed, phase: e.phase, st: e.stateTimer, hp: e.maxHp })
             if (e.stream && !first) first = { x: e.x, y: e.y, dir: e.phaseDir, px: pl.x, py: pl.y }
+          }
+          if (e.eventUnit && e.def.behavior === 'charger' && e.phase === 2) {
+            // Gap between the ram's body and the ship's (below 0 is contact).
+            const gap = Math.hypot(e.x - pl.x, e.y - pl.y) - e.radius - pl.radius
+            ram.set(e.uid, Math.min(ram.get(e.uid) ?? Infinity, gap))
           }
           if (e.stream) {
             maxSpeed = Math.max(maxSpeed, Math.hypot(e.vx, e.vy))
@@ -177,6 +188,13 @@ async function checks() {
         r.windup = ok
         pass &&= ok
       }
+      if (b.id === 'chargerVolley' || (final && arena === 'wastes')) {
+        // Every telegraphed ram reaches the ship that stood still: its dash
+        // runs through the ship's body.
+        const gaps = [...ram.values()]
+        r.rams = { dashed: gaps.length, maxGap: gaps.length ? +Math.max(...gaps).toFixed(1) : null }
+        pass &&= gaps.length === 10 && gaps.every((g) => g < 0)
+      }
       if (b.id === 'blinkStorm' || (final && arena === 'depths')) {
         const markers = [...hz.values()].filter((h) => h.dmg === 0 && h.r === 34)
         // Pulses spawn psychics too in Depths: count only those on a marker.
@@ -217,6 +235,109 @@ async function checks() {
       pass: alert?.sub === 'FROM THE WEST' && !!first && first.x - pl.x < -700,
     }
   }
+
+  // Near the arena walls (P7 review): each case draws S on a chosen side,
+  // puts the ship at `place` before the warn (`early`) or between the warn
+  // and the fire, and never moves it. Streams keep their full distance (a side
+  // with no room turns, and the alert names the new side); walls keep their
+  // side, start past the arena wall when they must and walk in, and slide
+  // along their line so every slot spawns.
+  const FROM = ['EAST', 'SOUTH', 'WEST', 'NORTH']
+  const nearWall = (arena, id, want, place, early) => {
+    const script = R.WORLD_SCRIPTS[arena]
+    const beat = script.beats.find((x) => x.kind === 'event' && x.id === id)
+    const def = R.eventDef(script, id)
+    let seed = 1001
+    while (quadrant(new Rng(hash32(seed, SALT.script)).float() * Math.PI * 2) !== want) seed++
+    fresh(arena, seed)
+    S.jumpTo(beat.at - 3.5)
+    w.enemies.clear()
+    const b = w.arena.bounds
+    // Pinned every step: Depths warpers would pull a still ship along.
+    let pin = null
+    const put = () => {
+      pin = place(b)
+      pl.x = pl.prevX = pin[0]
+      pl.y = pl.prevY = pin[1]
+    }
+    if (early) put()
+    let seq = w.alerts.seq
+    const alerts = []
+    const note = () => {
+      for (; seq < w.alerts.seq; seq++) {
+        const a = w.alerts.slots[seq % w.alerts.slots.length]
+        if (a.kind === 3) alerts.push({ t: +a.t.toFixed(2), sub: a.sub })
+      }
+    }
+    stepTo(beat.at - 3 + 1 / 60)
+    note()
+    if (!early) put()
+    const uid0 = w.enemyUidSeq
+    const units = new Map()
+    let delays = 0
+    for (const p of def.parts) delays = Math.max(delays, p.delay)
+    const end = beat.at + delays + 13
+    while (w.time < end - 1e-9) {
+      S.step(1)
+      god()
+      pl.x = pl.prevX = pin[0]
+      pl.y = pl.prevY = pin[1]
+      note()
+      for (const e of w.enemies.active) {
+        if (!e.alive || e.uid < uid0 || !e.eventUnit) continue
+        let u = units.get(e.uid)
+        if (!u) {
+          u = { stream: e.stream, dist: Math.hypot(e.x - pl.x, e.y - pl.y), dx: e.x - pl.x, dy: e.y - pl.y, speed: e.speed, inside: false }
+          units.set(e.uid, u)
+        }
+        if (e.x >= b.x && e.x <= b.x + b.w && e.y >= b.y && e.y <= b.y + b.h) u.inside = true
+      }
+    }
+    return { beat, def, units: [...units.values()], alerts, ship: [Math.round(pl.x - b.x), Math.round(pl.y - b.y)] }
+  }
+  const sideOf = (u) => FROM[quadrant(Math.atan2(u.dy, u.dx))]
+  // [arena, event, drawn side, ship placement, early, units, part distance]
+  const EDGE = [
+    ['hive', 'hiveWall', 1, (b) => [b.x + b.w / 2, b.y + b.h - 400], false, 22, 640],
+    ['hive', 'hiveWall', 1, (b) => [b.x + b.w / 2, b.y + b.h - 200], false, 22, 640],
+    ['hive', 'hiveWall', 1, (b) => [b.x + b.w / 2, b.y + b.h - 20], false, 22, 640],
+    ['hive', 'hiveWall', 3, (b) => [b.x + b.w / 2, b.y + 60], false, 22, 640],
+    ['hive', 'hiveWall', 0, (b) => [b.x + b.w - 60, b.y + b.h / 2], false, 22, 640],
+    ['hive', 'hiveWall', 2, (b) => [b.x + 60, b.y + b.h / 2], false, 22, 640],
+    ['hive', 'hiveWall', 1, (b) => [b.x + b.w - 60, b.y + b.h - 60], false, 22, 640],
+    ['wastes', 'cinderWall', 1, (b) => [b.x + b.w / 2, b.y + b.h - 200], false, 18, 600],
+    ['wastes', 'cinderWall', 2, (b) => [b.x + 60, b.y + 60], false, 18, 600],
+    ['hive', 'stampede', 1, (b) => [b.x + b.w / 2, b.y + b.h - 120], false, 40, 720],
+    ['hive', 'stampede', 0, (b) => [b.x + b.w - 100, b.y + b.h / 2], false, 40, 720],
+    ['hive', 'stampede', 3, (b) => [b.x + 60, b.y + 60], false, 40, 720],
+    ['depths', 'shoalRun', 2, (b) => [b.x + 150, b.y + b.h - 150], false, 48, 760],
+    ['hive', 'finalSwarm', 1, (b) => [b.x + 150, b.y + b.h / 2], true, 80, 720],
+    ['wastes', 'finalSwarm', 3, (b) => [b.x + b.w / 2, b.y + 100], true, 36, 600],
+    ['depths', 'finalSwarm', 1, (b) => [b.x + b.w - 100, b.y + b.h - 100], true, 48, 760],
+  ]
+  EDGE.forEach(([arena, id, want, place, early, wantUnits, dist], n) => {
+    const { def, units, alerts, ship } = nearWall(arena, id, want, place, early)
+    const lines = units.filter((u) => u.stream)
+    const minDist = lines.length ? Math.min(...lines.map((u) => u.dist)) : null
+    const walls = def.parts.some((p) => p.kind === 'wall')
+    const r = { arena, event: id, drawn: FROM[want], ship, streamUnits: lines.length, wantUnits, minDist: minDist && Math.round(minDist), wantDist: dist, alerts }
+    // Seen after one AI step: a unit has already moved speed / 60 toward the ship.
+    let pass = lines.length === wantUnits && minDist >= dist - Math.max(...lines.map((u) => u.speed)) / 60 - 1
+    if (walls) {
+      r.walkedIn = lines.filter((u) => u.inside).length
+      pass &&= r.walkedIn === lines.length
+    }
+    if (def.dir === 'from') {
+      // The last alert names the side the stream or wall came from (its unit
+      // nearest the ship: a wall slid along its line reaches far to one side).
+      const near = lines.reduce((m, u) => (u.dist < m.dist ? u : m), lines[0] ?? { dist: 0, dx: 0, dy: 0 })
+      const came = sideOf(near)
+      r.cameFrom = came
+      pass &&= alerts.length > 0 && alerts[alerts.length - 1].sub === `FROM THE ${came}`
+    }
+    r.pass = pass
+    out[`edge_${n}_${arena}_${id}`] = r
+  })
 
   // STREAM units leave at their TTL (or outside the arena) with no credit.
   {
@@ -423,6 +544,100 @@ async function checks() {
       killAt: +killAt.toFixed(2), heldAt340, eliteFired: +fe.toFixed(2), eventFired: +fv.toFixed(2), eliteAlert, eventAlert,
       pass: heldAt340 === 2 && Math.abs(fe - (killAt + 10)) <= tick && Math.abs(fv - (killAt + 22)) <= tick &&
         !!eliteAlert && Math.abs(eliteAlert.t - (killAt + 8)) <= tick && !!eventAlert && Math.abs(eventAlert.t - (killAt + 19)) <= tick,
+    }
+  }
+
+  // Held beats and the next cage (P7 review). The boss is shot down with 1 HP
+  // left from `t`; the kill lands a few ticks later.
+  const killBossFrom = (t) => {
+    stepTo(t)
+    const boss = w.boss
+    boss.hp = 1
+    inp.update = () => {
+      const dx = boss.x - pl.x
+      const dy = boss.y - pl.y
+      const d = Math.hypot(dx, dy) || 1
+      inp.aimDir.x = dx / d
+      inp.aimDir.y = dy / d
+      inp.firing = true
+    }
+    let killAt = null
+    for (let k = 0; k < 600 && killAt === null; k++) {
+      S.step(1)
+      god()
+      if (!w.bossAlive) killAt = w.time
+    }
+    inp.update = () => {
+      inp.aimDir.x = inp.aimDir.y = 0
+      inp.firing = false
+    }
+    return killAt
+  }
+  const eliteAlerts = () => {
+    const list = []
+    let seq = w.alerts.seq
+    return {
+      list,
+      note() {
+        for (; seq < w.alerts.seq; seq++) {
+          const a = w.alerts.slots[seq % w.alerts.slots.length]
+          if (a.kind === 4) list.push({ t: a.t, title: a.title })
+        }
+      },
+    }
+  }
+  const tick = 1 / 60 + 1e-3
+  // mid1 dies near 417: the 6:15 elites are rescheduled to about 451, and mid2
+  // arrives at 450, so their lead (449) comes before the cage. No alert then;
+  // after mid2 dies they fire 10 s later with the alert 2 s before.
+  {
+    fresh('hive')
+    S.jumpTo(236)
+    const al = eliteAlerts()
+    const kill1 = killBossFrom(416.8)
+    al.note()
+    const i615 = w.script.beats.findIndex((b) => b.kind === 'elite' && b.at === 375)
+    const slot = Array.from(w.director.deferred).indexOf(i615)
+    const due = slot >= 0 ? w.director.deferredAt[slot] : null
+    const stepNote = (t) => {
+      while (w.time < t - 1e-9) {
+        S.step(1)
+        god()
+        al.note()
+        while (w.paused && w.draft.open) S.pickCard(0)
+      }
+    }
+    stepNote(450 + 2 / 60)
+    const caged = w.director.cage.active
+    const before = al.list.filter((a) => a.t > kill1 + 11).length
+    const kill2 = killBossFrom(457.8)
+    al.note()
+    stepNote(kill2 + 11)
+    const fired = w.director.firedAt[i615]
+    const after = al.list.filter((a) => a.t > kill2)
+    out.held_elite_before_next_cage = {
+      kill1: +kill1.toFixed(2), rescheduledTo: due && +due.toFixed(2), mid2Caged: caged, alertsBeforeMid2: before, kill2: +kill2.toFixed(2), fired: +fired.toFixed(2),
+      alertsAfter: after.map((a) => ({ t: +a.t.toFixed(3), title: a.title })),
+      pass: due > 450 && due - 2 < 450 && caged && before === 0 && Math.abs(fired - (kill2 + 10)) <= tick &&
+        after.length === 1 && after[0].title === 'GUARDIAN x2' && Math.abs(after[0].t - (kill2 + 8)) <= tick,
+    }
+  }
+  // mid1 dies between the 5:10 elite's warn (308, inside the cage, so no
+  // alert) and its beat (310): it fires on time with its alert then.
+  {
+    fresh('hive')
+    S.jumpTo(236)
+    const al = eliteAlerts()
+    const kill = killBossFrom(308.2)
+    al.note()
+    stepTo(310 + 2 / 60)
+    al.note()
+    const i510 = w.script.beats.findIndex((b) => b.kind === 'elite' && b.at === 310)
+    const fired = w.director.firedAt[i510]
+    const late = al.list.filter((a) => a.t > 240)
+    out.cage_drops_in_lead = {
+      kill: +kill.toFixed(2), fired: +fired.toFixed(2), alerts: late.map((a) => ({ t: +a.t.toFixed(3), title: a.title })),
+      pass: kill > 308 && kill < 310 && Math.abs(fired - 310) <= tick && late.length === 1 && Math.abs(late[0].t - fired) < 1e-3,
     }
   }
   return out

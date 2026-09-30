@@ -539,13 +539,18 @@ Crit, Giant Slayer, AoE and pickup weapons stay out of the estimate. The evolved
 
 **Events** (`src/systems/events.ts`; table in A8):
 - Units are normal defs with `eventUnit = true`.
-- **STREAM mode** (`stream = true`) means a locked heading, authored speed, a TTL, and no seek or separation. At TTL, or 40 u outside the arena, the unit despawns with no credit.
+- **STREAM mode** (`stream = true`) means a locked heading, authored speed, a TTL, and no seek or separation. At TTL, or 40 u past the arena wall it heads through, the unit despawns with no credit (a unit that starts outside the arena and heads in stays).
 - Emission is spread over `spawnDur` through a preallocated `EventRun` (3 slots).
 - Geometry is relative to the player's sim position, never the view.
 - (P7) Each part of an event (a FINAL SWARM has 3) takes one `EventRun` slot and fixes its geometry when it begins (after its delay). Only cryo slows a stream unit; aura buffs and the 240 u/s ceiling do not apply to it.
-- (P7) S and G are one of the 4 sides (the drawn angle snapped to N, E, S or W), so the alert's direction word is exact. At warn time the side is fitted to the arena with no extra draw: the first of the side, its opposite, then each quarter turn that puts the point `fit` u out along it (the stream or wall distance, or the ring radius) inside the arena. A held event is fitted again when its late alert plays.
-- (P7) Arena edges: a stream origin or wall center that would fall outside the arena moves in along its ray to 24 u inside the wall; wall and ring slots outside the arena are skipped; every other spawn or drop point is clamped 24 u inside.
+- (P7) S and G are one of the 4 sides (the drawn angle snapped to N, E, S or W), so the alert's direction word is exact. At warn time the side is fitted to the arena with no extra draw: the first of the side, its opposite, then each quarter turn that puts the point `fit` u out along it (the stream or wall distance, or the ring radius) at least 24 u inside the arena wall (with none, the side with the most room). A held event is fitted again when its late alert plays.
+- (P7 review) Arena edges, decided when each part begins (the player moves up to 855 u during the 3 s alert). Part directions are exact axis vectors (S plus the part's turn), so a wall's slots share one coordinate.
+  - A stream keeps its authored distance. When the side (S plus its turn) has no room for its origin, the part is fitted again from that side, as at warn time. An event that names its side (STAMPEDE, SHOAL RUN) plays its alert again with the new side; the FINAL SWARM streams turn with no alert. Lateral offsets are clamped 24 u inside.
+  - A wall keeps its side and its distance, so the Wastes pair still closes from both sides. A wall center past the arena wall starts outside, and its units walk in. The wall slides along its own line until both ends are 24 u inside, so every slot spawns.
+  - Ring slots outside the arena are skipped. Every other spawn or drop point is clamped 24 u inside.
+  - Measured by `scripts/probe-events.mjs` with the ship near each wall and in the corners: every stream and wall unit spawns at its authored distance or farther, every wall unit enters the arena, and the last alert names the side the units come from. Before the fix, HIVE WALL spawned 11 of 22 units with the ship 200 or 400 u from the wall and 0 of 22 at 20 u (the float32 `cos(PI/2)` of -4.4e-8 put half the slots 2e-5 u outside the inset line), and a STAMPEDE turned toward a ship 120 u from the wall spawned 93 u from it.
 - (P7) A held event or elite beat plays its alert its warn lead (3 s, elites 2 s) before its deferred fire time, so a late beat is announced like an on-time one. A held event that the drop rule will discard gets no alert.
+- (P7 review) Holding or rescheduling a beat clears its alert flag (`Director.warned`), so a beat held again by a later cage is announced again for its new fire time. A held beat's alert waits while the next boss arrives before its fire time (that cage holds it again). A beat that fires with no alert played (its warn fell inside a cage that dropped before it came due) plays its alert, refitted, when it fires.
 
 **Hazards** (`src/game/hazard.ts`, `src/systems/hazards.ts`, `src/render/hazardRenderer.ts`):
 - The pool holds 48.
@@ -1659,6 +1664,7 @@ node scripts/measure.mjs 390 844 perf ; node scripts/measure.mjs 390 844 perf-fi
 - Beat timing is measured from `Director.firedAt` (the sim time each beat fired, or -1 when a rule dropped or skipped it). `scripts/playtest/analyze.mjs` replays the deferral rules over each run's own cage intervals (held beats at kill + 10 s, then 12 s apart; an event more than 60 s late dropped; a lull inside a cage skipped; bosses at `max(at, last kill + 20)`, mid2 skipped past 570 s) and prints one `A3` line per run.
 - The event window for the saturation share lasts while an event part emits or a stream unit lives, and 15 s after an event beat fires. Ring units are ordinary enemies after that.
 - Measured on the P7 branch, T0, `roam:1001:14`, `smart+focus:1001:14:nova:priority` and `smart+dash:2002:14:nova:priority` in each world (9 runs): 153 of 153 beats on time or where the rules put them (held elites and events after a boss kill, BLINK STORM, HIVE WALL and a lull dropped or skipped by rule). Density on the smart bots: alive at most 293, never over the row's maxAlive, saturated share at most 0.033.
+- Re-measured after the P7 review fixes (same 9 runs): 153 of 153 beats on time or where the rules put them. Smart bots: alive at most 263, at most 5 over the row's maxAlive (within the +160 bound), saturated share at most 0.034. Invincible roam bots: Hive 581 alive and 421 over row 11 (the PRIME brood below), Wastes saturated share 0.232, Depths 0.265 on seed 1001, over the 0.25 bound. The pre-fix sim gives 0.149 on that seed; seeds 2002 and 3003 give 0 on both builds. The runs split at the first event. On the fixed sim the bot killed mid2 at 503.8 s instead of 569.5 s, so the stretch from 8:24 to the PRIME at 10:30 ran without a cage, and the roam bot (189.9 kills per minute in Depths) held the field at the row's maxAlive through it. P19 owns the roam-bot density with the brood excess.
 - The invincible Hive roam run fails the density bound: 627 alive and 467 over row 11's maxAlive during the PRIME fight it cannot finish. Tagging every spawn after 10:30 by source gave 474 boss-brood swarmers and 60 eggs, 81 other spawns and no event units, so the excess is the PRIME kit's brood in a 210 s stalemate fight (the eggClutch cap of 24 brood does not limit mothersCall), not the events. P6b or P19 owns it.
 - The harness bot dodges streams (it sidesteps toward the side with less of the stream, sticky until no stream threatens) and every damaging hazard circle. In an A/B on 5 seeds per world the dodge steered for 5 to 183 steps per run and stream contact damage was near 0 with and without it; a stationary ship takes 8 to 16 HP from one STAMPEDE or SHOAL RUN. Survival differences between the arms come from divergence after the first event, not from the dodge.
 
@@ -2058,7 +2064,7 @@ pulseT, topupAcc, beatCursor, warnCursor, lullUntil, lullMin
 beatAng = new Float32Array(96); beatAffix = new Uint8Array(96); scratch = new Float32Array(64)
 firedAt = new Float32Array(32)   // P7: fire time per beat (NaN not yet, -1 dropped or skipped); A3 reads it
 cage = { active, x, y, r, formingFrom }; bossesAlive, fightIndex, fightStart, nextFrenzyAt, frenzy
-lastBossKillAt, bossStageNext; deferred = new Int16Array(12); deferredAt = new Float32Array(12); deferWarned = new Uint8Array(12)
+lastBossKillAt, bossStageNext; deferred = new Int16Array(12); deferredAt = new Float32Array(12); warned = new Uint8Array(32)
 events = [EventRun x3]; runState, clearTime, purgeT, purgeX, purgeY, otCycle, otStart
 broodCount, bossesKilled, elitesKilled
 ```
@@ -2079,7 +2085,7 @@ broodCount, bossesKilled, elitesKilled
 | DEPTHS | BLINK STORM 8:45 | 10 psychic | 10 marker hazards (r 34, tele 1.0 s) on r 280 around the player; a psychic spawns at each | BLINK STORM / ALL AROUND YOU |
 | DEPTHS | FINAL SWARM 10:00 | RIPTIDE (36 slots, 32 filled) +0; SHOAL RUN from S +3 s; BLINK STORM +8 s | | FINAL SWARM / HOLD ON |
 | WASTES | CINDER WALL 2:30 | 18 beetle, STREAM, speed 60, TTL 16 s | line 828 u (spacing 46) at 600 u toward S | CINDER WALL / FROM THE S |
-| WASTES | CHARGER VOLLEY 5:30 | 10 cinderCharger | on r 380, spawned in windup (phase 1, heading at the player, stateTimer 0.9) | CHARGER VOLLEY / SIDESTEP THE RAMS |
+| WASTES | CHARGER VOLLEY 5:30 | 10 cinderCharger | on r 220, spawned in windup (phase 1, heading at the player, stateTimer 0.9) | CHARGER VOLLEY / SIDESTEP THE RAMS |
 | WASTES | MORTAR BARRAGE 8:45 | 18 hazard circles, r 70, dmg 22, tele 1.0 s, 3 per s for 6 s | drop k lands on the player's position + offset k (angle, radius 0 to 160); every 3rd leaves a magma pool | MORTAR BARRAGE / KEEP MOVING |
 | WASTES | FINAL SWARM 10:00 | two CINDER WALLs from S and opposite S, closing (TTL 12 s); CHARGER VOLLEY +6 s | | FINAL SWARM / HOLD ON |
 
@@ -2087,6 +2093,7 @@ broodCount, bossesKilled, elitesKilled
 - The S or G drawn at warn time is shown in the 3 s alert.
 - (P7) Emission (`spawnDur`): STAMPEDE and SHOAL RUN over 2.0 s (one unit every 50 or 42 ms); walls, rings, BLINK STORM and CHARGER VOLLEY at once; MORTAR BARRAGE drop k at k/3 s. Lateral offsets (band) are spawn-stream draws; the SHOAL RUN wobble phase is `0.7i` with no draw. A wall's units sit `spacing` apart centered on its center (HIVE WALL 21 gaps = 924 u; CINDER WALL 17 gaps = 782 u). A ring's empty slots are centered on G (4 empty slots in the Depths FINAL SWARM). Every third mortar drop (k = 2, 5, 8 ...) leaves the magma pool.
 - (P7) FINAL SWARM directions: the Depths RIPTIDE gap faces opposite S (as in Hive), and SHOAL RUN comes from S. Body counts at T0: Hive 113, Depths 80 (plus 10 BLINK STORM psychics), Wastes 46.
+- (P7 review) CHARGER VOLLEY radius 220 (was 380): a cinderCharger dash covers 253 u (460 u/s for 0.55 s) and contact starts at 34 u (radii 16 + 18), so from 220 u each ram runs through a ship that stands still and ends 33 u past it, as its 253 u windup lane shows. From 380 u every ram stopped 127 u short and the volley needed no sidestep. `probe-events.mjs` checks that all 10 rams reach a still ship.
 
 ## A9. Elite affixes
 

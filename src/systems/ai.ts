@@ -293,8 +293,9 @@ function fence(e: Enemy, cage: { x: number; y: number; r: number }): void {
 /**
  * STREAM mode (section 4.7): the locked heading at the authored speed plus the
  * lateral wobble; only cryo slows it, and the speed ceiling does not apply. At
- * its TTL, or STREAM_EXIT_PAD outside the arena, the unit leaves with no
- * credit. Returns false when it left.
+ * its TTL, or STREAM_EXIT_PAD past the arena wall it heads through, the unit
+ * leaves with no credit (a wall that starts past the arena walks in). Returns
+ * false when it left.
  */
 function streamStep(world: World, e: Enemy, dt: number): boolean {
   const b = world.arena.bounds
@@ -304,12 +305,15 @@ function streamStep(world: World, e: Enemy, dt: number): boolean {
     spawnPoof(world, e.x, e.y, e.gibTint, 4)
     return false
   }
-  if (e.x < b.x - STREAM_EXIT_PAD || e.x > b.x + b.w + STREAM_EXIT_PAD || e.y < b.y - STREAM_EXIT_PAD || e.y > b.y + b.h + STREAM_EXIT_PAD) {
+  const hx = Math.cos(e.phaseDir)
+  const hy = Math.sin(e.phaseDir)
+  if (
+    (hx < -1e-6 && e.x < b.x - STREAM_EXIT_PAD) || (hx > 1e-6 && e.x > b.x + b.w + STREAM_EXIT_PAD) ||
+    (hy < -1e-6 && e.y < b.y - STREAM_EXIT_PAD) || (hy > 1e-6 && e.y > b.y + b.h + STREAM_EXIT_PAD)
+  ) {
     e.alive = false
     return false
   }
-  const hx = Math.cos(e.phaseDir)
-  const hy = Math.sin(e.phaseDir)
   const lat = e.wobAmp !== 0 ? e.wobAmp * Math.cos(e.wobFreq * (world.time - e.bornAt) + e.wobPhase) : 0
   const k = e.slow > 0 ? 1 - e.slowFactor : 1
   e.vx = (hx * e.speed - hy * lat) * k
