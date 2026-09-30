@@ -36,6 +36,10 @@ export class Pickup implements Poolable {
   captured = false
   /** Seconds since capture (the homing speed ramps over XP.homeRamp). */
   homeT = 0
+  /** Pods: hold-to-take fill, 0 to 1. */
+  hold = 0
+  /** Pods: spawned by the pod timer (one timer pod at a time). */
+  timer = false
 
   constructor(readonly sprite: Sprite) {}
 }

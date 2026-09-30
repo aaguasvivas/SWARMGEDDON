@@ -51,6 +51,14 @@ export class Enemy implements Poolable {
   /** Cryo slow remaining (seconds) + its strength (0..1). */
   slow = 0
   slowFactor = 0
+  /** Burn remaining (seconds) and its damage per second, final before
+   *  elite/boss multipliers. */
+  burnT = 0
+  burnDps = 0
+  /** Overpressure stagger remaining (seconds): no movement while > 0. */
+  staggerT = 0
+  /** World.dashSeq of the dash that last rammed this enemy (RAM, once per dash). */
+  ramStamp = 0
   /** Underground (burrower) or still emerging (boss): intangible, no contact damage. */
   submerged = false
   /** Boss fight (World.bossFights) this enemy was spawned into as brood, 0 for

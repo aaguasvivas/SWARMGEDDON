@@ -6,11 +6,17 @@ import type { InputManager } from '../input/input.ts'
 import { tickDown } from '../game/player.ts'
 import type { World } from '../game/world.ts'
 
+const TAU = Math.PI * 2
+/** An emptied magazine may keep a float remainder this small. */
+const AMMO_EPS = 1e-6
+
 /**
- * Player firing. Effective stats = weapon base * perk modifiers. Ammo depletes
- * per shot; an empty finite mag reverts to the pilot's infinite base weapon.
- * Berserker scales fire rate by missing HP and bursts after a medkit; Adrenal
- * Wake speeds it up after a dash. Crit/explosion/chain resolve at hit time.
+ * Player firing. Effective stats = weapon base * perk modifiers. Ammo is
+ * time based: a trigger pull costs weapon.fireRate / effective fire rate, so a
+ * magazine lasts ammo / fireRate seconds whatever the fire-rate perks. An
+ * empty magazine reverts to the base weapon. Berserker scales fire rate by
+ * missing HP and bursts after a medkit; Adrenal Wake speeds it up after a
+ * dash. Crit, explosion and chain resolve at hit time.
  */
 export function weaponSystem(world: World, dt: number, input: InputManager): void {
   world.fireCooldown -= dt
@@ -31,21 +37,22 @@ export function weaponSystem(world: World, dt: number, input: InputManager): voi
   if (world.berserkT > 0) fireRate *= 1 + BERSERK_MEDKIT.fireRate
   if (world.adrenalT > 0) fireRate *= 1 + m.adrenalWake
   const interval = 1 / fireRate
+  const cost = world.weapon.fireRate * interval
   let guard = 0
   while (world.fireCooldown <= 0 && guard++ < 14) {
     world.fireCooldown += interval
     fire(world, ax, ay)
-    if (world.ammo > 0) {
-      world.ammo--
-      const pl = world.player
-      if (world.ammo <= 0) {
-        world.feel.emit(FeelKind.WeaponEmpty, 0, pl.x, pl.y, 0, weaponIndex(world.weapon.id))
-        world.equipWeapon(world.baseWeaponId)
-      } else {
-        const low = world.ammoMax * 0.2
-        if (world.ammo < low && world.ammo + 1 >= low) world.feel.emit(FeelKind.LowAmmo, 0, pl.x, pl.y, world.ammo)
-      }
+    if (world.ammo < 0) continue
+    const before = world.ammo
+    world.ammo -= cost
+    const pl = world.player
+    if (world.ammo <= AMMO_EPS) {
+      world.feel.emit(FeelKind.WeaponEmpty, 0, pl.x, pl.y, 0, weaponIndex(world.weapon.id))
+      world.equipWeapon(world.baseWeaponId)
+      break
     }
+    const low = world.ammoMax * 0.2
+    if (world.ammo < low && before >= low) world.feel.emit(FeelKind.LowAmmo, 0, pl.x, pl.y, world.ammo)
   }
 }
 
@@ -59,48 +66,60 @@ function fire(world: World, ax: number, ay: number): void {
 
   const count = w.projectilesPerShot + m.extraProjectiles
   const spread = w.spread * m.spreadMul
-  const damage = w.damage * m.damageMul
-  const pierce = w.pierce + m.extraPierce
-  const knockback = w.knockback * m.knockbackMul
-  const speed = w.projectileSpeed * m.projectileSpeedMul
-  const life = w.projectileLife * m.projectileLifeMul
-  const scale = w.projectileRadius / 4
-  const scaleX = w.tracer ? scale * (1 + speed / TRACER_STRETCH_SPEED) : scale
-
-  // Explosion: from the weapon, or granted by the Explosive Rounds perk. Both
-  // scale with the damage perks.
-  const explodeRadius = w.explodeRadius ?? m.explodeRadius
-  const explodeDamage = w.explodeDamage !== undefined ? w.explodeDamage * m.damageMul : damage * m.explodeFrac
-  // Arc Rounds on a chain weapon adds hops instead of its proc.
-  const chain = w.chain ? w.chain + (m.arcHops > 0 ? m.arcHops - 1 : 0) : 0
-
   const rng = world.rngs.combat
-  for (let i = 0; i < count; i++) {
-    const ang = baseAng + rng.range(-spread, spread)
-    const p = world.projectiles.acquire()
-    p.x = p.prevX = mx
-    p.y = p.prevY = my
-    p.vx = Math.cos(ang) * speed
-    p.vy = Math.sin(ang) * speed
-    p.facing = ang
-    p.damage = damage
-    p.radius = w.projectileRadius
-    p.knockback = knockback
-    p.pierce = pierce
-    p.life = life
-    p.bounces = m.seekBounces
-    p.explodeRadius = explodeRadius
-    p.explodeDamage = explodeDamage
-    p.chain = chain
-    p.chainRange = w.chainRange ?? 0
-    p.hitN = 0
-    const s = p.sprite
-    s.visible = true
-    s.alpha = 1
-    s.tint = w.tint
-    s.scale.set(scaleX, scale)
-  }
+  for (let i = 0; i < count; i++) launch(world, mx, my, baseAng + rng.range(-spread, spread), 1, 0)
 
   spawnMuzzle(world, mx, my, baseAng)
   world.feel.emit(FeelKind.Shot, 0, mx, my, baseAng, weaponIndex(w.id))
+}
+
+/** A ring of `n` evenly spaced shots of the current weapon around the player,
+ *  starting at `ang0`, at `dmgFrac` of its damage (its explosion included)
+ *  with `extraPierce` more pierce. No ammo cost and no draws. */
+export function fireRing(world: World, n: number, dmgFrac: number, extraPierce: number, ang0: number): void {
+  const w = world.weapon
+  const pl = world.player
+  const off = pl.radius + 8
+  for (let i = 0; i < n; i++) {
+    const a = ang0 + (i / n) * TAU
+    launch(world, pl.x + Math.cos(a) * off, pl.y + Math.sin(a) * off, a, dmgFrac, extraPierce)
+  }
+  world.feel.emit(FeelKind.Shot, 0, pl.x, pl.y, ang0, weaponIndex(w.id))
+}
+
+/** One bullet of the current weapon with the build's modifiers. `dmgMul`
+ *  scales both its hit and the weapon's own explosion. */
+function launch(world: World, x: number, y: number, ang: number, dmgMul: number, extraPierce: number): void {
+  const w = world.weapon
+  const m = world.mods
+  const damage = w.damage * m.damageMul * dmgMul
+  const speed = w.projectileSpeed * m.projectileSpeedMul
+  const scale = w.projectileRadius / 4
+  const p = world.projectiles.acquire()
+  p.x = p.prevX = x
+  p.y = p.prevY = y
+  p.vx = Math.cos(ang) * speed
+  p.vy = Math.sin(ang) * speed
+  p.facing = ang
+  p.damage = damage
+  p.radius = w.projectileRadius
+  p.knockback = w.knockback * m.knockbackMul
+  p.pierce = w.pierce + m.extraPierce + extraPierce
+  p.life = w.projectileLife * m.projectileLifeMul
+  p.age = 0
+  p.bounces = m.seekBounces
+  p.evo = w.evo ?? ''
+  // Explosion: from the weapon, or granted by Explosive Rounds. Both scale
+  // with the damage perks.
+  p.explodeRadius = w.explodeRadius ?? m.explodeRadius
+  p.explodeDamage = w.explodeDamage !== undefined ? w.explodeDamage * m.damageMul * dmgMul : damage * m.explodeFrac
+  // Arc Rounds on a chain weapon adds hops instead of its proc.
+  p.chain = w.chain ? w.chain + (m.arcHops > 0 ? m.arcHops - 1 : 0) : 0
+  p.chainRange = w.chainRange ?? 0
+  p.hitN = 0
+  const s = p.sprite
+  s.visible = true
+  s.alpha = 1
+  s.tint = w.tint
+  s.scale.set(w.tracer ? scale * (1 + speed / TRACER_STRETCH_SPEED) : scale, scale)
 }

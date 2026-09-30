@@ -1,5 +1,6 @@
 import type { Sprite } from 'pixi.js'
 import type { Poolable } from '../core/pool.ts'
+import type { EvoBehavior } from '../content/weapons.ts'
 
 /** A fired bullet. Travels in a straight line; dies on lifetime, leaving the
  *  arena, or its last pierce. */
@@ -23,8 +24,12 @@ export class Projectile implements Poolable {
   life = 0
   /** Enemy (spitter) projectile drops an acid pool where it lands. */
   leavesAcid = false
-  /** Wall bounces remaining (ricochet perk). */
+  /** Ricochet seek bounces remaining. */
   bounces = 0
+  /** Seconds since it was fired. */
+  age = 0
+  /** Behavior of the evolved weapon that fired it, or '' (A4.2). */
+  evo: EvoBehavior | '' = ''
   /** AoE on impact (rocket / explosive rounds); 0 = none. */
   explodeRadius = 0
   explodeDamage = 0

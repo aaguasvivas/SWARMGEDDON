@@ -1,7 +1,8 @@
 import type { World } from '../game/world.ts'
 import { spawnAcidPool } from './acid.ts'
 
-/** Integrate player projectile motion and cull on lifetime / leaving the arena. */
+/** Integrate player projectile motion and cull on lifetime or leaving the
+ *  arena. Ricochet seeks the next enemy at hit time (collisionSystem). */
 export function projectileSystem(world: World, dt: number): void {
   const a = world.projectiles.active
   const b = world.arena.bounds
@@ -17,39 +18,9 @@ export function projectileSystem(world: World, dt: number): void {
     p.prevY = p.y
     p.x += p.vx * dt
     p.y += p.vy * dt
+    p.age += dt
     p.life -= dt
-    if (p.life <= 0) {
-      p.alive = false
-      continue
-    }
-    if (p.bounces > 0) {
-      // Ricochet off the arena walls instead of leaving.
-      let bounced = false
-      if (p.x < b.x) {
-        p.x = b.x
-        p.vx = Math.abs(p.vx)
-        bounced = true
-      } else if (p.x > b.x + b.w) {
-        p.x = b.x + b.w
-        p.vx = -Math.abs(p.vx)
-        bounced = true
-      }
-      if (p.y < b.y) {
-        p.y = b.y
-        p.vy = Math.abs(p.vy)
-        bounced = true
-      } else if (p.y > b.y + b.h) {
-        p.y = b.y + b.h
-        p.vy = -Math.abs(p.vy)
-        bounced = true
-      }
-      if (bounced) {
-        p.bounces--
-        p.facing = Math.atan2(p.vy, p.vx)
-      }
-    } else if (p.x < minX || p.x > maxX || p.y < minY || p.y > maxY) {
-      p.alive = false
-    }
+    if (p.life <= 0 || p.x < minX || p.x > maxX || p.y < minY || p.y > maxY) p.alive = false
   }
 }
 

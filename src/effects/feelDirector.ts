@@ -37,6 +37,10 @@ const WIN_HOLD = 2.0
 const BOSS_TELE_SEMIS = -7
 /** A16.3: a hazard detonation this close to the player shakes the view. */
 const HAZARD_NEAR = 400
+/** A hit the LIVING ARMOR overshield takes whole: the SHIELD chime this many
+ *  semitones up and a small kick, with no red flash. */
+const SHIELD_HIT_SEMIS = 7
+const SHIELD_HIT_KICK_PX = 3
 
 // A17 haptic pacing.
 const HEAVY_HIT_HAPTIC_GAP_MS = 150
@@ -148,6 +152,9 @@ export class FeelDirector {
           break
         case FeelKind.PlayerHurt:
           this.onHurt(x, y, a, f, nowMs, view)
+          break
+        case FeelKind.ShieldHit:
+          this.onShieldHit(x, y, f, nowMs, view)
           break
         case FeelKind.PlayerDeath:
           this.hurtFlash = 1
@@ -393,6 +400,17 @@ export class FeelDirector {
       haptic('heavy')
     }
     if (hp >= BIG_HIT) this.time.hitStop(HITSTOP_BIG_HIT_MS)
+  }
+
+  private onShieldHit(x: number, y: number, f: number, nowMs: number, view: ViewRect): void {
+    if (f & FF_ACID) return
+    if (f & FF_CONTACT) {
+      if (nowMs - this.biteAt < BITE_GAP_MS) return
+      this.biteAt = nowMs
+    }
+    this.audio.play('bonus_shield', SHIELD_HIT_SEMIS, 1, panOf(x, view))
+    this.kickFrom(x, y, SHIELD_HIT_KICK_PX)
+    haptic('light')
   }
 
   private onAlert(x: number, y: number, slot: number): void {

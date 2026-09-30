@@ -52,10 +52,6 @@ export const PICKUP_RESERVE = { xp: 200, bank: 1, health: 40, weapon: 4, core: 4
 export const MAX_ACID = 64
 export const MAX_ENEMY_PROJECTILES = 300
 
-/** Weapon pods. */
-export const WEAPON_DROP_INTERVAL = 13 // seconds between weapon pod drops
-export const WEAPON_DROP_LIFETIME = 24
-
 /**
  * Health pickups: perk-free sustain tied to killing. Most kills have a small
  * chance to drop a medkit that magnetizes in and heals a little; elites/bosses
@@ -244,3 +240,43 @@ export const WIN_PANEL_DELAY = 2.0
 export const TIER_COLOR: readonly number[] = [0x7da99c, 0x7da99c, 0x7dffd6, 0x57c8ff, 0xb886ff, 0xffe066, 0xffb066, 0xff6a6a, 0xff6cf0]
 /** A run shorter than this adds seconds, kills and damage to the lifetime stats, but no run. */
 export const STATS_MIN_RUN_S = 10
+
+// P8: fusions, evolutions, pods (docs/NEXT-LEVEL.md 4.5, A3, A4, A5.1)
+export const PODS = { first: 20, interval: 15, life: 20, blinkLast: 3, minDist: 250, maxDist: 450,
+  edgeInset: 60, cageInset: 40, holdTime: 0.4, holdDecayPerSec: 2, holdRadiusPad: 6,
+  affinityChance: 0.5, eliteChance: 0.35, bossPodOffset: 60 } as const
+/** Blast queue (A3): capacity, and the flags each entry carries. KNOCK shoves
+ *  non-elite, non-boss enemies knockPx away from the blast center. */
+export const BLAST_CAP = 64
+export const BLAST_NO_BONUS = 1
+export const BLAST_KNOCK = 2
+export const BLAST_CRIT = 4
+export const BLAST_KNOCK_PX = 40
+/** Ricochet: a spent bullet seeks the nearest unhit enemy within radius and
+ *  lives at least minLife more. */
+export const SEEK = { radius: 280, minLife: 0.35 } as const
+/** Incendiary burn length (s); the burn refreshes and does not stack. */
+export const BURN_SEC = 2
+/** Fusion effects (A3). */
+export const FUSION = {
+  shatterR: 70, shatterBase: 12, shatterFrac: 0.25,
+  firestormArcMul: 1.5,
+  pinballDmgMul: 1.15,
+  headhunterR: 55, headhunterFrac: 0.4,
+  guillotineEliteFrac: 0.5, guillotineXpMul: 2,
+  bloodrushBelow: 0.5, bloodrushHealMul: 2, bloodrushCapMul: 1.5, bloodrushSpeedMul: 1.2,
+  livingArmorFrac: 0.25,
+  ramPad: 30, ramThornsMul: 6, ramPush: 40,
+  salvoShots: 12, salvoDmgFrac: 0.6,
+  coldBloodMul: 1.3,
+} as const
+/** Evolved weapon behaviors (A4.2). */
+export const EVO = {
+  pointBlankSec: 0.12, pointBlankMul: 2,
+  lockStep: 0.05, lockMax: 0.75, lockResetSec: 0.4,
+  pierceRampMul: 1.2, pierceRampMax: 2.5,
+  igniteDps: 10, infernoBurnMul: 1.25,
+  bombletCount: 3, bombletDelay: 0.25, bombletDist: 55, bombletR: 50, bombletFrac: 0.35,
+  stormChainFrac: 0.75, stormBlastR: 70, stormBlastFrac: 0.5,
+  rangeRampPer100: 0.12, rangeRampMax: 0.9,
+} as const

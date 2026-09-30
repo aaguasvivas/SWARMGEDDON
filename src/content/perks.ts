@@ -59,12 +59,23 @@ export interface Modifiers {
   berserker: number
   /** Bonus damage vs elites and bosses. */
   eliteDamageMul: number
-  /** Instantly cull non-boss enemies below this HP fraction. */
+  /** Instantly cull non-elite, non-boss enemies below this HP fraction. */
   executeFrac: number
   /** Quartermaster: pickup magazine size, pod life bonus (s), pod hold cut (s). */
   ammoMul: number
   podLifeBonus: number
   podHoldCut: number
+  /** Fusions (A3): 1 while owned. */
+  shatter: number
+  firestorm: number
+  pinball: number
+  headhunter: number
+  guillotine: number
+  bloodrush: number
+  livingArmor: number
+  ram: number
+  salvo: number
+  coldBlood: number
 }
 
 /** The build with no perks. A typed literal, so a Modifiers field without a
@@ -111,6 +122,16 @@ const BASE_MODIFIERS: Readonly<Modifiers> = Object.freeze({
   ammoMul: 1,
   podLifeBonus: 0,
   podHoldCut: 0,
+  shatter: 0,
+  firestorm: 0,
+  pinball: 0,
+  headhunter: 0,
+  guillotine: 0,
+  bloodrush: 0,
+  livingArmor: 0,
+  ram: 0,
+  salvo: 0,
+  coldBlood: 0,
 } satisfies Modifiers)
 
 export function baseModifiers(): Modifiers {
@@ -283,20 +304,31 @@ export interface FusionDef {
   a: string
   b: string
   desc: string
+  apply: (m: Modifiers) => void
 }
 
-/** Offer priority is table order. The effects arrive with P8 (section 10.3). */
+/** Offer priority is table order. */
 export const FUSIONS: readonly FusionDef[] = [
-  { id: 'f_shatter', name: 'SHATTER', a: 'cryo_rounds', b: 'explosive_rounds', desc: 'Enemies that die while slowed burst.' },
-  { id: 'f_firestorm', name: 'FIRESTORM', a: 'arc_rounds', b: 'incendiary', desc: 'Arcs ignite. Burning targets take +50% arc damage.' },
-  { id: 'f_pinball', name: 'PINBALL', a: 'ricochet', b: 'piercing', desc: 'Each seek bounce restores pierce and adds 15% damage.' },
-  { id: 'f_headhunter', name: 'HEADHUNTER', a: 'deadeye', b: 'hollow_point', desc: 'Crits ignore front armor. Crit kills burst.' },
-  { id: 'f_guillotine', name: 'GUILLOTINE', a: 'executioner', b: 'giant_slayer', desc: 'Executioner also culls elites. Culls drop double XP.' },
-  { id: 'f_bloodrush', name: 'BLOODRUSH', a: 'vampiric', b: 'berserker', desc: 'Below 50% HP: double kill healing, faster movement.' },
-  { id: 'f_living_armor', name: 'LIVING ARMOR', a: 'regrowth', b: 'bulwark', desc: 'Overhealing becomes a shield, up to 25% of max HP.' },
-  { id: 'f_ram', name: 'RAM', a: 'phase_step', b: 'thorns', desc: 'Dashing through enemies deals heavy thorns damage.' },
-  { id: 'f_salvo', name: 'SALVO STEP', a: 'adrenal_wake', b: 'twin_shot', desc: 'Every dash fires a ring of 12 shots.' },
-  { id: 'f_cold_blood', name: 'COLD BLOOD', a: 'cryo_rounds', b: 'giant_slayer', desc: 'Slowed elites and bosses take +30% damage.' },
+  { id: 'f_shatter', name: 'SHATTER', a: 'cryo_rounds', b: 'explosive_rounds', desc: 'Enemies that die while slowed burst.',
+    apply: (m) => { m.shatter = 1 } },
+  { id: 'f_firestorm', name: 'FIRESTORM', a: 'arc_rounds', b: 'incendiary', desc: 'Arcs ignite. Burning targets take +50% arc damage.',
+    apply: (m) => { m.firestorm = 1 } },
+  { id: 'f_pinball', name: 'PINBALL', a: 'ricochet', b: 'piercing', desc: 'Each seek bounce restores pierce and adds 15% damage.',
+    apply: (m) => { m.pinball = 1 } },
+  { id: 'f_headhunter', name: 'HEADHUNTER', a: 'deadeye', b: 'hollow_point', desc: 'Crits ignore front armor. Crit kills burst.',
+    apply: (m) => { m.headhunter = 1 } },
+  { id: 'f_guillotine', name: 'GUILLOTINE', a: 'executioner', b: 'giant_slayer', desc: 'Executioner also culls elites. Culls drop double XP.',
+    apply: (m) => { m.guillotine = 1 } },
+  { id: 'f_bloodrush', name: 'BLOODRUSH', a: 'vampiric', b: 'berserker', desc: 'Below 50% HP: double kill healing, faster movement.',
+    apply: (m) => { m.bloodrush = 1 } },
+  { id: 'f_living_armor', name: 'LIVING ARMOR', a: 'regrowth', b: 'bulwark', desc: 'Overhealing becomes a shield, up to 25% of max HP.',
+    apply: (m) => { m.livingArmor = 1 } },
+  { id: 'f_ram', name: 'RAM', a: 'phase_step', b: 'thorns', desc: 'Dashing through enemies deals heavy thorns damage.',
+    apply: (m) => { m.ram = 1 } },
+  { id: 'f_salvo', name: 'SALVO STEP', a: 'adrenal_wake', b: 'twin_shot', desc: 'Every dash fires a ring of 12 shots.',
+    apply: (m) => { m.salvo = 1 } },
+  { id: 'f_cold_blood', name: 'COLD BLOOD', a: 'cryo_rounds', b: 'giant_slayer', desc: 'Slowed elites and bosses take +30% damage.',
+    apply: (m) => { m.coldBlood = 1 } },
 ]
 
 // --- fallbacks (A2.4) -------------------------------------------------------
@@ -318,7 +350,7 @@ export const FALLBACKS: readonly FallbackDef[] = [
 // --- the build fold ---------------------------------------------------------
 
 const PERK_BY_ID = new Map(PERKS.map((p) => [p.id, p]))
-const FUSION_IDS = new Set(FUSIONS.map((f) => f.id))
+const FUSION_BY_ID = new Map(FUSIONS.map((f) => [f.id, f]))
 
 export function findPerk(id: string): PerkDef | undefined {
   return PERK_BY_ID.get(id)
@@ -327,9 +359,20 @@ export function findPerk(id: string): PerkDef | undefined {
 /** Fold one owned build entry (perk, fusion or SHARPEN stacks) into `m`. */
 export function applyBuild(m: Modifiers, id: string, stacks: number): void {
   const p = PERK_BY_ID.get(id)
-  if (p) p.apply(m, stacks)
+  if (p) {
+    p.apply(m, stacks)
+    return
+  }
+  const f = FUSION_BY_ID.get(id)
+  if (f) f.apply(m)
   else if (id === 'sharpen') m.damageMul *= powi(FALLBACK.sharpenMul, stacks)
-  else if (!FUSION_IDS.has(id)) throw new Error('unknown build id: ' + id)
+  else throw new Error('unknown build id: ' + id)
+}
+
+/** FUSIONS index of `id`, or -1 when it is not a fusion. */
+export function fusionIndex(id: string): number {
+  for (let k = 0; k < FUSIONS.length; k++) if (FUSIONS[k]!.id === id) return k
+  return -1
 }
 
 const statScratch = baseModifiers()

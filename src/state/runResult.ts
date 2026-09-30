@@ -1,4 +1,5 @@
 import { ENEMY_IDS } from '../content/enemies.ts'
+import { FUSIONS } from '../content/perks.ts'
 import { nextBeatLabel } from '../content/runScripts.ts'
 import { WEAPON_LIST } from '../content/weapons.ts'
 import type { RunMode, World } from '../game/world.ts'
@@ -70,7 +71,7 @@ export function buildRunResult(w: World, end: RunEnd, meta: RunMeta): RunResult 
     weapons,
     dashes: w.dashes,
     closeCalls: w.closeCalls,
-    fusions: [],
+    fusions: FUSIONS.filter((f) => w.perkStacks.has(f.id)).map((f) => f.id),
     evolutions: [],
     perks: [...w.perkStacks],
     killsByEnemy,

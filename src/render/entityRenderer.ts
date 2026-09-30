@@ -98,8 +98,9 @@ export function renderEntities(world: World, alpha: number): void {
       s.scale.set(1 + Math.sin(t * 5 + p.phase) * 0.16)
       s.y += Math.sin(t * 4 + p.phase) * 3
     } else {
+      // A pod swells while the player holds it (hold-to-take fill).
       s.rotation = Math.sin(t * 2 + p.phase) * 0.15
-      s.scale.set(1 + Math.sin(t * 5 + p.phase) * 0.12)
+      s.scale.set((1 + Math.sin(t * 5 + p.phase) * 0.12) * (1 + 0.35 * p.hold))
     }
     s.alpha = p.life < 1.5 ? p.life / 1.5 : 1
   }

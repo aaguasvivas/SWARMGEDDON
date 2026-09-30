@@ -1,12 +1,12 @@
 import type { Texture } from 'pixi.js'
-import { DASH, GRACE, HASH_CELL, MAX_HAZARDS, XP } from '../config.ts'
+import { DASH, GRACE, HASH_CELL, MAX_HAZARDS, PODS, XP } from '../config.ts'
 import { Pool } from '../core/pool.ts'
 import { RunRngs, SALT, hash32 } from '../core/rng.ts'
 import { hueShiftHex } from '../core/color.ts'
 import { SpatialHash } from '../core/spatialHash.ts'
 import { DEFAULT_WEAPON_ID, WEAPONS, WEAPON_LIST, type WeaponDef } from '../content/weapons.ts'
 import { resolveScript, type ResolvedScript } from '../content/runScripts.ts'
-import { PERKS, applyBuild, baseModifiers, resetModifiers, type Modifiers, type PerkDef } from '../content/perks.ts'
+import { PERKS, applyBuild, baseModifiers, fusionIndex, resetModifiers, type Modifiers, type PerkDef } from '../content/perks.ts'
 import { CHARACTERS, type CharacterDef } from '../content/characters.ts'
 import { ARENAS, type ArenaTheme } from '../content/arenas.ts'
 import { ENEMY_IDS } from '../content/enemies.ts'
@@ -14,6 +14,7 @@ import { FeelKind, FeelQueue, RunAlertRing } from '../effects/feelQueue.ts'
 import { Director } from '../systems/director.ts'
 import { DraftState } from '../systems/draft.ts'
 import { BossFight } from '../systems/bossAI.ts'
+import { BlastQueue } from '../systems/blasts.ts'
 import type { Layers } from '../render/app.ts'
 import type { IchorLayer } from '../render/ichorLayer.ts'
 import type { TextureRegistry } from '../render/textures.ts'
@@ -51,6 +52,9 @@ export class World {
   readonly ringTex: Texture
 
   weapon: WeaponDef = WEAPONS[DEFAULT_WEAPON_ID]!
+  /** Magazine left (-1 = infinite). A trigger pull costs weapon.fireRate over
+   *  the effective fire rate, so a magazine lasts ammo / fireRate seconds
+   *  whatever the fire-rate perks. */
   ammo = -1
   /** The pilot's infinite base weapon; empty finite mags revert to this. */
   baseWeaponId = DEFAULT_WEAPON_ID
@@ -73,6 +77,7 @@ export class World {
   revivesUsed = 0
 
   fireCooldown = 0
+  /** Seconds to the next timer pod slot (PODS.interval apart). */
   weaponDropTimer = 0
 
   bossAlive = false
@@ -203,6 +208,18 @@ export class World {
   pendingWin = false
   pendingEnd = false
 
+  // P8: fusions, evolutions, pods
+  readonly blasts = new BlastQueue()
+  /** LIVING ARMOR overshield HP; absorbs damage first and never decays. */
+  overshield = 0
+  /** Kill healing still allowed this second (the killHealCap bucket). */
+  killHealBudget = 0
+  /** HIVE REAPER lock-on: the uid being hit, the consecutive hits before the
+   *  last one, and the sim time of the last hit. */
+  lockUid = 0
+  lockN = 0
+  lockAt = -1
+
   constructor(
     readonly arena: Arena,
     readonly player: Player,
@@ -279,7 +296,7 @@ export class World {
     this.pendingLevelUps = 0
     this.revivesUsed = 0
     this.fireCooldown = 0
-    this.weaponDropTimer = 7 // first weapon pod comes early so a slow start isn't brutal
+    this.weaponDropTimer = PODS.first
     this.pullX = 0
     this.pullY = 0
     this.bossAlive = false
@@ -338,6 +355,11 @@ export class World {
     this.cleared = false
     this.pendingWin = false
     this.pendingEnd = false
+    this.overshield = 0
+    this.killHealBudget = this.mods.killHealCap
+    this.lockUid = 0
+    this.lockN = 0
+    this.lockAt = -1
 
     const b = this.arena.bounds
     this.player.spawn(b.x + b.w / 2, b.y + b.h / 2)
@@ -352,6 +374,7 @@ export class World {
     this.pickups.clear()
     this.acid.clear()
     this.hazards.clear()
+    this.blasts.reset()
     this.ichor.clear()
     this.bankGem = null
   }
@@ -375,7 +398,7 @@ export class World {
 
   equipWeapon(id: string): void {
     this.weapon = WEAPONS[id]!
-    this.ammo = this.weapon.ammo < 0 ? -1 : Math.round(this.weapon.ammo * this.mods.ammoMul)
+    this.ammo = this.weapon.ammo < 0 ? -1 : this.weapon.ammo * this.mods.ammoMul
     this.ammoMax = this.ammo
   }
 
@@ -396,6 +419,8 @@ export class World {
   choosePerk(id: string): void {
     this.perkStacks.set(id, (this.perkStacks.get(id) ?? 0) + 1)
     this.recomputeModifiers()
+    const f = fusionIndex(id)
+    if (f >= 0) this.feel.emit(FeelKind.Fusion, 0, this.player.x, this.player.y, 0, f)
   }
 
   /** Faction-shift a base color through the arena's paired brood hue (cached). */

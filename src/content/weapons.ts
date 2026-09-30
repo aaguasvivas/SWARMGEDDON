@@ -1,11 +1,17 @@
 import { COLORS } from '../config.ts'
 import type { SfxName } from '../audio/audio.ts'
 
+/** Evolved weapon behaviors (A4.2), resolved per bullet at hit time. */
+export type EvoBehavior =
+  | 'pierceOnKill' | 'pointBlank' | 'lockOn' | 'pierceRamp' | 'firstHitCrit'
+  | 'ignite' | 'bomblets' | 'stormChain' | 'rangeRamp'
+
 /**
- * Weapon registry: pure data. The starting Sidearm has infinite ammo; pickups
- * grant the others with finite mags that revert to the Sidearm when empty. Two
- * special mechanics ride on optional fields: `explode*` (rockets) and `chain*`
- * (lightning). Everything else is feel expressed through the shared params.
+ * Weapon registry: pure data. Pilot base weapons and evolved weapons have
+ * infinite ammo; pickups carry a magazine that lasts `ammo / fireRate` seconds
+ * whatever the fire-rate perks, then revert to the base weapon. Special
+ * mechanics ride on optional fields: `explode*` (rockets), `chain*`
+ * (lightning) and `evo` (evolved weapons).
  */
 export interface WeaponDef {
   id: string
@@ -35,6 +41,7 @@ export interface WeaponDef {
   /** Pickup weapons: the paired perk (A4.1) and the evolution id (A4.2). */
   pair?: string
   evolvesTo?: string
+  evo?: EvoBehavior
 }
 
 export const DEFAULT_WEAPON_ID = 'pistol'
@@ -46,7 +53,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     projectileRadius: 4, tint: COLORS.bullet, ammo: -1, kickPx: 1.5, sfx: 'pistol',
   },
   smg: {
-    id: 'smg', name: 'Splatter SMG', fireRate: 13, damage: 7, projectileSpeed: 840,
+    id: 'smg', name: 'Splatter SMG', fireRate: 13, damage: 8.5, projectileSpeed: 840,
     spread: 0.1, projectilesPerShot: 1, pierce: 0, knockback: 90, projectileLife: 0.6,
     projectileRadius: 3.5, tint: COLORS.bullet, ammo: 260, kickPx: 1.0, sfx: 'smg', pair: 'adrenaline', evolvesTo: 'gore_hose',
   },
@@ -93,7 +100,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     projectileRadius: 3, tint: 0xff6cf0, ammo: 600, kickPx: 0.3, sfx: 'beam', pair: 'long_barrel', evolvesTo: 'solar_lance', tracer: true,
   },
   vortex: {
-    id: 'vortex', name: 'Vortex Cannon', fireRate: 2.2, damage: 22, projectileSpeed: 430,
+    id: 'vortex', name: 'Vortex Cannon', fireRate: 2.6, damage: 32, projectileSpeed: 430,
     spread: 0.02, projectilesPerShot: 1, pierce: 12, knockback: 360, projectileLife: 1.3,
     projectileRadius: 9, tint: 0x9b7aff, ammo: 64, kickPx: 5, sfx: 'plasma', pair: 'overpressure',
   },
@@ -112,11 +119,38 @@ export const WEAPONS: Record<string, WeaponDef> = {
     projectileRadius: 5, tint: 0xffb066, ammo: -1, kickPx: 2.5, sfx: 'heavy',
   },
   stiletto: {
-    id: 'stiletto', name: 'Stiletto', fireRate: 7.5, damage: 11, projectileSpeed: 900,
+    id: 'stiletto', name: 'Stiletto', fireRate: 7.5, damage: 12, projectileSpeed: 900,
     spread: 0.015, projectilesPerShot: 1, pierce: 1, knockback: 70, projectileLife: 0.7,
     projectileRadius: 3.5, tint: 0xc9a0ff, ammo: -1, kickPx: 1.2, sfx: 'beam',
   },
 }
+
+/** An evolved weapon: its source's feel with the A4.2 stats, infinite ammo,
+ *  and kickPx x1.2. */
+function evolved(src: WeaponDef, id: string, name: string, evo: EvoBehavior, stats: Partial<WeaponDef>): WeaponDef {
+  return { ...src, ...stats, id, name, ammo: -1, kickPx: src.kickPx * 1.2, pair: undefined, evolvesTo: undefined, evo }
+}
+
+// --- evolutions (A4.2): a Hive Core evolves the held pickup weapon ---------
+const W = WEAPONS
+W.gore_hose = evolved(W.smg!, 'gore_hose', 'Gore Hose', 'pierceOnKill',
+  { fireRate: 18, damage: 10, spread: 0.08, projectileSpeed: 860, projectileLife: 0.6 })
+W.devastator = evolved(W.shotgun!, 'devastator', 'Devastator', 'pointBlank',
+  { fireRate: 2.4, projectilesPerShot: 12, damage: 7, spread: 0.34, knockback: 320, projectileLife: 0.38 })
+W.hive_reaper = evolved(W.minigun!, 'hive_reaper', 'Hive Reaper', 'lockOn',
+  { fireRate: 24, damage: 7, spread: 0.12 })
+W.ion_spear = evolved(W.plasma!, 'ion_spear', 'Ion Spear', 'pierceRamp',
+  { fireRate: 8, damage: 24, pierce: 6, projectileSpeed: 1100 })
+W.skewer = evolved(W.railgun!, 'skewer', 'Skewer', 'firstHitCrit',
+  { fireRate: 1.6, damage: 120, pierce: 20, projectileSpeed: 2000, knockback: 400 })
+W.inferno = evolved(W.flamethrower!, 'inferno', 'Inferno', 'ignite',
+  { fireRate: 22, projectilesPerShot: 3, damage: 4, pierce: 2, projectileLife: 0.45 })
+W.plague_barrage = evolved(W.rocket!, 'plague_barrage', 'Plague Barrage', 'bomblets',
+  { fireRate: 1.2, projectilesPerShot: 3, spread: 0.08, damage: 26, explodeRadius: 110, explodeDamage: 50 })
+W.storm_lash = evolved(W.lightning!, 'storm_lash', 'Storm Lash', 'stormChain',
+  { fireRate: 7, damage: 18, chain: 7, chainRange: 200 })
+W.solar_lance = evolved(W.beam!, 'solar_lance', 'Solar Lance', 'rangeRamp',
+  { fireRate: 24, damage: 6, pierce: 10, projectileLife: 0.6 })
 
 /** Every weapon in a fixed order; the FeelQueue carries weapons by index. */
 export const WEAPON_LIST: readonly WeaponDef[] = Object.values(WEAPONS)
@@ -126,6 +160,6 @@ export function weaponIndex(id: string): number {
   return -1
 }
 
-/** Weapon ids that can drop as field pickups. Infinite-ammo weapons are the
- *  pilots' base weapons; they never drop (finite mags revert to the pilot's). */
+/** Weapon ids that can drop as field pickups. Infinite-ammo weapons (pilot base
+ *  weapons and evolutions) never drop. */
 export const PICKUP_WEAPON_IDS = Object.keys(WEAPONS).filter((id) => WEAPONS[id]!.ammo !== -1)

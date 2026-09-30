@@ -79,6 +79,7 @@ export function aiSystem(world: World, dt: number): void {
     if (e.flash > 0) e.flash = Math.max(0, e.flash - dt)
     if (e.slow > 0) e.slow = Math.max(0, e.slow - dt)
     if (e.buffed > 0) e.buffed = Math.max(0, e.buffed - dt)
+    if (e.staggerT > 0) e.staggerT = Math.max(0, e.staggerT - dt)
     if (def.behavior === 'boss') {
       bossStep(world, e, dt)
       continue
@@ -231,6 +232,12 @@ export function aiSystem(world: World, dt: number): void {
     if (e.buffed > 0) spd *= e.buffedMul
     if (def.behavior === 'burrower' && e.submerged && def.burrow) spd *= def.burrow.underSpeedMul
     if (spd > ENEMY_SPEED_CEIL && !(def.behavior === 'charger' && e.phase === 2)) spd = ENEMY_SPEED_CEIL
+    // Overpressure stagger stops the body in place, facing kept; its timers
+    // keep running.
+    if (e.staggerT > 0) {
+      spd = 0
+      if (Number.isNaN(facingOverride) && !faceTarget) facingOverride = e.facing
+    }
 
     if (separate) {
       const n = world.hash.query(e.x, e.y, e.radius * 2.2, buf)

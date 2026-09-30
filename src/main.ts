@@ -59,6 +59,7 @@ import { pickupSystem } from './systems/pickups.ts'
 import { collisionSystem } from './systems/collision.ts'
 import { acidSystem } from './systems/acid.ts'
 import { dashSystem } from './systems/dash.ts'
+import { healPlayer, playerSpeedMul } from './systems/damage.ts'
 import { banishCard, canReroll, draftDue, openDraft as dealDraft, pickCard, pickPerkId, rerollDraft, skipDraft } from './systems/draft.ts'
 import { scoreStep } from './game/scoring.ts'
 import { particleSystem } from './systems/particles.ts'
@@ -587,11 +588,9 @@ async function boot(): Promise<void> {
     acidSystem(world, dt)
     scoreStep(world, dt)
     particleSystem(world, dt)
-    player.update(dt, input.move, input.aimDir, arena.bounds, world.mods.moveSpeedMul, world.pullX, world.pullY)
+    player.update(dt, input.move, input.aimDir, arena.bounds, playerSpeedMul(world), world.pullX, world.pullY)
     clampPlayerToCage(world)
-    if (player.hp > 0 && world.mods.regenPerSec > 0) {
-      player.hp = Math.min(player.maxHp, player.hp + world.mods.regenPerSec * dt)
-    }
+    if (world.mods.regenPerSec > 0) healPlayer(world, world.mods.regenPerSec * dt)
 
     sweepPools()
 

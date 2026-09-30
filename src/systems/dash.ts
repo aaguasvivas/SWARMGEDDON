@@ -1,10 +1,12 @@
-import { ADRENAL_WAKE, DASH } from '../config.ts'
+import { ADRENAL_WAKE, BLAST_KNOCK, DASH, FUSION } from '../config.ts'
 import { CLOSE_CALL_CHAIN } from '../core/rules.ts'
 import type { Vec2 } from '../core/vec.ts'
 import { FeelKind } from '../effects/feelQueue.ts'
 import { tickDown } from '../game/player.ts'
 import { addChain } from '../game/scoring.ts'
 import type { World } from '../game/world.ts'
+import { queueBlast } from './blasts.ts'
+import { fireRing } from './weapons.ts'
 
 /** The slice of the per-tick input sample the dash reads. */
 export interface DashInput {
@@ -16,10 +18,17 @@ export interface DashInput {
  * Dash charges, buffer and start (section 4.3). Runs after aiSystem. The
  * player's damage timers also tick here, before any system that can grant or
  * test them this tick, so a grant lasts exactly its length in ticks (0.20 s of
- * dash i-frames covers ticks 0 to 11). Player.update does the motion.
+ * dash i-frames covers ticks 0 to 11). Player.update does the motion. The
+ * start hooks are Adrenal Wake and SALVO STEP; a dash that ended on the last
+ * update sets off Shock Step.
  */
 export function dashSystem(w: World, input: DashInput, dt: number): void {
   const pl = w.player
+  const m = w.mods
+  if (pl.dashEnded) {
+    pl.dashEnded = false
+    if (m.shockRadius > 0) queueBlast(w, pl.x, pl.y, m.shockRadius, m.shockDamage * m.damageMul, 0, BLAST_KNOCK)
+  }
   pl.invuln = tickDown(pl.invuln, dt)
   if (pl.invuln === 0) pl.invulnSrc = 0
   pl.hitCd = tickDown(pl.hitCd, dt)
@@ -27,7 +36,7 @@ export function dashSystem(w: World, input: DashInput, dt: number): void {
   w.dashBufferT = tickDown(w.dashBufferT, dt)
 
   const max = w.maxDashCharges
-  const cooldown = DASH.cooldown * w.mods.dashCooldownMul
+  const cooldown = DASH.cooldown * m.dashCooldownMul
   if (w.dashCharges < max) {
     w.dashRecharge = tickDown(w.dashRecharge, dt)
     if (w.dashRecharge === 0) {
@@ -54,10 +63,11 @@ export function dashSystem(w: World, input: DashInput, dt: number): void {
   w.dashBufferT = 0
   pl.dashTicks = DASH.ticks
   pl.endLagT = 0
-  pl.grantInvuln(w.mods.dashIframes, 1)
+  pl.grantInvuln(m.dashIframes, 1)
   w.dashSeq++
   w.dashes++
-  if (w.mods.adrenalWake > 0) w.adrenalT = ADRENAL_WAKE.sec
+  if (m.adrenalWake > 0) w.adrenalT = ADRENAL_WAKE.sec
+  if (m.salvo > 0) fireRing(w, FUSION.salvoShots, FUSION.salvoDmgFrac, 0, Math.atan2(pl.dashDirY, pl.dashDirX))
   w.feel.emit(FeelKind.Dash, 0, pl.x, pl.y, pl.dashDirX, pl.dashDirY)
 }
 
