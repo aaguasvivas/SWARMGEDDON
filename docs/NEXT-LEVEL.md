@@ -271,7 +271,7 @@ export interface RunRngs { spawn: Rng; script: Rng; boss: Rng; loot: Rng; draft:
    - `player.invuln = 3.0`
    - the cage drops, and pulses and top-up stop.
 2. **Purge.** For 1.2 s, every tick despawns each non-boss enemy within `1500 x elapsed / 1.2` of the kill point. Purged enemies give no credit, XP, drops or score. Enemy shots and hazards are cleared at once.
-3. **Hand-off.** At kill + 2.0 s, `world.pendingWin = true`, and `main.ts` pauses the sim with `pauseReason = 'win'`. Pending level-ups resolve first.
+3. **Hand-off.** At kill + 2.0 s, `world.pendingWin = true`, and `main.ts` pauses the sim with `pauseReason = 'win'`. Pending level-ups resolve first, without the 12 s draft gap (section 4.4).
 4. **Daily:** `endRun('clear')`.
 5. **Standard:** the WIN panel opens (section 9.5):
    - EXTRACT gives `endRun('clear')`.
@@ -402,7 +402,7 @@ Content is in A2 (31 perks), A3 (10 fusions) and A2.4 (3 fallbacks). `src/conten
 - `pendingLevelUps > 0`
 - `!pendingGameOver`
 - `pauseReason === 'none'`
-- `world.time - draft.lastOpenAt >= 12`
+- `world.time - draft.lastOpenAt >= 12`, except while `pendingWin` is set: the fight is over, so pending levels resolve at once and the win panel opens after the last pick (W2 integration)
 
 Otherwise the level waits, and the HUD shows a `LEVEL UP x2` chip. Picks never chain-open. `main.ts:315` and `main.ts:481-491` both go through one `openDraft()`. Guard: if `cardCount === 0`, set `pendingLevelUps = 0` and unpause.
 

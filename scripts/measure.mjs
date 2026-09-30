@@ -52,11 +52,11 @@
 //                                  inside the view and the deepest overlap in world units;
 //                                  visibleNoWallClamp repeats the test without the arena
 //                                  clamp, to separate the offsets from the wall effect.
-//   perf                           6s live combat at flood(500) + auto-fire; reports
+//   perf [charId] [arenaId]        6s live combat at flood(500) + auto-fire; reports
 //                                  fps / p95 / max / long(>20ms) / bad(>33.4ms) frames.
 //                                  Drafts are answered with card 1 and the field is kept
 //                                  at 500, so the sim runs for the whole window
-//                                  (simTimeEnd and picks in the output show it did).
+//                                  (simTimeStart, simTimeEnd and picks in the output show it did).
 //   perf-final [charId] [arenaId]  S.jumpTo(600) (the FINAL SWARM beat fires at once),
 //                                  then 10 s of live combat; same stats plus peak alive.
 //   thrash                         perf variant re-injecting layout thrash (A/B baseline).
@@ -648,7 +648,7 @@ if (MODE === 'shot') {
   }
   let peakAlive = 0
   if (final) {
-    await page.evaluate(() => window.__SWARM.perfReset())
+    await page.evaluate(() => { window.__SWARM.perfReset(); window.__PERF_T0 = window.__SWARM.world.time })
     const t0 = Date.now()
     for (let i = 0; Date.now() - t0 < 10000; i++) {
       await page.mouse.move(W / 2 + Math.sin(i * 0.7) * 320, H / 2 + Math.cos(i * 0.9) * 200, { steps: 20 })
@@ -657,7 +657,7 @@ if (MODE === 'shot') {
   } else {
     await page.mouse.move(W / 2 + 180, H / 2 + 40)
     await new Promise((r) => setTimeout(r, 1200))
-    await page.evaluate(() => window.__SWARM.perfReset())
+    await page.evaluate(() => { window.__SWARM.perfReset(); window.__PERF_T0 = window.__SWARM.world.time })
     for (let i = 0; i < 24; i++) {
       await page.mouse.move(W / 2 + Math.sin(i * 0.7) * 320, H / 2 + Math.cos(i * 0.9) * 200, { steps: 40 })
       await new Promise((r) => setTimeout(r, 210))
@@ -674,6 +674,7 @@ if (MODE === 'shot') {
       total: S.loop.totalFrames,
       enemies: S.world.enemies.active.length,
       particles: S.world.particles.active.length,
+      simTimeStart: +window.__PERF_T0.toFixed(1),
       simTimeEnd: +S.world.time.toFixed(1),
       picks: window.__PERF_PICKS,
     }
