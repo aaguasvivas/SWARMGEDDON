@@ -9,6 +9,15 @@ import type { World } from '../game/world.ts'
  * shift a sim stream.
  */
 
+/** Share of a kill's gibs thrown along the killing shot, and their half-cone. */
+const GIB_AIMED_FRAC = 0.6
+const GIB_CONE = 0.6
+/** Rail and beam shots stretch along travel by 1 + speed / this. */
+export const TRACER_STRETCH_SPEED = 1800
+const MUZZLE_FLASH_LIFE = 0.06
+/** The flash quad's center sits this far ahead of the muzzle (half its length). */
+const MUZZLE_FLASH_AHEAD = 11
+
 function begin(p: Particle, x: number, y: number, tint: number): void {
   p.x = p.prevX = x
   p.y = p.prevY = y
@@ -30,14 +39,18 @@ function darken(color: number, f: number): number {
   return (r << 16) | (g << 8) | b
 }
 
-/** Chunky gore shards bursting from a kill, colored to the enemy. */
-export function spawnGibs(world: World, x: number, y: number, count: number, color: number): void {
+/** Chunky gore shards bursting from a kill, colored to the enemy. Most fly
+ *  along (dirX, dirY), the killing shot's velocity; a zero vector sprays them
+ *  radially. */
+export function spawnGibs(world: World, x: number, y: number, count: number, color: number, dirX: number, dirY: number): void {
   const rng = world.rngs.fx
   const dark = darken(color, 0.55)
+  const aimed = dirX !== 0 || dirY !== 0 ? Math.round(count * GIB_AIMED_FRAC) : 0
+  const base = aimed > 0 ? Math.atan2(dirY, dirX) : 0
   for (let i = 0; i < count; i++) {
     if (world.particles.size >= MAX_PARTICLES) return
     const p = world.particles.acquire()
-    const a = rng.angle()
+    const a = i < aimed ? base + rng.range(-GIB_CONE, GIB_CONE) : rng.angle()
     const sp = rng.range(70, 300)
     const life = rng.range(0.35, 0.7)
     const size = rng.range(0.7, 1.4)
@@ -78,10 +91,24 @@ export function spawnHitSpark(world: World, x: number, y: number, vx: number, vy
   }
 }
 
-/** Muzzle flash: a forward cone of sparks. */
+/** Muzzle flash: one additive flash quad along the aim plus 2 forward sparks. */
 export function spawnMuzzle(world: World, x: number, y: number, ang: number): void {
   const rng = world.rngs.fx
-  for (let i = 0; i < 4; i++) {
+  if (world.particles.size >= MAX_PARTICLES) return
+  const c = Math.cos(ang)
+  const s = Math.sin(ang)
+  const f = world.particles.acquire()
+  begin(f, x + c * MUZZLE_FLASH_AHEAD, y + s * MUZZLE_FLASH_AHEAD, COLORS.muzzle)
+  f.vx = 0
+  f.vy = 0
+  f.rotation = ang
+  f.life = f.maxLife = MUZZLE_FLASH_LIFE
+  f.size = 1
+  f.grow = -6
+  f.additive = true
+  f.sprite.texture = world.flashTex
+  f.sprite.blendMode = 'add'
+  for (let i = 0; i < 2; i++) {
     if (world.particles.size >= MAX_PARTICLES) return
     const p = world.particles.acquire()
     begin(p, x, y, COLORS.muzzle)

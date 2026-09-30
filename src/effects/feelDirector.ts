@@ -76,7 +76,7 @@ export class FeelDirector {
           break
         }
         case FeelKind.Hit:
-          this.numbers.hit(x, y, a, (f & FF_CRIT) !== 0, q.ref[i] ?? null)
+          this.numbers.hit(x, y, a, (f & FF_CRIT) !== 0, b)
           this.audio.play('hit')
           break
         case FeelKind.Kill:

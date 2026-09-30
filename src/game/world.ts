@@ -116,6 +116,10 @@ export class World {
   lastHitVx = 0
   lastHitVy = 0
 
+  // P14: UI foundation
+  /** The additive muzzle flash quad (section 6.4). */
+  readonly flashTex: Texture
+
   constructor(
     readonly arena: Arena,
     readonly player: Player,
@@ -126,6 +130,7 @@ export class World {
     this.sparkTex = texReg.getTexture('particle')
     this.gibTex = texReg.getTexture('gib')
     this.ringTex = texReg.getTexture('ring')
+    this.flashTex = texReg.getTexture('flash')
 
     this.enemies = new Pool<Enemy>(
       () => { const s = texReg.makeSprite('swarmer'); layers.entities.addChild(s); return new Enemy(s) },

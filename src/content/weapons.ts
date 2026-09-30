@@ -30,6 +30,8 @@ export interface WeaponDef {
   /** Chain lightning: jump to N more nearby enemies per hit. */
   chain?: number
   chainRange?: number
+  /** Rail and beam: shots draw as tracers stretched along travel (section 6.4). */
+  tracer?: true
 }
 
 export const DEFAULT_WEAPON_ID = 'pistol'
@@ -63,7 +65,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
   railgun: {
     id: 'railgun', name: 'Rail Spike', fireRate: 1.5, damage: 90, projectileSpeed: 1700,
     spread: 0.004, projectilesPerShot: 1, pierce: 8, knockback: 320, projectileLife: 0.6,
-    projectileRadius: 5, tint: 0x86f7ff, ammo: 28, kickPx: 9, sfx: 'heavy',
+    projectileRadius: 5, tint: 0x86f7ff, ammo: 28, kickPx: 9, sfx: 'heavy', tracer: true,
   },
   flamethrower: {
     id: 'flamethrower', name: 'Pyre', fireRate: 22, damage: 4.5, projectileSpeed: 460,
@@ -85,7 +87,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
   beam: {
     id: 'beam', name: 'Photon Beam', fireRate: 24, damage: 5, projectileSpeed: 1500,
     spread: 0.008, projectilesPerShot: 1, pierce: 5, knockback: 8, projectileLife: 0.5,
-    projectileRadius: 3, tint: 0xff6cf0, ammo: 600, kickPx: 0.3, sfx: 'beam',
+    projectileRadius: 3, tint: 0xff6cf0, ammo: 600, kickPx: 0.3, sfx: 'beam', tracer: true,
   },
   vortex: {
     id: 'vortex', name: 'Vortex Cannon', fireRate: 2.2, damage: 22, projectileSpeed: 430,

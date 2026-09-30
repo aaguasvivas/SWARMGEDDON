@@ -1,5 +1,5 @@
 import { weaponIndex } from '../content/weapons.ts'
-import { spawnMuzzle } from '../effects/fx.ts'
+import { TRACER_STRETCH_SPEED, spawnMuzzle } from '../effects/fx.ts'
 import { FeelKind } from '../effects/feelQueue.ts'
 import type { InputManager } from '../input/input.ts'
 import type { World } from '../game/world.ts'
@@ -62,6 +62,7 @@ function fire(world: World, ax: number, ay: number): void {
   const speed = w.projectileSpeed * m.projectileSpeedMul
   const life = w.projectileLife * m.projectileLifeMul
   const scale = w.projectileRadius / 4
+  const scaleX = w.tracer ? scale * (1 + speed / TRACER_STRETCH_SPEED) : scale
 
   // Explosion: from the weapon, or granted by the Explosive Rounds perk. Both
   // scale with the damage perks.
@@ -93,7 +94,7 @@ function fire(world: World, ax: number, ay: number): void {
     s.visible = true
     s.alpha = 1
     s.tint = w.tint
-    s.scale.set(scale)
+    s.scale.set(scaleX, scale)
   }
 
   spawnMuzzle(world, mx, my, baseAng)
