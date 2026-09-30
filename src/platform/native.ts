@@ -29,6 +29,12 @@ export async function initNative(): Promise<void> {
   }, 250)
 }
 
+/** Run `handler` when the native app goes to the background. No-op on web. */
+export function onAppPause(handler: () => void): void {
+  if (!Capacitor.isNativePlatform()) return
+  App.addListener('pause', handler).catch(() => {})
+}
+
 /**
  * Wire the Android hardware back button. `handler` returns true if it consumed
  * the press (e.g. closed a menu); if it returns false we exit the app. No-op

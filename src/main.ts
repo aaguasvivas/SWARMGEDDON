@@ -4,7 +4,7 @@ import { GameLoop } from './core/time.ts'
 import { Rng, seedFromString } from './core/rng.ts'
 import { initSafeArea, getInsets } from './platform/safeArea.ts'
 import { setHapticsEnabled } from './platform/haptics.ts'
-import { initNative, registerBackButton } from './platform/native.ts'
+import { initNative, onAppPause, registerBackButton } from './platform/native.ts'
 import { createRenderer } from './render/app.ts'
 import { Camera } from './render/camera.ts'
 import { loadFonts } from './render/fonts.ts'
@@ -36,7 +36,7 @@ import { bakeIcons } from './ui/icons.ts'
 import { FONT } from './ui/tokens.ts'
 import { tweens } from './ui/tween.ts'
 import { numGlyphs } from './ui/digits.ts'
-import { loadJSON, saveJSON } from './platform/storage.ts'
+import { flushStorage, initStorage, loadJSON, saveJSON } from './platform/storage.ts'
 import { loadSettings, saveSettings, type Settings } from './state/settings.ts'
 import { recordRun, recordWorldBest, loadWorldBest, type RunResult } from './state/persistence.ts'
 import { shareRunCard } from './share/shareCard.ts'
@@ -63,6 +63,7 @@ type Screen = 'menu' | 'playing' | 'gameover' | 'leaderboard'
  * draft, and the reality-warp distortion onto the combat core.
  */
 async function boot(): Promise<void> {
+  await initStorage()
   initSafeArea()
   // Fonts load alongside the renderer; every Text is created after both.
   const fontsReady = loadFonts()
@@ -517,8 +518,11 @@ async function boot(): Promise<void> {
     if (screen === 'playing' && world.pendingGameOver && feel.time.deathMs >= DEATH_SKIP_MS) endRun()
   })
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden && screen === 'playing' && world.pendingGameOver) endRun()
+    if (!document.hidden) return
+    if (screen === 'playing' && world.pendingGameOver) endRun()
+    void flushStorage()
   })
+  onAppPause(() => void flushStorage())
 
   let warpAmt = 0
   // Ambient render clock: advanced by the CLAMPED render delta (never lurches
