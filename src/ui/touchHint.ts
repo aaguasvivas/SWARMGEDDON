@@ -1,11 +1,20 @@
 import { Container, Graphics, Text } from 'pixi.js'
-import { COLORS } from '../config.ts'
+import { COLORS, DASH_BTN } from '../config.ts'
 import type { Insets } from '../platform/safeArea.ts'
 
 const MONO = 'ui-monospace, Menlo, Consolas, monospace'
 /** Portrait rest points: this far above the safe bottom, which keeps each
  *  guide's label above the weapon pill. */
 const PORTRAIT_REST_UP = 124
+const GUIDE_R = 56
+const GUIDE_STROKE = 3
+const GUIDE_PULSE = 0.05
+/** A guide ring's outer stroke edge at its largest pulse. */
+const GUIDE_OUTER = (GUIDE_R + GUIDE_STROKE / 2) * (1 + GUIDE_PULSE)
+/** Center distances that keep 8 px between drawn edges: aim guide to the DASH
+ *  button (its 2 px ring stroke reaches visualD / 2 + 1), and guide to guide. */
+const DASH_CLEAR = GUIDE_OUTER + DASH_BTN.visualD / 2 + 1 + 8
+const GUIDE_CLEAR = GUIDE_OUTER * 2 + 8
 
 /**
  * First-run touch onboarding. New players (especially the "I thought it was
@@ -34,17 +43,21 @@ export class TouchHint {
     this.view.eventMode = 'none'
   }
 
-  layout(w: number, h: number, insets: Insets): void {
+  /** `dashX, dashY` = the DASH button center from TouchControls.layoutDash. */
+  layout(w: number, h: number, insets: Insets, dashX: number, dashY: number): void {
     const availW = w - insets.left - insets.right
     const cx = insets.left + availW / 2
     const bottom = h - insets.bottom
     // The guides mark the thumbs' rest points. In portrait the DASH button sits
-    // 200 px above the bottom on the right, so the rest points sit lower and
-    // the aim guide further in, keeping it clear of the button.
+    // 200 px above the bottom on the right, so the rest points sit lower. The
+    // aim guide moves left of the button as far as the clearance needs.
     const portrait = h > w
     const y = portrait ? bottom - PORTRAIT_REST_UP : bottom - (h - insets.top - insets.bottom) * 0.26
-    this.left.view.position.set(insets.left + availW * 0.24, y)
-    this.right.view.position.set(insets.left + availW * (portrait ? 0.7 : 0.76), y)
+    const dy = dashY - y
+    const minDx = Math.sqrt(Math.max(0, DASH_CLEAR * DASH_CLEAR - dy * dy))
+    const rightX = Math.min(insets.left + availW * (portrait ? 0.7 : 0.76), dashX - minDx)
+    this.left.view.position.set(Math.min(insets.left + availW * 0.24, rightX - GUIDE_CLEAR), y)
+    this.right.view.position.set(rightX, y)
     this.banner.style.wordWrapWidth = availW - 32
     this.banner.position.set(cx, insets.top + 70)
   }
@@ -68,8 +81,8 @@ class Guide {
 
   constructor(text: string, color: number) {
     const ring = new Graphics()
-    ring.circle(0, 0, 56).fill({ color, alpha: 0.08 })
-    ring.circle(0, 0, 56).stroke({ width: 3, color, alpha: 0.5 })
+    ring.circle(0, 0, GUIDE_R).fill({ color, alpha: 0.08 })
+    ring.circle(0, 0, GUIDE_R).stroke({ width: GUIDE_STROKE, color, alpha: 0.5 })
     this.knob.circle(0, 0, 24).fill({ color, alpha: 0.4 })
     this.knob.circle(0, 0, 24).stroke({ width: 2.5, color, alpha: 0.9 })
     this.label = new Text({ text, style: { fontFamily: MONO, fontSize: 13, fontWeight: 'bold', fill: color, dropShadow: { color: 0x000000, blur: 0, distance: 1, angle: Math.PI / 4, alpha: 0.8 } } })
@@ -83,6 +96,6 @@ class Guide {
     this.view.alpha = this.alpha
     // Circle the knob to read as "drag me"; a gentle breathing pulse draws the eye.
     this.knob.position.set(Math.cos(t * 2.2) * 22, Math.sin(t * 2.2) * 22)
-    this.view.scale.set(1 + Math.sin(t * 3) * 0.05)
+    this.view.scale.set(1 + Math.sin(t * 3) * GUIDE_PULSE)
   }
 }

@@ -350,13 +350,13 @@ async function boot(): Promise<void> {
     world.pendingLevelUps--
     buzz(20)
     if (world.pendingLevelUps > 0) openDraft()
-    else {
-      modal.close()
-      world.paused = false
-      world.resumeFromDraft()
-      input.cancelDashPress()
-      feel.time.play(TimePreset.Resume)
-    }
+    // A chained draft that rolled empty cleared pendingLevelUps, so it resumes here too.
+    if (world.pendingLevelUps > 0) return
+    modal.close()
+    world.paused = false
+    world.resumeFromDraft()
+    input.cancelDashPress()
+    feel.time.play(TimePreset.Resume)
   }
   modal.onPick = pickPerk
 
@@ -371,7 +371,7 @@ async function boot(): Promise<void> {
     hud.layout(w, h, insets)
     input.touch.layoutDash(w, h, insets)
     debug?.layout(insets)
-    touchHint.layout(w, h, insets)
+    touchHint.layout(w, h, insets, input.touch.dashX, input.touch.dashY)
     vignette.resize(w, h)
     backdrop.layout(w, h)
     modal.setScreen(w, h)

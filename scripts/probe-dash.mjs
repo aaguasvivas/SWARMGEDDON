@@ -5,10 +5,13 @@
 // Usage: node scripts/probe-dash.mjs [sim|touch|all]   (default all)
 //   sim    dash distance and i-frame ticks, end-lag, buffer, charges, Close Call
 //          once per dash per trigger type and never on grace, bite cadence and cap,
-//          discrete hit cooldown, revive grace
-//   touch  at 375x667, 667x375 and 390x844 (safe-area insets 47/34): DASH tap dashes
-//          and claims no stick, the exclusion ring spawns nothing, a slide onto the
-//          button does nothing, the fire latch, DASH clear of the aim rest point
+//          discrete hit cooldown, revive and draft grace, a chained draft that
+//          ends on an empty roll (grace applies, a stale dash press drops)
+//   touch  at 320x568, 360x640, 375x667, 667x375, 568x320 and 390x844 (safe-area
+//          insets 47/34): DASH tap dashes and claims no stick, the exclusion ring
+//          spawns nothing, a slide onto the button does nothing, the fire latch, and
+//          8 px between the drawn edges of the aim guide, the DASH button and the
+//          move guide
 // Prints one JSON line per check group and exits 1 if any check fails.
 import puppeteer from 'puppeteer-core'
 import { acquireChromeLock } from './lib/chromeLock.mjs'
@@ -301,6 +304,28 @@ function simChecks() {
   fresh()
   w.resumeFromDraft()
   out.draftGrace = { invuln: pl.invuln, src: pl.invulnSrc, pass: pl.invuln === 0.75 && pl.invulnSrc === 2 }
+
+  // 9. A chained draft whose next roll is empty still resumes with draft grace
+  //    and drops a dash press made during the draft.
+  fresh()
+  ctl.mx = 0
+  w.pendingLevelUps = 2
+  S.step(1)
+  const opened = w.paused && w.draftCards.length > 0
+  w.rollDraft = () => 0
+  inp.pressDash()
+  const dashesBefore = w.dashes
+  S.pickPerk(w.draftCards[0].id)
+  delete w.rollDraft
+  const resumed = { paused: w.paused, pending: w.pendingLevelUps, invuln: pl.invuln, src: pl.invulnSrc }
+  S.step(1)
+  const dashed = w.dashes - dashesBefore
+  out.chainedEmptyDraft = {
+    opened,
+    ...resumed,
+    dashed,
+    pass: opened && !resumed.paused && resumed.pending === 0 && resumed.invuln === 0.75 && resumed.src === 2 && dashed === 0,
+  }
   return out
 }
 
@@ -325,9 +350,16 @@ async function runTouch(browser, size) {
     const S = window.__SWARM
     const t = S.input.touch
     const r = S.touchHint.right.view.position
-    return { dashX: t.dashX, dashY: t.dashY, restX: r.x, restY: r.y, W: S.app.screen.width, H: S.app.screen.height, visible: t.view.visible }
+    const l = S.touchHint.left.view.position
+    return { dashX: t.dashX, dashY: t.dashY, restX: r.x, restY: r.y, leftX: l.x, leftY: l.y, W: S.app.screen.width, H: S.app.screen.height, visible: t.view.visible }
   })
   const restDist = Math.hypot(geo.dashX - geo.restX, geo.dashY - geo.restY)
+  // Drawn edges: a guide ring (radius 56, 3 px stroke) at its 1.05 pulse, the DASH ring (radius 32, 2 px stroke).
+  const GUIDE_OUTER = 57.5 * 1.05
+  const DASH_OUTER = 33
+  const dashGap = restDist - GUIDE_OUTER - DASH_OUTER
+  const guideGap = Math.hypot(geo.restX - geo.leftX, geo.restY - geo.leftY) - 2 * GUIDE_OUTER
+  const guidesOnScreen = geo.leftX - GUIDE_OUTER >= 0
   const inside = geo.dashX - 44 >= 0 && geo.dashX + 44 <= geo.W && geo.dashY - 44 >= 0 && geo.dashY + 44 <= geo.H
   const state = () => page.evaluate(() => {
     const S = window.__SWARM
@@ -354,8 +386,8 @@ async function runTouch(browser, size) {
 
   await refill()
   const s2 = await state()
-  await page.touchscreen.touchStart(geo.dashX - 110, geo.dashY + 90)
-  await page.touchscreen.touchMove(geo.dashX - 50, geo.dashY + 40)
+  await page.touchscreen.touchStart(geo.dashX - 90, geo.dashY + 90)
+  await page.touchscreen.touchMove(geo.dashX - 45, geo.dashY + 45)
   await page.touchscreen.touchMove(geo.dashX, geo.dashY)
   await sleep(120)
   const slid = await state()
@@ -395,7 +427,13 @@ async function runTouch(browser, size) {
   await sleep(700)
   await page.screenshot({ path: `/tmp/swg-P3-dash-${size.name}.png` })
   report(`touch.${size.name}`, {
-    geometry: { ...geo, restDist: +restDist.toFixed(1), pass: geo.visible && inside && restDist > 44 + 8 },
+    geometry: {
+      ...geo,
+      restDist: +restDist.toFixed(1),
+      dashGap: +dashGap.toFixed(1),
+      guideGap: +guideGap.toFixed(1),
+      pass: geo.visible && inside && restDist > 44 + 8 && dashGap >= 7.99 && guideGap >= 7.99 && guidesOnScreen,
+    },
     tapDashes: { before: s0, held, pass: tapOk },
     exclusionRing: { ring, pass: ringOk },
     slideOnto: { slid, pass: slideOk },
@@ -420,8 +458,11 @@ try {
   if (WHAT === 'sim' || WHAT === 'all') await runSim(browser)
   if (WHAT === 'touch' || WHAT === 'all') {
     for (const size of [
+      { name: 'p320', w: 320, h: 568 },
+      { name: 'p360', w: 360, h: 640 },
       { name: 'p375', w: 375, h: 667 },
       { name: 'l667', w: 667, h: 375 },
+      { name: 'l568', w: 568, h: 320 },
       { name: 'p390', w: 390, h: 844, insets: { top: 47, bottom: 34, left: 0, right: 0 } },
     ]) await runTouch(browser, size)
   }
