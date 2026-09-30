@@ -1,7 +1,7 @@
 import type { World } from '../game/world.ts'
 
-/** Integrate particles (gibs/sparks) and floating damage numbers; expire them
- *  by lifetime. Snapshots prev-position for render interpolation. */
+/** Integrate particles (gibs/sparks); expire them by lifetime. Snapshots
+ *  prev-position for render interpolation. */
 export function particleSystem(world: World, dt: number): void {
   const parts = world.particles.active
   for (let i = 0; i < parts.length; i++) {
@@ -20,15 +20,5 @@ export function particleSystem(world: World, dt: number): void {
     p.size += p.grow * dt
     p.life -= dt
     if (p.life <= 0 || p.size <= 0.02) p.alive = false
-  }
-
-  const floaters = world.floaters.active
-  for (let i = 0; i < floaters.length; i++) {
-    const ft = floaters[i]!
-    ft.prevY = ft.y
-    ft.y += ft.vy * dt
-    ft.vy *= 1 - 2.5 * dt // ease the rise
-    ft.life -= dt
-    if (ft.life <= 0) ft.alive = false
   }
 }

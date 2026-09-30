@@ -2449,6 +2449,18 @@ Damage number tiers (glyph tint, size):
 
 Glyph atlas: `BitmapFont.install({ name: 'numMono', style: { fontFamily: 'JetBrains Mono', fontWeight: '800', fontSize: 40, fill: 0xffffff, stroke: { color: 0x05070d, width: 6, join: 'round' } }, chars: '0123456789,:+-!x%#/K', resolution: 2, padding: 6 })`.
 
+Damage number timing (real clock): life 600 ms (crit 700 ms), fading over the last 180 ms; each number starts 14 px above the hit. Values over 99,999 show as thousands with `K`. Merging is keyed on the enemy uid the Hit event carries in `b`.
+
+Mode `big` shows crits, heals and any number whose total reaches 10. Every pilot's base weapon hit clears 10 (Sidearm 16, Stiletto 11, Scorcher 26); chip hits (4.5 to 8.5) and armor-blunted hits (a Sidearm shot into a beetle's front deals 6.4) do not. A smaller hit opens a hidden number on that enemy that collects every hit on it for up to 450 ms, and it shows at the latest hit once the total reaches 10. After it shows, the 150 ms merge rule applies. When the pool is full, a number that shows takes a hidden one's slot.
+
+FX (section 6.4): directional gibs throw `round(0.6 x count)` gibs within ±0.6 rad of the killing shot's velocity and the rest radially (fx stream, one draw per angle as before). The muzzle is 2 sparks plus one additive flash quad: a 22 x 10 soft diamond along the aim, centered 11 px ahead of the muzzle, muzzle tint, 60 ms life, shrinking at 6/s. Rail and beam carry `WeaponDef.tracer`; their shots stretch along travel by `1 + speed / 1800`.
+
+World labels (until the P15 callout lane replaces them): 8 pooled lines, JetBrains Mono 800 16 px with a 4 px INK stroke, 1.1 s life, 14 px rise, color through `ensureContrast`. They carry pickup names, alerts, boss kills and the gem hint.
+
+Font coverage: the shipped subsets hold U+0020-007E (Orbitron has no `^`) and U+00B7 (JetBrains Mono only). U+2192 is not in the upstream latin files, so `→` renders in the fallback face.
+
+Components: Toggle 52 x 28; Segmented 44 high; Slider hit band 44 high and 12 px past each end; every hit rect is at least 44 x 44.
+
 Camera constants:
 
 ```ts
@@ -2456,6 +2468,8 @@ export const CAM = { SHORT_TARGET: 560, LONG_MAX_RATIO: 2.2, Z_MIN: 0.5, Z_MAX: 
   LOOK_RATE: 5, LOOK_RETURN: 3, TOUCH_PORTRAIT_BIAS: 0.06, BOSS_BIAS: 0.2, BOSS_BIAS_MAX_FRAC: 0.25,
   BOSS_ZOOM: 0.92, BOSS_ZOOM_RATE: 1.5 } as const
 ```
+
+The boss pull and fight zoom blend in and out at `BOSS_ZOOM_RATE` per second. Transient punches decay at 8/s; the death punch (+0.25) holds until the recap. Punches zoom about the ship.
 
 ## A19. Glyph and icon sets
 

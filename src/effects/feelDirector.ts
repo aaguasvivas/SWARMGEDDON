@@ -1,11 +1,10 @@
 import type { AudioEngine } from '../audio/audio.ts'
-import { COLORS } from '../config.ts'
 import { ENEMIES, type EnemyDef } from '../content/enemies.ts'
 import { WEAPON_LIST } from '../content/weapons.ts'
 import type { World } from '../game/world.ts'
 import type { InputManager } from '../input/input.ts'
 import { buzz } from '../platform/haptics.ts'
-import { announce, spawnDamageNumber } from './fx.ts'
+import type { DamageNumbers } from './damageNumbers.ts'
 import { AlertKind, FF_ACID, FF_BOSS, FF_CONTACT, FF_CRIT, FF_ELITE, FF_RAM, FeelKind } from './feelQueue.ts'
 import { Shake } from './shake.ts'
 import { TimeDirector, TimePreset } from './timeDirector.ts'
@@ -50,6 +49,7 @@ export class FeelDirector {
     private readonly world: World,
     private readonly audio: AudioEngine,
     private readonly input: InputManager,
+    private readonly numbers: DamageNumbers,
   ) {}
 
   reset(): void {
@@ -58,6 +58,7 @@ export class FeelDirector {
     this.time.reset()
     this.biteAt = -Infinity
     this.blastAt = -Infinity
+    this.numbers.clear()
   }
 
   /** Play every event emitted since the last frame, then empty the queue.
@@ -80,7 +81,7 @@ export class FeelDirector {
           break
         }
         case FeelKind.Hit:
-          spawnDamageNumber(this.world, x, y, a, (f & FF_CRIT) !== 0, b)
+          this.numbers.hit(x, y, a, (f & FF_CRIT) !== 0, b)
           this.audio.play('hit')
           break
         case FeelKind.Kill:
@@ -111,22 +112,21 @@ export class FeelDirector {
           this.input.rumble(120, 0.5)
           this.time.hitStop(HITSTOP_REVIVE_MS, true)
           this.time.play(TimePreset.Revive)
-          announce(this.world, 'SECOND WIND', x, y - 30, 0x7dffd6)
+          this.numbers.label('SECOND WIND', x, y - 30, 0x7dffd6)
           break
         case FeelKind.GemCollect:
           this.audio.play('pickup')
           break
         case FeelKind.HealCollect: {
           this.audio.play('pickup')
-          const gained = Math.round(a)
-          if (gained > 0) announce(this.world, `+${gained}`, x, y - 24, COLORS.health)
+          this.numbers.heal(x, y - 24, Math.round(a))
           break
         }
         case FeelKind.WeaponPickup: {
           const w = WEAPON_LIST[b]
           this.audio.play('weapon')
           this.shake.add(0.1, 0.35)
-          if (w) announce(this.world, w.name, x, y - 26, w.tint)
+          if (w) this.numbers.label(w.name, x, y - 26, w.tint)
           break
         }
         case FeelKind.EliteSpawn:
@@ -144,14 +144,14 @@ export class FeelDirector {
         case FeelKind.BossKill:
           this.shake.add(0.85, 1)
           this.time.play(TimePreset.BossKill)
-          announce(this.world, this.world.script.text.slain, x, y - 36, 0xffe066)
+          this.numbers.label(this.world.script.text.slain, x, y - 36, 0xffe066)
           break
         case FeelKind.Dash:
           this.shake.kick(a * DASH_KICK_PX, b * DASH_KICK_PX)
           break
         case FeelKind.CloseCall:
           this.time.play(TimePreset.CloseCall)
-          announce(this.world, 'CLOSE CALL', x, y - 30, 0x7dffd6)
+          this.numbers.label('CLOSE CALL', x, y - 30, 0x7dffd6)
           break
         case FeelKind.Alert:
           this.onAlert(x, y, b)
@@ -214,8 +214,8 @@ export class FeelDirector {
     const color = bossy ? this.world.broodTint(ENEMIES[this.world.script.boss.midId]!.tint) : 0xff6aa8
     // A15 holds: boss, final and event alerts last until the beat lands.
     const life = bossy || s.kind === AlertKind.Event ? ALERT_HOLD_LONG : ALERT_HOLD_SHORT
-    announce(this.world, s.title, x, y - 52, color, life)
-    if (s.sub) announce(this.world, s.sub, x, y - 30, color, life)
+    this.numbers.label(s.title, x, y - 52, color, life)
+    if (s.sub) this.numbers.label(s.sub, x, y - 30, color, life)
   }
 
   /** Kick the view `px` along the line from (sx, sy) to the player. */

@@ -2,8 +2,7 @@ import { Container, Graphics, Text } from 'pixi.js'
 import { COLORS } from '../config.ts'
 import type { Insets } from '../platform/safeArea.ts'
 import type { World } from '../game/world.ts'
-
-const MONO = 'ui-monospace, Menlo, Consolas, monospace'
+import { FONT, T, TYPE } from './tokens.ts'
 
 /**
  * Player-facing HUD: HP bar (with the number on it) + XP bar + level
@@ -45,6 +44,7 @@ export class Hud {
   private titleText: Text
   private titleSub: Text
   private titleT = 0
+  private titleFit = 1
 
   // Geometry computed in layout(), reused in update() so the two never drift.
   private g = { cx: 0, x: 0, hpY: 0, xpY: 0, barW: 280, hpH: 16, xpH: 6, weaponY: 0, s: 1 }
@@ -53,20 +53,20 @@ export class Hud {
 
   constructor() {
     const shadow = { color: 0x000000, blur: 0, distance: 1, angle: Math.PI / 4, alpha: 0.85 } as const
-    this.hpText = new Text({ text: '', style: { fontFamily: MONO, fontSize: 12, fontWeight: 'bold', fill: 0xffffff, dropShadow: shadow } })
+    this.hpText = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 12, fontWeight: 'bold', fill: 0xffffff, dropShadow: shadow } })
     this.hpText.anchor.set(0.5)
-    this.levelText = new Text({ text: '', style: { fontFamily: MONO, fontSize: 13, fontWeight: 'bold', fill: COLORS.xpBar, dropShadow: shadow } })
+    this.levelText = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 13, fontWeight: 'bold', fill: COLORS.xpBar, dropShadow: shadow } })
     this.levelText.anchor.set(1, 0.5)
-    this.stats = new Text({ text: '', style: { fontFamily: MONO, fontSize: 14, fill: COLORS.hudText, dropShadow: shadow } })
+    this.stats = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 14, fill: COLORS.hudText, dropShadow: shadow } })
     this.stats.anchor.set(1, 0)
-    this.weaponLabel = new Text({ text: '', style: { fontFamily: MONO, fontSize: 14, fontWeight: 'bold', fill: COLORS.hudText, dropShadow: shadow } })
+    this.weaponLabel = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 14, fontWeight: 'bold', fill: COLORS.hudText, dropShadow: shadow } })
     this.weaponLabel.anchor.set(0.5, 0.5)
-    this.bossLabel = new Text({ text: '', style: { fontFamily: MONO, fontSize: 12, fontWeight: 'bold', fill: 0xff6aa8, dropShadow: shadow } })
+    this.bossLabel = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 12, fontWeight: 'bold', fill: 0xff6aa8, dropShadow: shadow } })
     this.bossLabel.anchor.set(0.5, 1)
-    this.titleText = new Text({ text: '', style: { fontFamily: MONO, fontSize: 34, fontWeight: 'bold', fill: 0xffffff, letterSpacing: 4, dropShadow: shadow } })
+    this.titleText = new Text({ text: '', style: { fontFamily: FONT.display, fontSize: 34, fontWeight: '900', fill: 0xffffff, letterSpacing: 4, dropShadow: shadow } })
     this.titleText.anchor.set(0.5)
     this.titleText.alpha = 0
-    this.titleSub = new Text({ text: '', style: { fontFamily: MONO, fontSize: 14, fill: COLORS.hudDim, letterSpacing: 2, dropShadow: shadow } })
+    this.titleSub = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 14, fill: T.textMuted, letterSpacing: 2, dropShadow: shadow } })
     this.titleSub.anchor.set(0.5)
     this.titleSub.alpha = 0
     this.view.addChild(this.back, this.hpGhostFill, this.hpFill, this.xpFill, this.hpText, this.levelText, this.stats, this.weaponPill, this.weaponLabel, this.bossBack, this.bossFill, this.bossLabel, this.titleText, this.titleSub)
@@ -78,6 +78,14 @@ export class Hud {
     this.titleText.style.fill = color
     this.titleSub.text = sub
     this.titleT = 3.0
+    this.fitTitle()
+  }
+
+  /** Scale the world title card down to the safe width. */
+  private fitTitle(): void {
+    this.titleText.scale.set(1)
+    const room = this.w - this.insets.left - this.insets.right - 32
+    this.titleFit = room > 0 ? Math.min(1, room / this.titleText.width) : 1
   }
 
   layout(w: number, h: number, insets: Insets): void {
@@ -96,10 +104,11 @@ export class Hud {
     const weaponY = h - insets.bottom - Math.round(18 * s)
     this.g = { cx, x, hpY, xpY, barW, hpH, xpH, weaponY, s }
 
-    this.hpText.style.fontSize = Math.round(12 * s)
-    this.levelText.style.fontSize = Math.round(13 * s)
-    this.stats.style.fontSize = Math.round(14 * s)
-    this.weaponLabel.style.fontSize = Math.round(14 * s)
+    const px = (base: number): number => Math.max(TYPE.label, Math.round(base * s))
+    this.hpText.style.fontSize = px(12)
+    this.levelText.style.fontSize = px(13)
+    this.stats.style.fontSize = px(14)
+    this.weaponLabel.style.fontSize = px(14)
 
     this.back.clear()
     this.back.roundRect(x - 2, hpY - 2, barW + 4, hpH + 4, 5).fill({ color: 0x000000, alpha: 0.35 })
@@ -111,7 +120,8 @@ export class Hud {
     this.stats.position.set(w - insets.right - 14, insets.top + Math.round(10 * s))
     this.weaponLabel.position.set(cx, weaponY)
     this.titleText.style.fontSize = Math.round(34 * s)
-    this.titleSub.style.fontSize = Math.round(14 * s)
+    this.titleSub.style.fontSize = px(14)
+    this.fitTitle()
     this.titleText.position.set(cx, Math.round(h * 0.3))
     this.titleSub.position.set(cx, Math.round(h * 0.3) + Math.round(30 * s))
   }
@@ -161,7 +171,7 @@ export class Hud {
       const a = Math.min(1, shown / 0.35) * Math.min(1, this.titleT / 0.9)
       this.titleText.alpha = a
       this.titleSub.alpha = a * 0.85
-      this.titleText.scale.set(1 + Math.min(1, shown / 0.35) * 0.04)
+      this.titleText.scale.set(this.titleFit * (1 + Math.min(1, shown / 0.35) * 0.04))
     } else if (this.titleText.alpha > 0) {
       this.titleText.alpha = 0
       this.titleSub.alpha = 0

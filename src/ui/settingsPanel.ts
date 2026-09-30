@@ -2,8 +2,7 @@ import { Container, Graphics, Text } from 'pixi.js'
 import { COLORS } from '../config.ts'
 import type { Settings } from '../state/settings.ts'
 import { Button, Slider } from './button.ts'
-
-const MONO = 'ui-monospace, Menlo, Consolas, monospace'
+import { FONT, T } from './tokens.ts'
 
 interface Row {
   key: 'master' | 'sfx' | 'music' | 'shake' | 'ichor' | 'glow'
@@ -36,7 +35,7 @@ export class SettingsPanel {
     // panel's dead zones fall through to the still-visible main-menu buttons
     // underneath (same trick as the level-up modal).
     this.backdrop.eventMode = 'static'
-    this.title = new Text({ text: 'SETTINGS', style: { fontFamily: MONO, fontSize: 30, fontWeight: 'bold', fill: COLORS.player, letterSpacing: 2 } })
+    this.title = new Text({ text: 'SETTINGS', style: { fontFamily: FONT.display, fontSize: 28, fontWeight: '900', fill: COLORS.player, letterSpacing: 2 } })
     this.title.anchor.set(0.5)
 
     this.rows = (
@@ -49,8 +48,8 @@ export class SettingsPanel {
         ['glow', 'Glow', 1.5],
       ] as const
     ).map(([key, name, scale]) => {
-      const label = new Text({ text: name, style: { fontFamily: MONO, fontSize: 14, fill: COLORS.hudText } })
-      const value = new Text({ text: '', style: { fontFamily: MONO, fontSize: 13, fill: COLORS.hudDim } })
+      const label = new Text({ text: name, style: { fontFamily: FONT.mono, fontSize: 14, fill: COLORS.hudText } })
+      const value = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 13, fill: T.textMuted } })
       value.anchor.set(1, 0)
       const slider = new Slider(220)
       slider.onChange = (v) => {
@@ -62,19 +61,19 @@ export class SettingsPanel {
       return { key, label, value, slider, scale }
     })
 
-    this.autofire = new Button('AUTO-FIRE: ON', 220, 40, COLORS.hudDim, 14)
+    this.autofire = new Button('AUTO-FIRE: ON', 220, 40, 'secondary', 14)
     this.autofire.onClick = () => {
       this.settings.autoFire = !this.settings.autoFire
       this.autofire.setText(`AUTO-FIRE: ${this.settings.autoFire ? 'ON' : 'OFF'}`)
       this.emit()
     }
-    this.haptics = new Button('HAPTICS: ON', 220, 40, COLORS.hudDim, 14)
+    this.haptics = new Button('HAPTICS: ON', 220, 40, 'secondary', 14)
     this.haptics.onClick = () => {
       this.settings.haptics = !this.settings.haptics
       this.haptics.setText(`HAPTICS: ${this.settings.haptics ? 'ON' : 'OFF'}`)
       this.emit()
     }
-    this.back = new Button('BACK', 220, 48, COLORS.player)
+    this.back = new Button('BACK', 220, 48, 'secondary', 16)
     this.back.onClick = () => this.onClose()
 
     this.view.addChild(this.title, this.autofire.view, this.haptics.view, this.back.view)
@@ -116,7 +115,7 @@ export class SettingsPanel {
   private relayout(): void {
     const { w, h } = this
     this.backdrop.clear()
-    this.backdrop.rect(0, 0, w, h).fill({ color: 0x05070d, alpha: 0.82 })
+    this.backdrop.rect(0, 0, w, h).fill(T.bgVoid)
     const cx = w / 2
     const left = cx - 110
     let y = h * 0.5 - 215

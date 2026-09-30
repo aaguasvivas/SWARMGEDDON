@@ -1,5 +1,11 @@
-import { Graphics, Sprite, Texture, type Renderer } from 'pixi.js'
+import { ColorMatrixFilter, Graphics, Sprite, Texture, type Renderer } from 'pixi.js'
 import { PLACEHOLDER_SPRITES } from '../content/assets.ts'
+import { ENEMIES } from '../content/enemies.ts'
+
+/** Bake resolution: the camera zooms up to 3x, so textures carry 3x detail. */
+const BAKE_RES = 3
+/** Suffix of a sprite's hit-flash silhouette key (`swarmer@white`). */
+export const WHITE = '@white'
 
 interface Baked {
   texture: Texture
@@ -19,19 +25,32 @@ export class TextureRegistry {
 
   constructor(private readonly renderer: Renderer) {}
 
+  /** Bakes every manifest sprite, plus a white silhouette of each enemy
+   *  sprite for the hit flash (same frame, so the same anchor fits both). */
   bakePlaceholders(): void {
+    const enemyKeys = new Set<string>()
+    for (const id in ENEMIES) enemyKeys.add(ENEMIES[id]!.sprite)
+    const white = new ColorMatrixFilter()
+    white.matrix = [0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0]
     for (const key in PLACEHOLDER_SPRITES) {
       const draw = PLACEHOLDER_SPRITES[key]!
       const g = new Graphics()
       draw(g)
       const b = g.getLocalBounds()
-      const texture = this.renderer.generateTexture({ target: g, resolution: 2, antialias: true })
+      const frame = b.rectangle.clone()
+      const texture = this.renderer.generateTexture({ target: g, frame, resolution: BAKE_RES, antialias: true })
       // Map graphics-origin (0,0) to a normalized anchor inside the baked frame.
       const anchorX = b.width > 0 ? -b.minX / b.width : 0.5
       const anchorY = b.height > 0 ? -b.minY / b.height : 0.5
       this.map.set(key, { texture, anchorX, anchorY })
+      if (enemyKeys.has(key)) {
+        g.filters = [white]
+        const flash = this.renderer.generateTexture({ target: g, frame, resolution: BAKE_RES, antialias: true })
+        this.map.set(key + WHITE, { texture: flash, anchorX, anchorY })
+      }
       g.destroy()
     }
+    white.destroy()
   }
 
   /** Raw texture for `key` (e.g. for swapping a pooled particle's frame). */

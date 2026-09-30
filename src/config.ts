@@ -46,7 +46,6 @@ export const PLAYER_MAX_HP = 100
  */
 export const MAX_ENEMIES = 700
 export const MAX_PARTICLES = 1500
-export const MAX_FLOATERS = 48
 export const MAX_PICKUPS = 400
 /** Pickup slots guaranteed per kind; the rest of MAX_PICKUPS is shared. */
 export const PICKUP_RESERVE = { xp: 200, bank: 1, health: 40, weapon: 4, core: 4, bonus: 2 } as const
@@ -116,8 +115,6 @@ export const COLORS = {
   bullet: 0xaffff0,
   gib: 0x6cff5a,
   gibDark: 0x2e8f3a,
-  damageText: 0xeafff0,
-  critText: 0xffe066,
   muzzle: 0xfff2b0,
   hurtFlash: 0xff2d4a,
   acid: 0x9bff3a,

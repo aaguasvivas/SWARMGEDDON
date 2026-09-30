@@ -28,6 +28,9 @@ export interface Layers {
   entities: Container // player, enemies, projectiles, pickups
   fx: Container // particles, gibs, floating numbers, screen-space effects
   atmosphere: Container // screen-space per-world overlay (god-rays/blooms/haze), bloomed
+  /** World-space and unbloomed (damage numbers): the camera copies the world
+   *  transform onto it, outside the bloom so numbers stay crisp. */
+  overlay: Container
   ui: Container // HUD, debug overlay, virtual sticks, crosshair (does NOT pan)
 }
 
@@ -70,6 +73,7 @@ export async function createRenderer(mount: HTMLElement): Promise<GameRenderer> 
     entities: new Container(),
     fx: new Container(),
     atmosphere: new Container(),
+    overlay: new Container(),
     ui: new Container(),
   }
   // scene (bloom, screen-space) -> world (camera/shake) -> warpHost (warp) -> content.
@@ -83,7 +87,7 @@ export async function createRenderer(mount: HTMLElement): Promise<GameRenderer> 
   layers.warpHost.addChild(layers.floor, layers.ichor, layers.backdrop, layers.entities, layers.fx)
   layers.world.addChild(layers.warpHost)
   layers.scene.addChild(layers.world, layers.atmosphere)
-  app.stage.addChild(layers.scene, layers.ui)
+  app.stage.addChild(layers.scene, layers.overlay, layers.ui)
 
   // Enable Pixi's event system so interactive UI (the level-up cards) gets
   // pointer events. Gameplay input is handled separately via DOM listeners.

@@ -205,10 +205,8 @@ function applyHit(world: World, e: Enemy, p: Projectile): boolean {
   spawnHitSpark(world, p.x, p.y, p.vx, p.vy)
   // Damage-number jitter comes from the fx stream here, drawn on every hit,
   // so the stream never depends on how presentation caps or skips numbers.
-  const fx = world.rngs.fx
-  const jx = fx.range(-6, 6)
-  const rise = fx.range(46, 74)
-  world.feel.emit(FeelKind.Hit, (crit ? FF_CRIT : 0) | rankFlags(e), e.x + jx, e.y, dmg, rise, e)
+  const jx = world.rngs.fx.range(-6, 6)
+  world.feel.emit(FeelKind.Hit, (crit ? FF_CRIT : 0) | rankFlags(e), e.x + jx, e.y, dmg, e.uid, e)
   world.lastHitVx = p.vx
   world.lastHitVy = p.vy
 
@@ -302,7 +300,7 @@ function killEnemy(world: World, e: Enemy): void {
   const def = e.def
 
   world.ichor.queueStamp(e.x, e.y, world.rngs.fx)
-  spawnGibs(world, e.x, e.y, def.gibCount, e.gibTint)
+  spawnGibs(world, e.x, e.y, def.gibCount, e.gibTint, world.lastHitVx, world.lastHitVy)
   world.feel.emit(FeelKind.Kill, rankFlags(e), e.x, e.y, world.lastHitVx, world.lastHitVy, def)
 
   // Death-pop shockwave ring. Skip the xp-1 chaff so a swarm wipe stays clean

@@ -75,16 +75,6 @@ export function renderEntities(world: World, alpha: number): void {
     s.scale.set(p.size)
   }
 
-  const floaters = world.floaters.active
-  for (let i = 0; i < floaters.length; i++) {
-    const ft = floaters[i]!
-    const k = ft.life / ft.maxLife
-    ft.text.x = ft.x
-    ft.text.y = lerp(ft.prevY, ft.y, alpha)
-    ft.text.alpha = k
-    ft.text.scale.set(1 + (1 - k) * 0.3)
-  }
-
   const pickups = world.pickups.active
   for (let i = 0; i < pickups.length; i++) {
     const p = pickups[i]!

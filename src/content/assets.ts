@@ -59,6 +59,13 @@ function drawParticle(g: Graphics): void {
   g.circle(0, 0, 3).fill(W)
 }
 
+/** Muzzle flash quad (additive): a soft diamond pointing +x, centered so the
+ *  particle sprite's 0.5 anchor fits it. White, tinted at spawn. */
+function drawFlash(g: Graphics): void {
+  g.poly([-11, 0, -2, -5, 11, 0, -2, 5]).fill({ color: W, alpha: 0.45 })
+  g.poly([-9, 0, -1, -2.6, 8, 0, -1, 2.6]).fill(W)
+}
+
 /** Hollow ring (death-pop shockwave). White, tinted at spawn; expands + fades. */
 function drawRing(g: Graphics): void {
   g.circle(0, 0, 28).stroke({ width: 6, color: W, alpha: 0.95 })
@@ -365,6 +372,7 @@ export const PLACEHOLDER_SPRITES: Record<string, SpriteBuilder> = {
   bullet: drawBullet,
   acidGlob: drawAcidGlob,
   particle: drawParticle,
+  flash: drawFlash,
   ring: drawRing,
   gib: drawGib,
   gem: drawGem,
