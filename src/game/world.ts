@@ -1,5 +1,5 @@
 import type { Texture } from 'pixi.js'
-import { HASH_CELL } from '../config.ts'
+import { DASH, GRACE, HASH_CELL } from '../config.ts'
 import { Pool } from '../core/pool.ts'
 import { RunRngs, SALT, hash32 } from '../core/rng.ts'
 import { hueShiftHex } from '../core/color.ts'
@@ -118,6 +118,26 @@ export class World {
   lastHitVx = 0
   lastHitVy = 0
 
+  // P3: damage model and dash
+  /** Scales bites, enemy shots, rams and acid. The P4 director recomputes it
+   *  once per tick; until then it stays 1. */
+  dmgMul = 1
+  dashCharges = 1
+  /** Seconds until the next charge returns; 0 while every charge is ready. */
+  dashRecharge = 0
+  /** A dash press waits this long (seconds) for a charge or the end of a dash. */
+  dashBufferT = 0
+  /** Dashes started this run; also the id of the current dash. */
+  dashSeq = 0
+  dashes = 0
+  closeCalls = 0
+  /** dashSeq of the last dash that paid a Close Call (one per dash). */
+  closeCallSeq = 0
+  /** HP removed by hurtPlayer this run. */
+  damageTaken = 0
+  /** Source of the last damage: -1 enemy (P10 adds the def index), -2 acid, -3 hazard. */
+  lastHitBy = -1
+
   constructor(
     readonly arena: Arena,
     readonly player: Player,
@@ -215,6 +235,16 @@ export class World {
     this.alerts.reset()
     this.lastHitVx = 0
     this.lastHitVy = 0
+    this.dmgMul = 1
+    this.dashCharges = this.maxDashCharges
+    this.dashRecharge = 0
+    this.dashBufferT = 0
+    this.dashSeq = 0
+    this.dashes = 0
+    this.closeCalls = 0
+    this.closeCallSeq = 0
+    this.damageTaken = 0
+    this.lastHitBy = -1
 
     const b = this.arena.bounds
     this.player.spawn(b.x + b.w / 2, b.y + b.h / 2)
@@ -230,6 +260,15 @@ export class World {
     this.pickups.clear()
     this.acid.clear()
     this.ichor.clear()
+  }
+
+  get maxDashCharges(): number {
+    return Math.min(DASH.maxCharges, this.mods.dashCharges)
+  }
+
+  /** Grace after a draft or core reveal closes. */
+  resumeFromDraft(): void {
+    this.player.grantInvuln(GRACE.draft, 2)
   }
 
   get score(): number {

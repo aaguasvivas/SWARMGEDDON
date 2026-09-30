@@ -26,6 +26,8 @@ const BIG_HIT = 15
 const HITSTOP_BIG_HIT_MS = 40
 const HITSTOP_ELITE_MS = 50
 const HITSTOP_REVIVE_MS = 120
+/** A16.3: a dash kicks the view this far along its heading. */
+const DASH_KICK_PX = 4
 
 /**
  * Turns the sim's FeelQueue into sound, shake, flashes, floating text and time
@@ -141,8 +143,12 @@ export class FeelDirector {
           this.time.play(TimePreset.BossKill)
           announce(this.world, this.world.arenaTheme.slainText, x, y - 36, 0xffe066)
           break
+        case FeelKind.Dash:
+          this.shake.kick(a * DASH_KICK_PX, b * DASH_KICK_PX)
+          break
         case FeelKind.CloseCall:
           this.time.play(TimePreset.CloseCall)
+          announce(this.world, 'CLOSE CALL', x, y - 30, 0x7dffd6)
           break
         case FeelKind.Alert:
           this.onAlert(x, y, b)

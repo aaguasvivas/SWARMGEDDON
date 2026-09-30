@@ -9,7 +9,8 @@
 //   det  [charId] [arenaId|all] [steps]
 //                                  determinism probe: ?seed=777, flood(200), a scripted
 //                                  bot (aim at nearest, fire, walk to pickups or circle,
-//                                  always pick card 1), `steps` ticks (default 600). One line
+//                                  always pick card 1, dash presses at sim ticks 60, 200,
+//                                  330 and 331), `steps` ticks (default 600). One line
 //                                  per world with an FNV hash of enemies, player, progress
 //                                  and all 7 RNG stream states. Default world: all three.
 //                                  Hashes MUST match across viewports, DPR, injected
@@ -144,7 +145,11 @@ if (MODE === 'shot') {
       const inp = S.input
       // Scripted input: a pure function of sim state, so the camera, viewport
       // and pointer never reach the sim.
+      const DASH_TICKS = [60, 200, 330, 331]
+      let tick = 0
       const bot = () => {
+        if (DASH_TICKS.includes(tick)) inp.pressDash()
+        tick++
         const pl = w.player
         let best = null
         let bd = Infinity
@@ -186,6 +191,7 @@ if (MODE === 'shot') {
         w.player.hp = 1e9
         S.flood(200)
         const realUpdate = inp.update
+        tick = 0
         inp.update = bot
         let drafts = 0
         try {
@@ -214,6 +220,7 @@ if (MODE === 'shot') {
         mix(w.player.x); mix(w.player.y)
         mix(w.kills); mix(w.level); mix(w.xp); mix(w.time); mix(w.ammo)
         mix(w.projectiles.size); mix(w.enemyProjectiles.size); mix(w.acid.size); mix(w.particles.size)
+        mix(w.dashes); mix(w.closeCalls); mix(w.dashCharges); mix(w.dashRecharge)
         for (const ch of w.weapon.id) byte(ch.charCodeAt(0))
         for (const [id, n] of w.perkStacks) { for (const ch of id) byte(ch.charCodeAt(0)); mix(n) }
         const streams = {}
@@ -225,6 +232,7 @@ if (MODE === 'shot') {
         return {
           hash: (h >>> 0).toString(16), enemies: w.enemies.active.length, kills: w.kills, level: w.level,
           drafts, pickups: w.pickups.active.length, time: +w.time.toFixed(2), byType, streams,
+          dashes: w.dashes, closeCalls: w.closeCalls, damageTaken: Math.round(w.damageTaken),
         }
       }
       const r1 = runOnce()
@@ -235,7 +243,8 @@ if (MODE === 'shot') {
     console.log(JSON.stringify({
       mode: 'det', W, H, dpr: DPR, settings: SETTINGS ? applied : null, charId, arenaId, steps,
       hash: r.hash, rerunMatch: res.rerunMatch, enemies: r.enemies, kills: r.kills, level: r.level,
-      drafts: r.drafts, pickups: r.pickups, time: r.time, streams: r.streams, byType: r.byType,
+      drafts: r.drafts, dashes: r.dashes, closeCalls: r.closeCalls, damageTaken: r.damageTaken,
+      pickups: r.pickups, time: r.time, streams: r.streams, byType: r.byType,
     }))
   }
   if (pageErrors.length) console.log(JSON.stringify({ mode: 'det', pageErrors }))

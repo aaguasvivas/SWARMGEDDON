@@ -1,8 +1,18 @@
 import { Container, Graphics } from 'pixi.js'
-import { COLORS, PLAYER_MAX_HP, PLAYER_RADIUS, PLAYER_SPEED } from '../config.ts'
+import { COLORS, DASH, PLAYER_MAX_HP, PLAYER_RADIUS, PLAYER_SPEED } from '../config.ts'
 import { clamp, lerp, type Vec2 } from '../core/vec.ts'
 import type { CharacterDef } from '../content/characters.ts'
 import type { Bounds } from './arena.ts'
+
+/** Units a dash covers each tick (the sim always steps FIXED_DT). */
+const DASH_STEP = DASH.distance / DASH.ticks
+
+/** A countdown that lands exactly on 0, so a timer of N ticks lasts N ticks
+ *  instead of N or N+1 depending on float rounding. */
+export function tickDown(v: number, dt: number): number {
+  const n = v - dt
+  return n > 1e-6 ? n : 0
+}
 
 /**
  * The lone survivor. Phase-0 placeholder art: a teal body, a darker "visor"
@@ -27,6 +37,21 @@ export class Player {
   speed = PLAYER_SPEED
   hp = PLAYER_MAX_HP
   maxHp = PLAYER_MAX_HP
+
+  /** Blocks every kind of damage while > 0 (seconds). */
+  invuln = 0
+  /** What granted the current i-frames: 0 none, 1 dash, 2 grace. */
+  invulnSrc: 0 | 1 | 2 = 0
+  /** Blocks discrete hits while > 0 (seconds). */
+  hitCd = 0
+  /** Contact bite cadence (seconds until the next bite may land). */
+  biteCd = 0
+  /** Dash motion ticks left; while > 0 the stick and the well pull are ignored. */
+  dashTicks = 0
+  dashDirX = 1
+  dashDirY = 0
+  /** Slowed recovery after a dash (seconds). */
+  endLagT = 0
 
   private g = new Graphics()
 
@@ -95,6 +120,21 @@ export class Player {
     this.y = this.prevY = y
     this.facing = 0
     this.view.position.set(x, y)
+    this.invuln = 0
+    this.invulnSrc = 0
+    this.hitCd = 0
+    this.biteCd = 0
+    this.dashTicks = 0
+    this.endLagT = 0
+  }
+
+  /** Grant `sec` of i-frames. The source is recorded only when this grant is
+   *  the binding one, so a dash inside a longer grace stays grace. */
+  grantInvuln(sec: number, src: 1 | 2): void {
+    if (sec >= this.invuln) {
+      this.invuln = sec
+      this.invulnSrc = src
+    }
   }
 
   /**
@@ -106,11 +146,21 @@ export class Player {
     this.prevX = this.x
     this.prevY = this.y
 
-    const sp = this.speed * speedMul
-    // Gravity-well drag adds to (never replaces) stick input; it's pre-clamped
-    // well below any pilot's speed, so the player can always fight out of it.
-    this.x += (move.x * sp + pullX) * dt
-    this.y += (move.y * sp + pullY) * dt
+    if (this.dashTicks > 0) {
+      this.x += this.dashDirX * DASH_STEP
+      this.y += this.dashDirY * DASH_STEP
+      if (--this.dashTicks === 0) this.endLagT = DASH.endLag
+    } else {
+      let sp = this.speed * speedMul
+      if (this.endLagT > 0) {
+        sp *= DASH.endLagSpeedMul
+        this.endLagT = tickDown(this.endLagT, dt)
+      }
+      // Gravity-well drag adds to (never replaces) stick input; it's pre-clamped
+      // well below any pilot's speed, so the player can always fight out of it.
+      this.x += (move.x * sp + pullX) * dt
+      this.y += (move.y * sp + pullY) * dt
+    }
 
     // Clamp inside the arena, accounting for body radius.
     this.x = clamp(this.x, bounds.x + this.radius, bounds.x + bounds.w - this.radius)

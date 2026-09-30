@@ -67,7 +67,7 @@ for (const f of files) {
   out.push({
     file: f,
     arena: r.cfg.arena,
-    mode: r.cfg.mode + (r.cfg.perkPolicy === 'priority' ? '+P' : ''),
+    mode: r.cfg.mode + (r.cfg.dash ? '+dash' : '') + (r.cfg.perkPolicy === 'priority' ? '+P' : ''),
     seed: r.cfg.seed,
     endTime: r.endTime,
     dead: r.dead,
@@ -101,6 +101,10 @@ for (const f of files) {
     xpExpiredFrac: +(r.xpExpired / Math.max(1, r.xpExpired + xpCollected)).toFixed(3),
     dmgTaken: r.dmgTaken,
     healed: r.healed,
+    dashes: r.dashes ?? 0,
+    closeCalls: r.closeCalls ?? 0,
+    closeCallsPerMin: +((r.closeCalls ?? 0) / (r.endTime / 60)).toFixed(2),
+    fromHalfHp: r.death?.fromHalfHp ?? null,
     frozenSteps: r.frozenSteps,
     perMin,
     levelUpGapsOver60s: lvGaps,
@@ -130,6 +134,15 @@ for (const s of out) {
       `xpExp=${s.xpExpired}/${(s.xpExpiredFrac * 100).toFixed(0)}%`,
       `podFail=${s.podDropFailedAtPickupCap} pkCap=${s.pickupCapStepFrac}`,
       `lv/min=${s.levelUpsPerMin.join(',')}`,
+      `dash=${s.dashes} cc/min=${s.closeCallsPerMin}`,
+      `50%->death=${s.fromHalfHp ?? '-'}s`,
     ].join(' | '),
   )
+}
+// A10 readable deaths: seconds from the last moment at 50%+ HP to death.
+const readable = out.map((s) => s.fromHalfHp).filter((v) => v !== null).sort((a, b) => a - b)
+if (readable.length) {
+  const mid = readable.length >> 1
+  const median = readable.length % 2 ? readable[mid] : (readable[mid - 1] + readable[mid]) / 2
+  console.log(`A10 deaths=${readable.length} median=${median.toFixed(2)}s min=${readable[0].toFixed(2)}s (pass: median >= 3.0, min >= 1.2)`)
 }

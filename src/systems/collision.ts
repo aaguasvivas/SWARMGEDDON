@@ -1,4 +1,4 @@
-import { HEALTH_DROP_CHANCE, HEALTH_HEAL, HEALTH_HEAL_ELITE } from '../config.ts'
+import { BITE, CLOSE_CALL, GRACE, HEALTH_DROP_CHANCE, HEALTH_HEAL, HEALTH_HEAL_ELITE } from '../config.ts'
 import { distSq } from '../core/vec.ts'
 import { PICKUP_WEAPON_IDS } from '../content/weapons.ts'
 import {
@@ -9,8 +9,10 @@ import {
   spawnImpact,
   spawnRing,
 } from '../effects/fx.ts'
-import { FF_AOE, FF_BOSS, FF_CONTACT, FF_CRIT, FF_DISCRETE, FF_ELITE, FF_RAM, FeelKind } from '../effects/feelQueue.ts'
+import { FF_AOE, FF_BOSS, FF_CRIT, FF_ELITE, FF_RAM, FeelKind } from '../effects/feelQueue.ts'
 import { spawnAcidPool } from './acid.ts'
+import { hurtPlayer } from './damage.ts'
+import { closeCall, closeCallArmed } from './dash.ts'
 import { dropGem, dropHealth, spawnWeaponDrop } from './pickups.ts'
 import { spawnEnemy } from './spawn.ts'
 import type { Enemy } from '../game/enemy.ts'
@@ -21,9 +23,9 @@ const ENEMY_MAX_RADIUS = 48 // padding for broad-phase (queen is large)
 
 /**
  * All circle-overlap resolution for the tick: player projectiles vs enemies
- * (crit, armor, slow, chain, explosion, pierce), enemy contact + thorns, enemy
- * acid projectiles vs player (dodge), and player death (with revives) -> game
- * over. Submerged burrowers are intangible.
+ * (crit, armor, slow, chain, explosion, pierce), enemy contact bites + rams +
+ * thorns, enemy projectiles vs player, Close Calls, and player death (with
+ * revives) -> game over. Submerged burrowers are intangible.
  */
 export function collisionSystem(world: World, dt: number): void {
   const buf = world.queryBuf
@@ -57,7 +59,14 @@ export function collisionSystem(world: World, dt: number): void {
     }
   }
 
-  // Enemy contact -> continuous player damage (+ thorns back).
+  // Enemy contact: one bite per BITE.window from the top 3 overlapping
+  // enemies, charger rams as discrete hits, thorns back on every toucher.
+  let armed = closeCallArmed(world)
+  let b1 = 0
+  let b2 = 0
+  let b3 = 0
+  let bx = 0
+  let by = 0
   const enemies = world.enemies.active
   for (let i = 0; i < enemies.length; i++) {
     const e = enemies[i]!
@@ -65,49 +74,84 @@ export function collisionSystem(world: World, dt: number): void {
     // swept until end of tick). Matters most for the charger's FLAT ram: you
     // shouldn't eat a 26-burst from a charger you killed on the same tick.
     if (!e.alive || e.submerged) continue
+    const d2 = distSq(e.x, e.y, pl.x, pl.y)
     const rr = e.radius + pl.radius
-    if (distSq(e.x, e.y, pl.x, pl.y) < rr * rr) {
-      // Charger windup/dash is NOT a chip: the telegraph (phase 1) is safe to
-      // stand near, and the dash (phase 2) lands ONE solid ram if its locked
-      // line catches you. That is the payoff for the tell (a fast dt-scaled pass would
-      // otherwise be nearly free). Stalk/recover use normal contact.
-      if (e.def.behavior === 'charger' && (e.phase === 1 || e.phase === 2)) {
-        if (e.phase === 2 && !e.dashHit) {
+    if (d2 >= rr * rr) {
+      if (armed && e.def.burrow && surfacedNear(e, d2)) {
+        closeCall(world)
+        armed = false
+      }
+      continue
+    }
+    // Charger windup/dash is NOT a bite: the telegraph (phase 1) is safe to
+    // stand near, and the dash (phase 2) lands ONE solid ram if its locked
+    // line catches you. That is the payoff for the tell. Stalk/recover bite.
+    if (e.def.behavior === 'charger' && (e.phase === 1 || e.phase === 2)) {
+      if (e.phase === 2 && !e.dashHit) {
+        if (armed) {
+          closeCall(world)
+          armed = false
+        }
+        if (hurtPlayer(world, e.damage * world.dmgMul, 'discrete', -1, e.x, e.y, FF_RAM) > 0) {
           e.dashHit = true
-          const ram = e.damage * (1 - m.damageReduction)
-          pl.hp -= ram
-          world.feel.emit(FeelKind.PlayerHurt, FF_DISCRETE | FF_RAM, e.x, e.y, ram, 0, e.def)
           if (m.thorns > 0) thornsDamage(world, e, m.thorns)
         }
-        continue
       }
-      const bite = e.damage * dt * (1 - m.damageReduction)
-      pl.hp -= bite
-      world.feel.emit(FeelKind.PlayerHurt, FF_CONTACT, e.x, e.y, bite, 0, e.def)
-      if (m.thorns > 0) thornsDamage(world, e, m.thorns * dt)
+      continue
     }
+    if (armed && (e.def.elite || e.def.boss || (e.def.burrow && surfacedNear(e, d2)))) {
+      closeCall(world)
+      armed = false
+    }
+    const v = e.damage * BITE.scale
+    if (v > b1) {
+      b3 = b2
+      b2 = b1
+      b1 = v
+      bx = e.x
+      by = e.y
+    } else if (v > b2) {
+      b3 = b2
+      b2 = v
+    } else if (v > b3) {
+      b3 = v
+    }
+    if (m.thorns > 0) thornsDamage(world, e, m.thorns * dt)
+  }
+  if (b1 > 0 && pl.biteCd <= 0 && pl.invuln <= 0) {
+    const bite = Math.min((b1 + BITE.w2 * b2 + BITE.w3 * b3) * world.dmgMul, BITE.capFracOfMaxHp * pl.maxHp)
+    hurtPlayer(world, bite, 'bite', -1, bx, by)
+    pl.biteCd = BITE.window
   }
 
-  // Enemy acid/blast projectiles -> player (dodge can negate).
+  // Enemy projectiles -> player. A shot the player's i-frames ignore flies on.
   const eps = world.enemyProjectiles.active
   for (let i = 0; i < eps.length; i++) {
     const p = eps[i]!
     if (!p.alive) continue
     const rr = p.radius + pl.radius
     if (distSq(p.x, p.y, pl.x, pl.y) < rr * rr) {
-      if (m.dodge > 0 && world.rngs.combat.float() < m.dodge) {
-        p.alive = false
-        continue
+      if (armed) {
+        closeCall(world)
+        armed = false
       }
-      const hit = p.damage * (1 - m.damageReduction)
-      pl.hp -= hit
-      world.feel.emit(FeelKind.PlayerHurt, FF_DISCRETE, p.x, p.y, hit)
-      if (p.leavesAcid) spawnAcidPool(world, p.x, p.y)
-      p.alive = false
+      if (hurtPlayer(world, p.damage * world.dmgMul, 'discrete', -1, p.x, p.y) > 0) {
+        if (p.leavesAcid) spawnAcidPool(world, p.x, p.y)
+        p.alive = false
+      }
     }
   }
 
   handleDeath(world)
+}
+
+/** A burrower that surfaced within CLOSE_CALL.surfacedWithin with its body
+ *  within CLOSE_CALL.surfacedDist of the player (d2 = center distance²). */
+function surfacedNear(e: Enemy, d2: number): boolean {
+  const b = e.def.burrow!
+  if (e.stateTimer <= b.surfaceTime - CLOSE_CALL.surfacedWithin) return false
+  const r = e.radius + CLOSE_CALL.surfacedDist
+  return d2 < r * r
 }
 
 /** Whether `p` already struck the enemy with this uid (last 8 hits). */
@@ -325,6 +369,7 @@ function handleDeath(world: World): void {
   if (world.mods.revives > world.revivesUsed) {
     world.revivesUsed++
     pl.hp = pl.maxHp * 0.5
+    pl.grantInvuln(GRACE.revive, 2)
     world.feel.emit(FeelKind.Revive, 0, pl.x, pl.y)
     // Shove nearby enemies back so the revive isn't instant death.
     const enemies = world.enemies.active

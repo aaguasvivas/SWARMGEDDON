@@ -1,8 +1,8 @@
 import { MAX_ACID } from '../config.ts'
 import { distSq } from '../core/vec.ts'
 import { spawnAcidSplash } from '../effects/fx.ts'
-import { FF_ACID, FeelKind } from '../effects/feelQueue.ts'
 import type { World } from '../game/world.ts'
+import { hurtPlayer } from './damage.ts'
 
 /** Drop a lingering acid pool (spitter projectile landed). Also stamps the
  *  ichor terrain so the hazard reads as part of the floor. */
@@ -40,10 +40,6 @@ export function acidSystem(world: World, dt: number): void {
       continue
     }
     const rr = ap.radius + pl.radius * 0.4
-    if (distSq(ap.x, ap.y, pl.x, pl.y) < rr * rr) {
-      const burn = ap.damage * dt * (1 - world.mods.damageReduction)
-      pl.hp -= burn
-      world.feel.emit(FeelKind.PlayerHurt, FF_ACID, ap.x, ap.y, burn)
-    }
+    if (distSq(ap.x, ap.y, pl.x, pl.y) < rr * rr) hurtPlayer(world, ap.damage * dt * world.dmgMul, 'zone', -2, ap.x, ap.y)
   }
 }
