@@ -6,7 +6,12 @@
 //   scenarios (default all = flood, boss, event):
 //     flood   live combat at 5:00, the field topped up to 500 every frame
 //     boss    the mid1 fight (cage up, boss kept above 35% HP), field at 500
-//     event   EVENT 1 (2:30) emitting and streaming, field at 500
+//     event   EVENT 1 (2:30), field at 500, event units given 1e6 HP (a stream
+//             unit still leaves at its TTL): the warm-up plays up to the
+//             beat, and the window opens when the event goes live (a part
+//             emitting or an event unit alive) and closes when it ends, after at
+//             most --seconds. It fails if the event was not live at the
+//             window's start or lasted under 4 s.
 //     final   the FINAL SWARM beat (10:00), field at 500
 //   Every scenario: NOVA, invincible, auto-fire, Hailstorm, the --perks build
 //   (default piercing, cryo, explosive, arc, incendiary, ricochet, SHATTER,
@@ -80,6 +85,7 @@ const PERKS = flags.perks === undefined
   : String(flags.perks).split(',').filter(Boolean)
 const W = 390
 const H = 844
+const MIN_EVENT_SEC = 4
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 const jsFlags = []
@@ -93,7 +99,7 @@ const DRIVER = `(async () => {
   const w = S.world
   const spawn = await import('/src/systems/spawn.ts')
   const { RING_STD } = await import('/src/config.ts')
-  const st = { scenario: '', topUp: true, target: 500, keepBoss: false }
+  const st = { scenario: '', topUp: true, target: 500, keepBoss: false, keepEvent: false }
   let mix = null
   let mixTotal = 0
   const topUp = (n) => {
@@ -119,14 +125,33 @@ const DRIVER = `(async () => {
       w.xpToNext = 1e12
       if (w.paused && w.draft.open) S.pickCard(0)
       if (st.keepBoss && w.boss && w.boss.alive && w.boss.hp < w.boss.maxHp * 0.35) w.boss.hp = w.boss.maxHp * 0.35
+      if (st.keepEvent) {
+        const a = w.enemies.active
+        for (let i = 0; i < a.length; i++) {
+          const e = a[i]
+          if (e.alive && e.eventUnit && e.maxHp < 1e6) e.maxHp = e.hp = 1e6
+        }
+      }
       if (st.topUp && w.enemies.size < st.target) topUp(st.target - w.enemies.size)
     }
     requestAnimationFrame(keepLive)
   }
   requestAnimationFrame(keepLive)
-  const eventActive = () => w.director.events.some((r) => r.active)
+  const eventUnits = () => {
+    const a = w.enemies.active
+    let n = 0
+    for (let i = 0; i < a.length; i++) if (a[i].alive && a[i].eventUnit) n++
+    return n
+  }
+  const emitting = () => {
+    const runs = w.director.events
+    for (let i = 0; i < runs.length; i++) if (runs[i].active) return true
+    return false
+  }
+  const eventLive = () => emitting() || eventUnits() > 0
   window.__PA = {
-    setup(scenario, arena, perks) {
+    eventLive,
+    setup(scenario, arena, perks, warm) {
       st.scenario = ''
       S.setLoadout('nova', arena)
       S.startRun('endless')
@@ -140,21 +165,25 @@ const DRIVER = `(async () => {
       mixTotal = mix.reduce((s, m) => s + m[1], 0)
       st.topUp = scenario !== 'gc'
       st.keepBoss = scenario === 'boss'
+      st.keepEvent = scenario === 'event'
       if (scenario === 'flood') S.jumpTo(300)
       else if (scenario === 'boss') {
         S.jumpTo(238.4)
         for (let i = 0; i < 240 && !w.bossAlive; i++) S.step(1)
       } else if (scenario === 'event') {
-        S.jumpTo(146.5)
-        for (let i = 0; i < 600 && !eventActive(); i++) S.step(1)
+        // The warm-up is live play before the beat, so the whole event is left
+        // for the window.
+        const beat = w.script.beats.find((b) => b.kind === 'event')
+        S.jumpTo(Math.max(0, beat.at - warm - 1))
       } else if (scenario === 'final' || scenario === 'gc') S.jumpTo(600)
       st.scenario = scenario
-      return { time: +w.time.toFixed(2), boss: w.bossAlive, event: eventActive() }
+      return { time: +w.time.toFixed(2), boss: w.bossAlive, event: eventLive() }
     },
     status() {
       return {
         time: +w.time.toFixed(2), enemies: w.enemies.size, projectiles: w.projectiles.size, enemyShots: w.enemyProjectiles.size,
-        particles: w.particles.size, pickups: w.pickups.size, hazards: w.hazards.size, boss: w.bossAlive, event: eventActive(),
+        particles: w.particles.size, pickups: w.pickups.size, hazards: w.hazards.size, boss: w.bossAlive, event: eventLive(),
+        emitting: emitting(), eventUnits: eventUnits(),
         cage: w.director.cage.active, kills: w.kills, paused: w.paused, screen: S.screen,
       }
     },
@@ -162,8 +191,10 @@ const DRIVER = `(async () => {
   }
 })()`
 
+// Code this probe evaluates in the page (the driver, the polls) has a script
+// but no url; builtins have neither.
 function category(url) {
-  if (!url) return 'native'
+  if (!url) return 'harness'
   if (url.startsWith('pptr:')) return 'harness'
   if (/\/src\/(systems|game|content|core)\//.test(url)) return 'sim'
   if (/\/src\//.test(url)) return 'presentation'
@@ -184,7 +215,7 @@ function aggregate(head, seconds) {
   const cat = { sim: 0, presentation: 0, lib: 0, native: 0, harness: 0 }
   const walk = (node, parentJs) => {
     const cf = node.callFrame
-    const isJs = !!cf.url
+    const isJs = !!cf.url || (!!cf.scriptId && cf.scriptId !== '0')
     const name = cf.functionName || '(anonymous)'
     let key
     let c
@@ -429,22 +460,33 @@ try {
   } else {
     for (const arena of ARENAS) {
       for (const scen of SCEN) {
-        const setup = await page.evaluate((s, a, p) => window.__PA.setup(s, a, p), scen, arena, PERKS)
-        await sleep(WARM * 1000)
+        const isEvent = scen === 'event'
+        const setup = await page.evaluate((s, a, p, wm) => window.__PA.setup(s, a, p, wm), scen, arena, PERKS, WARM)
+        if (isEvent) await page.waitForFunction(() => window.__PA.eventLive(), { polling: 'raf', timeout: (WARM + 90) * 1000 })
+        else await sleep(WARM * 1000)
         const s0 = await page.evaluate(() => window.__PA.status())
         if (flags.dumpio) await page.evaluate(MARK('start'))
         await cdp.send('HeapProfiler.startSampling', {
           samplingInterval: parseInt(flags.interval ?? '8192'), includeObjectsCollectedByMajorGC: true, includeObjectsCollectedByMinorGC: true,
         })
-        await sleep(SECONDS * 1000)
+        const t0 = performance.now()
+        if (isEvent) {
+          // A timeout means the event outlived the window.
+          await page.waitForFunction(() => !window.__PA.eventLive(), { polling: 100, timeout: SECONDS * 1000 }).catch((e) => {
+            if (e.name !== 'TimeoutError') throw e
+          })
+        } else await sleep(SECONDS * 1000)
         const { profile } = await cdp.send('HeapProfiler.stopSampling')
+        const secs = (performance.now() - t0) / 1000
         if (flags.dumpio) await page.evaluate(MARK('stop'))
         const s1 = await page.evaluate(() => window.__PA.status())
-        const agg = aggregate(profile.head, SECONDS)
-        const pass = (flags.scope === 'game' ? agg.gameMBs : agg.totalMBs) <= BUDGET && agg.simOver.length === 0
+        const agg = aggregate(profile.head, secs)
+        const eventOk = !isEvent || (s0.event && secs >= MIN_EVENT_SEC)
+        const pass = eventOk && (flags.scope === 'game' ? agg.gameMBs : agg.totalMBs) <= BUDGET && agg.simOver.length === 0
         if (!pass) failed = true
         console.log(JSON.stringify({
-          mode: 'alloc', scenario: scen, arena, noinline: !!flags.noinline, seconds: SECONDS, setup, start: s0, end: s1,
+          mode: 'alloc', scenario: scen, arena, noinline: !!flags.noinline, seconds: +secs.toFixed(2), setup, start: s0, end: s1,
+          ...(isEvent ? { eventOk } : {}),
           totalMBs: agg.totalMBs, gameMBs: agg.gameMBs, byCategory: agg.byCategory, pass, simOver: agg.simOver, top: agg.top,
         }))
       }

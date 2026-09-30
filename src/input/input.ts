@@ -90,6 +90,10 @@ export class InputManager {
 
     window.addEventListener('gamepadconnected', this.onGamepadConnected)
     window.addEventListener('gamepaddisconnected', this.onGamepadDisconnected)
+    // A pad pressed during boot fired its one gamepadconnected before this
+    // listener existed; pollGamepad only reads pads once one is counted.
+    const pads = navigator.getGamepads ? navigator.getGamepads() : []
+    for (const p of pads) if (p) this.padsConnected++
   }
 
   /**

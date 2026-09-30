@@ -37,14 +37,22 @@ export function lerpAngle(a: number, b: number, t: number): number {
  * Math.sqrt(x * x + y * y) differs in the last bit for about 40% of inputs.
  * Magnitudes by comparison, not Math.abs: V8's mid tier calls Math.abs as a
  * builtin that boxes its result. A -0 magnitude is harmless: it is squared,
- * or it lands in the zero case, which returns +0 as Math.hypot does.
+ * or it lands in the zero case, which returns +0 as Math.hypot does. The
+ * special cases keep Math.hypot's order: an infinite argument wins over NaN,
+ * and NaN is tested before the max, which a NaN would silently lose. They
+ * return the argument itself: returning the global Infinity or NaN makes V8
+ * box every result of the inlined call. scripts/test-hypot.mjs checks the
+ * edge pairs and random pairs bit for bit.
  */
 export function hypot(x: number, y: number): number {
   const ax = x < 0 ? -x : x
   const ay = y < 0 ? -y : y
+  if (ax === Infinity) return ax
+  if (ay === Infinity) return ay
+  if (ax !== ax) return ax
+  if (ay !== ay) return ay
   const m = ax > ay ? ax : ay
   if (m === 0) return 0
-  if (m === Infinity) return m
   const nx = ax / m
   const ny = ay / m
   return Math.sqrt(nx * nx + ny * ny) * m
