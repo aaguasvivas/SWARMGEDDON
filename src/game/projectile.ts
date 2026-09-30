@@ -1,4 +1,5 @@
 import type { Sprite } from 'pixi.js'
+import { doubleFields } from '../core/fields.ts'
 import type { Poolable } from '../core/pool.ts'
 import type { EvoBehavior } from '../content/weapons.ts'
 
@@ -43,5 +44,7 @@ export class Projectile implements Poolable {
   /** EnemyDef.idx of the enemy that fired this shot (-1 for the player's own). */
   ownerIdx = -1
 
-  constructor(readonly sprite: Sprite) {}
+  constructor(readonly sprite: Sprite) {
+    doubleFields(this)
+  }
 }

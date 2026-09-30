@@ -1706,6 +1706,37 @@ node scripts/measure.mjs 390 844 perf ; node scripts/measure.mjs 390 844 perf-fi
 - The 60 s `flood(500)` heap sample grows after a forced GC: +1.55 MB (integrator) and +0.8 MB (fix re-run), where section 3.2 asks for no growth.
 - P19 or P20 profiles and fixes both.
 
+**Section 3.2 note (PA, zero-allocation pass).**
+- Measured with `node scripts/probe-alloc.mjs` (CDP sampling heap profiler, objects freed by GC included): flood (5:00), boss (the mid1 fight) and event (EVENT 1) in each world, the field topped up to 500, NOVA with 8 perks and Hailstorm, 15 s warm-up, 10 s window. Base `a81b33d` against PA, MB per second:
+
+| Scenario | Base total | Base sim | Base Pixi | PA total | PA sim | PA presentation | PA Pixi |
+|---|---|---|---|---|---|---|---|
+| flood hive | 21.7 | 7.81 | 13.3 | 9.9 | 0.41 | 0.16 | 9.3 |
+| boss hive | 17.1 | 9.73 | 7.3 | 4.3 | 0.03 | 0.04 | 4.2 |
+| event hive | 19.6 | 7.64 | 11.8 | 9.1 | 0.08 | 0.09 | 8.9 |
+| flood depths | 22.6 | 8.79 | 13.3 | 9.8 | 0.09 | 0.09 | 9.6 |
+| boss depths | 19.9 | 10.60 | 8.8 | 5.6 | 0.65 | 0.04 | 4.9 |
+| event depths | 21.2 | 8.06 | 12.6 | 9.1 | 0.06 | 0.09 | 8.9 |
+| flood wastes | 21.3 | 7.29 | 13.5 | 9.5 | 0.06 | 0.10 | 9.3 |
+| boss wastes | 18.7 | 9.85 | 8.4 | 4.7 | 0.01 | 0.04 | 4.7 |
+| event wastes | 20.3 | 7.30 | 12.5 | 8.5 | 0.06 | 0.08 | 8.4 |
+
+- The causes were engine behavior, found with V8's own output (`--trace-turbo` graphs listing each `Allocate` node by source line, `--trace-deopt` and `--trace-generalization` inside marked windows), not in the source:
+  - `SpatialHash` cleared its buckets and the query buffer with `length = 0`, which frees an array's backing store in V8, so every insert and every query grew a new one (most of `aiSystem` and all of `buildEnemyHash`). Buckets now keep a count, and `query` writes `out[0..n)` without cutting `out`, in the same order.
+  - `Math.hypot` copies its arguments per call. `hypot()` in `core/vec.ts` is V8's and JavaScriptCore's two-argument algorithm step for step, so it is bit-identical (0 differences in 5 million random pairs in Node and in Chrome 156; `Math.sqrt(x * x + y * y)` differs for about 40% of them). Every det, det-long and det-death hash is unchanged.
+  - A number field that first holds a fraction mid-run (the first bite, pod, acid pool, boss fight) changes the hidden class of every object of that shape and deoptimizes each system compiled against it; they then run unoptimized, allocating on every arithmetic step, for many frames. `doubleFields()` (`core/fields.ts`) settles the number fields of the long-lived sim objects at construction. `node scripts/probe-alloc.mjs x all --shapes` plays the full arc in each world and fails on any representation change after 10 s: base 38 changes in the first 150 s of Hive, PA none in 780 s of each world.
+  - Enemy and weapon defs were object literals of many shapes, so every per-enemy `def` read was a per-type lookup that boxes fractional fields, and a new type mid-run deoptimized its readers. Both tables now build every def with every key in one order.
+  - `aiSystem` merged the imported `ENEMY_SPEED_CEIL` (an untyped module binding) into the speed, which boxed the speed of every enemy every tick; it now clamps with `Math.min`.
+  - Particle emitters called `rng.range` per value (a call that is not inlined returns its number boxed) and Pixi setters inside the sim tick. They now draw with `Rng.fill` (float()'s steps, bit for bit) and record the look (texture, blend, tint); `renderParticles` applies it when the particle first shows.
+  - Pixi builds a `Color` on every `tint` write, even an unchanged one: per-frame and spawn-time tint writes go through `setTint` (writes only a change).
+  - DEV only: `GameLoop.p95()` sorts a preallocated copy, and the hidden debug overlay no longer builds its info object.
+- What remains:
+  - Pixi internals, 4.2 to 9.6 MB per second: the transform update of every sprite that changed this frame (loads of fractional fields through megamorphic property access box, about 70 B per changed sprite per frame), the draw-list rebuild each time a pooled sprite is shown or hidden (`break`), and the HUD's per-frame `Graphics` redraws (P15 replaces them). Section 3.2's budget of 0.5 MB per second total therefore fails on the Pixi share alone. Candidates for P19 or P20: particles and gibs in a `ParticleContainer` on one atlas, pooled sprites kept visible and moved out of view instead of toggled, and the render groups tried here (no measurable change, reverted).
+  - A code path first met in a window (the first elite hit, a psychic's first retreat) still deoptimizes its system once per page session; the unoptimized frames that follow put up to 0.6 MB per second in `aiSystem` or `pickupSystem` for that window (boss depths, flood hive above; 0.08 to 0.23 MB per second for `pickupSystem` across runs of the same scene). The optimized code itself has no allocation in its per-entity loops: in the TurboFan graphs `aiSystem` allocates only to box `fireEnemyShot`'s two arguments (once per enemy shot) and `pickupSystem` only at a pod spawn.
+  - The 60 s heap sample after a forced GC grows +0.25 MB (base) and +0.83 MB (PA; +0.96 MB over 120 s, so it levels off). The retained sample is 0.8 to 0.9 MB in both builds: Pixi's ticker frame (0.36 to 0.65 MB) and pools reaching a new high (enemy shots, particles); game code keeps 0.05 to 0.11 MB.
+  - A16 (lane run, other lanes busy): 10 s of the `perf-final` scene, 9 minor GCs, no major GC, longest pause 1.43 ms (`node scripts/probe-alloc.mjs x x --gc --perks=`).
+  - `node scripts/measure.mjs 390 844 bench nova hive 10 --perks=...` (3 runs each, contended machine): stepSim mean 0.47 to 0.65 ms base, 0.38 to 0.63 ms PA; render update 0.62 to 0.79 ms base, 0.58 to 0.79 ms PA; Pixi draw 1.36 to 1.65 ms base, 1.39 to 1.90 ms PA. No change beyond the noise on an M1.
+
 **A1 note (P4 review).**
 - "Both phone views" means the P14 normalized camera views: 560 x 996 (portrait) and 996 x 560 (landscape). Measure them with `node scripts/measure.mjs 375 667 opening 560 996` and `node scripts/measure.mjs 375 667 opening 996 560`.
 - Without view arguments, `opening` uses a 1:1 view (375 x 667 world units). That view cannot pass before P14, because `RING_NEAR` stays off screen on the normalized views by design (C27). Measured worst empty view: 16.0 s at 375 x 667 and 15.3 s at 667 x 375.

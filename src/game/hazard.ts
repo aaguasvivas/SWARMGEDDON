@@ -1,3 +1,4 @@
+import { doubleFields } from '../core/fields.ts'
 import type { Poolable } from '../core/pool.ts'
 
 export const HZ_CIRCLE = 0
@@ -40,4 +41,8 @@ export class Hazard implements Poolable {
   onEnd = HZ_END_NONE
   /** HZ_END_SPAWN: the enemy def spawned where the hazard ends. */
   unit = ''
+
+  constructor() {
+    doubleFields(this)
+  }
 }

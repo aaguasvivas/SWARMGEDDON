@@ -35,6 +35,7 @@ export class GameLoop {
   /** Worst raw frame (ms) since the last resetStats(). */
   maxMs = 0
   private samples = new Float32Array(240) // ~4s ring at 60fps
+  private readonly sorted = new Float32Array(240)
   private sampleIdx = 0
   private sampleCount = 0
 
@@ -80,8 +81,11 @@ export class GameLoop {
   p95(): number {
     const n = this.sampleCount
     if (n === 0) return 0
-    const sorted = Array.from(this.samples.subarray(0, n)).sort((a, b) => a - b)
-    return sorted[Math.min(n - 1, Math.floor(n * 0.95))]!
+    // Sorted in place in a scratch copy; the unfilled tail sorts past the samples.
+    const s = this.sorted
+    for (let i = 0; i < s.length; i++) s[i] = i < n ? this.samples[i]! : Infinity
+    s.sort()
+    return s[Math.min(n - 1, Math.floor(n * 0.95))]!
   }
 
   private tick = (nowMs: number): void => {

@@ -12,6 +12,12 @@ export const HZ_TEX = { discR: 96, laneLen: 160, laneHalf: 40, sectorR: 160, cag
 /** The cage ring is large on screen and soft by design, so it bakes at 1x. */
 const CAGE_BAKE_RES = 1
 
+/** Tint `s` with `c` (0xRRGGBB). Pixi builds a Color, and allocates, on every
+ *  tint write, even an unchanged one, so per-frame code writes only changes. */
+export function setTint(s: Sprite, c: number): void {
+  if (s.tint !== c) s.tint = c
+}
+
 interface Baked {
   texture: Texture
   /** Anchor that pivots the sprite at the drawing's (0,0) origin, regardless of

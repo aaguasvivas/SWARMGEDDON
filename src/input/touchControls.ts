@@ -1,6 +1,6 @@
 import { Container, Graphics, Text } from 'pixi.js'
 import { COLORS, DASH_BTN, TOUCH_STICK_RADIUS, TOUCH_STICK_DEADZONE } from '../config.ts'
-import { normalizeInto, type Vec2 } from '../core/vec.ts'
+import { hypot, normalizeInto, type Vec2 } from '../core/vec.ts'
 import type { Insets } from '../platform/safeArea.ts'
 
 const KNOB_RADIUS = 30
@@ -206,7 +206,7 @@ export class TouchControls {
       this.moveKnob.position.set(kx, ky)
       let mx = kx / TOUCH_STICK_RADIUS
       let my = ky / TOUCH_STICK_RADIUS
-      const m = Math.hypot(mx, my)
+      const m = hypot(mx, my)
       if (m < TOUCH_STICK_DEADZONE) {
         mx = 0
         my = 0
@@ -216,7 +216,7 @@ export class TouchControls {
     } else if (id === this.aimId) {
       const { kx, ky } = this.clampKnob(x - this.aimBaseX, y - this.aimBaseY)
       this.aimKnob.position.set(kx, ky)
-      const mag = Math.hypot(kx, ky) / TOUCH_STICK_RADIUS
+      const mag = hypot(kx, ky) / TOUCH_STICK_RADIUS
       if (mag < TOUCH_STICK_DEADZONE) {
         this.aim.x = 0
         this.aim.y = 0
@@ -333,7 +333,7 @@ export class TouchControls {
 
   /** Clamp a knob offset to the stick's travel radius. */
   private clampKnob(dx: number, dy: number): { kx: number; ky: number } {
-    const l = Math.hypot(dx, dy)
+    const l = hypot(dx, dy)
     if (l > TOUCH_STICK_RADIUS) {
       const s = TOUCH_STICK_RADIUS / l
       return { kx: dx * s, ky: dy * s }

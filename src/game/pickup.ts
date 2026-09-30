@@ -1,4 +1,5 @@
 import type { Sprite } from 'pixi.js'
+import { doubleFields } from '../core/fields.ts'
 import type { Poolable } from '../core/pool.ts'
 
 export type PickupKind = 'xp' | 'bank' | 'weapon' | 'health'
@@ -41,5 +42,7 @@ export class Pickup implements Poolable {
   /** Pods: spawned by the pod timer (one timer pod at a time). */
   timer = false
 
-  constructor(readonly sprite: Sprite) {}
+  constructor(readonly sprite: Sprite) {
+    doubleFields(this)
+  }
 }

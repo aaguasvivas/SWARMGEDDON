@@ -41,7 +41,8 @@ import {
   WARN_LEAD,
   WIN_PANEL_DELAY,
 } from '../config.ts'
-import { clamp } from '../core/vec.ts'
+import { doubleFields } from '../core/fields.ts'
+import { clamp, hypot } from '../core/vec.ts'
 import { AFFIX_BIT, tagTitle } from '../content/affixes.ts'
 import { BOSS_STAGES } from '../content/bosses.ts'
 import { ENEMIES } from '../content/enemies.ts'
@@ -123,6 +124,8 @@ export class Director {
 
   constructor() {
     for (let i = 0; i < EVENT_SLOTS; i++) this.events.push(new EventRun())
+    doubleFields(this)
+    doubleFields(this.cage)
   }
 
   reset(): void {
@@ -525,7 +528,7 @@ function tickBossArrival(world: World): void {
     } else {
       bossPoint(world, ang)
     }
-    const len = Math.hypot(bossOut.x - pl.x, bossOut.y - pl.y) || 1
+    const len = hypot(bossOut.x - pl.x, bossOut.y - pl.y) || 1
     const kind = b.stage === 'final' ? AlertKind.Final : AlertKind.Boss
     world.alerts.push(world.feel, kind, text.title, text.sub, (bossOut.x - pl.x) / len, (bossOut.y - pl.y) / len, t, pl.x, pl.y)
   }
@@ -559,6 +562,8 @@ function tickBossArrival(world: World): void {
 
 const bossOut = { x: 0, y: 0 }
 const cageOut = { x: 0, y: 0, r: 0 }
+doubleFields(bossOut)
+doubleFields(cageOut)
 
 /** The cage for a fight starting now (section 4.7): the center keeps the ring
  *  CAGE_WALL_PAD inside the arena walls, and the radius grows until the ring
@@ -569,7 +574,7 @@ function cageFor(world: World): void {
   const pad = CAGE_R + CAGE_WALL_PAD
   cageOut.x = b.w > 2 * pad ? clamp(pl.x, b.x + pad, b.x + b.w - pad) : b.x + b.w / 2
   cageOut.y = b.h > 2 * pad ? clamp(pl.y, b.y + pad, b.y + b.h - pad) : b.y + b.h / 2
-  cageOut.r = Math.max(CAGE_R, Math.hypot(pl.x - cageOut.x, pl.y - cageOut.y) + CAGE_PLAYER_PAD)
+  cageOut.r = Math.max(CAGE_R, hypot(pl.x - cageOut.x, pl.y - cageOut.y) + CAGE_PLAYER_PAD)
 }
 
 /** Turns tried from the rolled spawn angle, in order: the roll, its opposite,
@@ -594,7 +599,7 @@ function bossPoint(world: World, ang: number): void {
   // CAGE_PLAYER_PAD and its center sits CAGE_R + CAGE_WALL_PAD inside the walls.
   const dx = cageOut.x - pl.x
   const dy = cageOut.y - pl.y
-  const len = Math.hypot(dx, dy) || 1
+  const len = hypot(dx, dy) || 1
   bossOut.x = pl.x + (dx / len) * BOSS_SPAWN_DIST
   bossOut.y = pl.y + (dy / len) * BOSS_SPAWN_DIST
 }

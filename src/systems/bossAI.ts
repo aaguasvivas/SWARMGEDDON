@@ -1,6 +1,7 @@
 import { BOSS_EMERGE, BOSS_ROAR, BOSS_TELE_MIN, FRENZY_CADENCE, FRENZY_CADENCE_MAX, MAX_BROOD, MAX_ENEMIES, MAX_ENEMY_PROJECTILES } from '../config.ts'
 import { lerpHex } from '../core/color.ts'
-import { clamp } from '../core/vec.ts'
+import { doubleFields } from '../core/fields.ts'
+import { clamp, hypot } from '../core/vec.ts'
 import {
   ATK_CINDERFALL,
   ATK_EGG_CLUTCH,
@@ -44,6 +45,7 @@ import { hurtPlayer } from './damage.ts'
 import { closeCall, closeCallArmed } from './dash.ts'
 import { spawnHazard } from './hazards.ts'
 import { spawnEnemy } from './spawn.ts'
+import { setTint } from '../render/textures.ts'
 
 export const BS_EMERGE = 0
 export const BS_IDLE = 1
@@ -107,6 +109,10 @@ export class BossFight {
   blinkX = 0
   blinkY = 0
   blinkOk = false
+
+  constructor() {
+    doubleFields(this)
+  }
 
   begin(stage: BossStage): void {
     this.stage = stage
@@ -521,7 +527,7 @@ function bossHazard(w: World, shape: number, x: number, y: number, r: number, te
 function aimAtPlayer(w: World, e: Enemy): void {
   const f = w.bossFight
   const pl = w.player
-  const d = Math.hypot(pl.x - e.x, pl.y - e.y) || 1
+  const d = hypot(pl.x - e.x, pl.y - e.y) || 1
   f.dirX = (pl.x - e.x) / d
   f.dirY = (pl.y - e.y) / d
 }
@@ -576,11 +582,11 @@ function undertowPull(w: World, e: Enemy): void {
   const pl = w.player
   const dx = e.x - pl.x
   const dy = e.y - pl.y
-  const d = Math.hypot(dx, dy)
+  const d = hypot(dx, dy)
   if (d <= e.radius + pl.radius) return
   let px = w.pullX + (dx / d) * UNDERTOW.pull
   let py = w.pullY + (dy / d) * UNDERTOW.pull
-  const m = Math.hypot(px, py)
+  const m = hypot(px, py)
   if (m > MAX_WELL_PULL) {
     px *= MAX_WELL_PULL / m
     py *= MAX_WELL_PULL / m
@@ -681,7 +687,7 @@ function bossShot(w: World, e: Enemy, a: number, speed: number, damage: number, 
   const s = p.sprite
   s.visible = true
   s.alpha = 1
-  s.tint = tint
+  setTint(s, tint)
   s.scale.set(radius / 7)
 }
 
@@ -709,6 +715,7 @@ function lanceVolley(w: World, e: Enemy, aim: number): void {
 }
 
 const spot = { x: 0, y: 0 }
+doubleFields(spot)
 
 /** Clamp `spot` inside the cage (by `cagePad`) and inside the arena walls (by
  *  `wallPad`). Returns whether it moved. */
@@ -798,7 +805,7 @@ function idleMove(w: World, e: Enemy, kit: BossKit, dt: number): void {
   const pl = w.player
   const dx = pl.x - e.x
   const dy = pl.y - e.y
-  const d = Math.hypot(dx, dy) || 1
+  const d = hypot(dx, dy) || 1
   const ux = dx / d
   const uy = dy / d
   let spd = e.speed * kit.speedMul

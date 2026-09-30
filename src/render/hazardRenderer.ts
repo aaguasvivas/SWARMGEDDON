@@ -5,7 +5,7 @@ import { ENEMIES } from '../content/enemies.ts'
 import { HZ_CIRCLE, HZ_LANE, HZ_SWEEP } from '../game/hazard.ts'
 import type { World } from '../game/world.ts'
 import { sweepAngle } from '../systems/hazards.ts'
-import { HZ_TEX, type TextureRegistry } from './textures.ts'
+import { HZ_TEX, setTint, type TextureRegistry } from './textures.ts'
 
 /** Damaging hazards read as danger; markers and boss telegraphs wear the boss color. */
 const DANGER_TINT = 0xff5a3c
@@ -82,7 +82,7 @@ export class HazardRenderer {
         s.rotation = h.ang + h.arc / 2
         s.scale.set(h.len / HZ_TEX.sectorR)
       }
-      s.tint = h.damage > 0 ? DANGER_TINT : markTint
+      setTint(s, h.damage > 0 ? DANGER_TINT : markTint)
       const k = h.tele > 0 ? 1 - h.tele / h.teleMax : 1
       if (h.tele > 0) {
         const pale = h.damage === 0 && !(h.shape === HZ_CIRCLE && h.r > MARKER_MAX_R)
@@ -111,7 +111,7 @@ export class HazardRenderer {
       ring.position.set(c.x, c.y)
       ring.scale.set((c.r / HZ_TEX.cageR) * (0.6 + 0.4 * form))
       ring.alpha = CAGE_ALPHA * form
-      ring.tint = bossTint
+      setTint(ring, bossTint)
     }
   }
 }

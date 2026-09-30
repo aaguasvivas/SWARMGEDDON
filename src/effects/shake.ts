@@ -1,4 +1,5 @@
 import { hash32 } from '../core/rng.ts'
+import { hypot } from '../core/vec.ts'
 
 const DECAY = 1.6
 const MAX_ROT = 0.021
@@ -42,7 +43,7 @@ export class Shake {
   kick(dx: number, dy: number): void {
     let kx = this.kickX + dx
     let ky = this.kickY + dy
-    const m = Math.hypot(kx, ky)
+    const m = hypot(kx, ky)
     if (m > KICK_MAX) {
       kx *= KICK_MAX / m
       ky *= KICK_MAX / m

@@ -1,5 +1,6 @@
 import type { AudioEngine } from '../audio/audio.ts'
 import { ENEMIES, type EnemyDef } from '../content/enemies.ts'
+import { hypot } from '../core/vec.ts'
 import { WEAPON_LIST } from '../content/weapons.ts'
 import type { World } from '../game/world.ts'
 import { haptic } from '../platform/haptics.ts'
@@ -445,7 +446,7 @@ export class FeelDirector {
     const pl = this.world.player
     const dx = pl.x - sx
     const dy = pl.y - sy
-    const d = Math.hypot(dx, dy) || 1
+    const d = hypot(dx, dy) || 1
     this.shake.kick((dx / d) * px, (dy / d) * px)
   }
 }

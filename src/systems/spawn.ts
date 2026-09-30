@@ -1,8 +1,10 @@
 import { HP_RAMP_T_CAP, MAX_ENEMIES, RING_STD, SPEED_RAMP, SPEED_RAMP_CAP_T } from '../config.ts'
+import { doubleFields } from '../core/fields.ts'
 import { clamp } from '../core/vec.ts'
 import { ENEMIES } from '../content/enemies.ts'
 import type { Enemy } from '../game/enemy.ts'
 import type { World } from '../game/world.ts'
+import { setTint } from '../render/textures.ts'
 
 export interface RingHalf {
   readonly halfW: number
@@ -11,6 +13,7 @@ export interface RingHalf {
 
 /** Result slot of ringSpawnPoint / ringPointAt (read it before the next call). */
 export const ringOut = { x: 0, y: 0 }
+doubleFields(ringOut)
 const openSides = new Int8Array(4)
 
 /**
@@ -132,7 +135,7 @@ export function spawnEnemy(world: World, defId: string, x: number, y: number): E
   const s = e.sprite
   s.visible = true
   s.alpha = 1
-  s.tint = def.tint
+  setTint(s, def.tint)
   s.scale.set(def.scale)
   return e
 }

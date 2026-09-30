@@ -1,3 +1,5 @@
+import { doubleFields } from './fields.ts'
+
 /**
  * Seeded, deterministic PRNG. ALL gameplay randomness must flow through an
  * instance of this so a given seed reproduces a run bit-for-bit: that's what
@@ -27,6 +29,7 @@ export class Rng {
 
   constructor(seed: number) {
     this.a = seed >>> 0
+    doubleFields(this)
   }
 
   /** Reset the stream to a new seed (used on run restart for determinism). */
@@ -45,6 +48,24 @@ export class Rng {
     t = Math.imul(t ^ (t >>> 15), 1 | t)
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+
+  /**
+   * The next `n` floats into `out`: the draws of n float() calls, bit for bit.
+   * For code that must not allocate: a float() (or range()) call that V8 does
+   * not inline returns its number boxed on the heap, and the particle
+   * emitters run too rarely per frame to be inlined reliably. The steps are
+   * float()'s, repeated so this loop makes no call at all.
+   */
+  fill(out: Float64Array, n: number): void {
+    let a = this.a
+    for (let i = 0; i < n; i++) {
+      let t = (a = (a + 0x6d2b79f5) | 0)
+      t = Math.imul(t ^ (t >>> 15), 1 | t)
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+      out[i] = ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+    this.a = a
   }
 
   /** Float in [min, max). */

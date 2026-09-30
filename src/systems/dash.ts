@@ -1,6 +1,6 @@
 import { ADRENAL_WAKE, BLAST_KNOCK, DASH, FUSION } from '../config.ts'
 import { CLOSE_CALL_CHAIN } from '../core/rules.ts'
-import type { Vec2 } from '../core/vec.ts'
+import { hypot, type Vec2 } from '../core/vec.ts'
 import { FeelKind } from '../effects/feelQueue.ts'
 import { tickDown } from '../game/player.ts'
 import { addChain } from '../game/scoring.ts'
@@ -50,7 +50,7 @@ export function dashSystem(w: World, input: DashInput, dt: number): void {
 
   const mx = input.move.x
   const my = input.move.y
-  const ml = Math.hypot(mx, my)
+  const ml = hypot(mx, my)
   if (ml >= DASH.minMoveForDir) {
     pl.dashDirX = mx / ml
     pl.dashDirY = my / ml

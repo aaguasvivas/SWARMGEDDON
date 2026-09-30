@@ -105,4 +105,24 @@ const SPECS: Record<string, EnemySpec> = {
 /** Every enemy id in a stable order (RunResult kill tallies and the killer id). */
 export const ENEMY_IDS: readonly string[] = Object.keys(SPECS)
 export const ENEMIES: Record<string, EnemyDef> = {}
-for (let i = 0; i < ENEMY_IDS.length; i++) ENEMIES[ENEMY_IDS[i]!] = { ...SPECS[ENEMY_IDS[i]!]!, idx: i }
+for (let i = 0; i < ENEMY_IDS.length; i++) ENEMIES[ENEMY_IDS[i]!] = uniformDef(SPECS[ENEMY_IDS[i]!]!, i)
+
+/**
+ * Every def carries every key in one order (an absent option is undefined), so
+ * all defs share one hidden class. The AI and the renderer read `def` fields
+ * for every enemy every tick: with one shape those reads stay direct instead
+ * of a per-type lookup that boxes each fractional field, and a type first met
+ * mid-run no longer deoptimizes them. The literal's type lists every key, so
+ * a new EnemyDef key is a compile error here until it is copied.
+ */
+function uniformDef(s: EnemySpec, idx: number): EnemyDef {
+  const d: { [K in keyof Required<EnemyDef>]: EnemyDef[K] | undefined } = {
+    id: s.id, displayName: s.displayName, sprite: s.sprite, hp: s.hp, speed: s.speed, radius: s.radius, damage: s.damage, xp: s.xp,
+    tint: s.tint, scale: s.scale, behavior: s.behavior, gibColor: s.gibColor, gibCount: s.gibCount, hpRamp: s.hpRamp,
+    frontArmor: s.frontArmor, preferRange: s.preferRange, fireCooldown: s.fireCooldown, projectileSpeed: s.projectileSpeed,
+    projectileDamage: s.projectileDamage, leavesAcid: s.leavesAcid, splitInto: s.splitInto, splitCount: s.splitCount,
+    aura: s.aura, burrow: s.burrow, teleport: s.teleport, warps: s.warps, charge: s.charge, wellPull: s.wellPull, hatch: s.hatch,
+    elite: s.elite, boss: s.boss, idx,
+  }
+  return d as EnemyDef
+}

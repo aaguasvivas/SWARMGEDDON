@@ -1,4 +1,5 @@
 import type { Sprite } from 'pixi.js'
+import { doubleFields } from '../core/fields.ts'
 import type { Poolable } from '../core/pool.ts'
 
 /**
@@ -16,5 +17,7 @@ export class AcidPool implements Poolable {
   life = 0
   maxLife = 1
 
-  constructor(readonly sprite: Sprite) {}
+  constructor(readonly sprite: Sprite) {
+    doubleFields(this)
+  }
 }

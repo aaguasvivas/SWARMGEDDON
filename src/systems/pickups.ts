@@ -5,6 +5,7 @@ import { FeelKind } from '../effects/feelQueue.ts'
 import { PICKUP_SLOT, PICKUP_SLOTS, type Pickup, type PickupKind } from '../game/pickup.ts'
 import type { World } from '../game/world.ts'
 import { healPlayer } from './damage.ts'
+import { setTint } from '../render/textures.ts'
 
 const R = PICKUP_RESERVE
 /** Guaranteed slots per PICKUP_SLOT index. */
@@ -83,7 +84,7 @@ export function dropGem(world: World, x: number, y: number, xp: number): void {
   world.texReg.applySprite(p.sprite, 'gem')
   const s = p.sprite
   s.visible = true
-  s.tint = COLORS.gem
+  setTint(s, COLORS.gem)
   s.alpha = 1
   s.scale.set(1.15)
 }
@@ -143,7 +144,7 @@ function bankXp(world: World, x: number, y: number, xp: number): void {
     world.texReg.applySprite(b.sprite, 'gem')
     const s = b.sprite
     s.visible = true
-    s.tint = BANK_TINT
+    setTint(s, BANK_TINT)
     s.alpha = 1
   }
   b.xp += xp
@@ -170,7 +171,7 @@ export function dropHealth(world: World, x: number, y: number, heal: number): vo
   world.texReg.applySprite(p.sprite, 'health')
   const s = p.sprite
   s.visible = true
-  s.tint = COLORS.health
+  setTint(s, COLORS.health)
   s.alpha = 1
   s.scale.set(1)
 }
@@ -300,7 +301,7 @@ function spawnPod(world: World, x: number, y: number, weaponId: string, timer: b
   world.texReg.applySprite(p.sprite, 'crate')
   const s = p.sprite
   s.visible = true
-  s.tint = WEAPONS[weaponId]!.tint
+  setTint(s, WEAPONS[weaponId]!.tint)
   s.alpha = 1
   s.scale.set(1)
   world.feel.emit(FeelKind.PodSpawn, 0, x, y, 0, weaponIndex(weaponId))
