@@ -20,6 +20,7 @@ export class MainMenu {
   onLeaderboard: () => void = () => {}
   onCyclePilot: () => void = () => {}
   onCycleArena: () => void = () => {}
+  onCyclePaint: () => void = () => {}
 
   private backdrop = new Graphics()
   private title: Text
@@ -33,7 +34,10 @@ export class MainMenu {
   private leaderboard: Button
   private pilot: Button
   private arena: Button
+  private paint: Button
   private pilotSwatch = new Graphics()
+  private w = 0
+  private h = 0
 
   constructor() {
     this.title = new Text({ text: 'SWARMGEDDON', style: { fontFamily: FONT.display, fontSize: 46, fontWeight: '900', fill: COLORS.player, letterSpacing: 2 } })
@@ -62,25 +66,35 @@ export class MainMenu {
     // Loadout selectors: tap to cycle pilot / arena (labels set via setLoadout).
     this.pilot = new Button('', 136, 40, 'secondary', 13)
     this.arena = new Button('', 136, 40, 'secondary', 13)
+    this.paint = new Button('', 136, 40, 'secondary', 13)
+    this.paint.view.visible = false
     this.endless.onClick = () => this.onPlay('endless')
     this.daily.onClick = () => this.onPlay('daily')
     this.settings.onClick = () => this.onSettings()
     this.leaderboard.onClick = () => this.onLeaderboard()
     this.pilot.onClick = () => this.onCyclePilot()
     this.arena.onClick = () => this.onCycleArena()
+    this.paint.onClick = () => this.onCyclePaint()
 
     this.view.addChild(
       this.backdrop, this.title, this.tagline, this.endless.view, this.daily.view,
-      this.settings.view, this.leaderboard.view, this.pilot.view, this.arena.view,
+      this.settings.view, this.leaderboard.view, this.pilot.view, this.arena.view, this.paint.view,
       this.pilotSwatch, this.loadoutHint, this.info, this.controlsHint,
     )
   }
 
   /** Update the selector labels + the one-line hint under them. `swatch` paints
-   *  the little pilot color chip; pass the pilot's body color. */
-  setLoadout(pilotLabel: string, arenaLabel: string, hint: string, swatch: number): void {
+   *  the little pilot color chip; pass the ship's body color. A null paint
+   *  label hides the paint selector (only factory is owned). */
+  setLoadout(pilotLabel: string, arenaLabel: string, paintLabel: string | null, hint: string, swatch: number): void {
     this.pilot.setText(pilotLabel)
     this.arena.setText(arenaLabel)
+    const paintShown = paintLabel !== null
+    if (paintLabel !== null) this.paint.setText(paintLabel)
+    if (paintShown !== this.paint.view.visible) {
+      this.paint.view.visible = paintShown
+      if (this.w > 0) this.layout(this.w, this.h)
+    }
     this.loadoutHint.text = hint
     this.pilotSwatch.clear()
     this.pilotSwatch.circle(0, 0, 6).fill(swatch)
@@ -88,6 +102,8 @@ export class MainMenu {
   }
 
   layout(w: number, h: number): void {
+    this.w = w
+    this.h = h
     this.backdrop.clear()
     this.backdrop.rect(0, 0, w, h).fill({ color: 0x05070d, alpha: 0.62 })
     const cx = w / 2
@@ -129,12 +145,21 @@ export class MainMenu {
       this.settings.position(cx - 68, y)
     }
     y += smallRow
-    // Loadout row: PILOT + ARENA cyclers, then the hint in a RESERVED two-line
-    // slot (top-anchored) so it can never collide with the buttons or scores.
-    this.pilot.position(cx - 140, y)
-    this.arena.position(cx + 4, y)
-    this.pilotSwatch.position.set(cx - 140 + 14, y + 20)
+    // Loadout row: PILOT + ARENA (+ PAINT) cyclers, then the hint in a RESERVED
+    // two-line slot (top-anchored) so it can never collide with the buttons or
+    // scores. A narrow screen puts PAINT on its own row.
+    const paintShown = this.paint.view.visible
+    const oneRow = paintShown && w >= 440
+    const x0 = oneRow ? cx - 212 : cx - 140
+    this.pilot.position(x0, y)
+    this.arena.position(x0 + 144, y)
+    this.pilotSwatch.position.set(x0 + 14, y + 20)
+    if (oneRow) this.paint.position(x0 + 288, y)
     y += 46
+    if (paintShown && !oneRow) {
+      this.paint.position(cx - 68, y)
+      y += 46
+    }
     this.loadoutHint.position.set(cx, y)
     y += 36
     this.info.position.set(cx, y + 19)

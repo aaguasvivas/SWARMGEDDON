@@ -1,6 +1,5 @@
 import { ARC_ROUNDS, BITE, BOSS_SLOW_CAP, CLOSE_CALL, GRACE, HEALTH_DROP_CHANCE, HEALTH_HEAL, HEALTH_HEAL_ELITE } from '../config.ts'
 import { distSq } from '../core/vec.ts'
-import { PICKUP_WEAPON_IDS } from '../content/weapons.ts'
 import {
   spawnChainArc,
   spawnExplosion,
@@ -355,10 +354,10 @@ function killEnemy(world: World, e: Enemy): void {
   if (def.boss) {
     directorBossKilled(world, e)
     explode(world, e.x, e.y, 140, 0)
-    spawnWeaponDrop(world, e.x, e.y, loot.pick(PICKUP_WEAPON_IDS))
+    spawnWeaponDrop(world, e.x, e.y, loot.pick(world.weaponPool))
     world.feel.emit(FeelKind.BossKill, FF_BOSS, e.x, e.y, 0, 0, def)
   } else if (def.elite && loot.bool(0.5)) {
-    spawnWeaponDrop(world, e.x, e.y, loot.pick(PICKUP_WEAPON_IDS))
+    spawnWeaponDrop(world, e.x, e.y, loot.pick(world.weaponPool))
   }
 }
 

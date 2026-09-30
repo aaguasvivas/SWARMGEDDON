@@ -73,6 +73,7 @@ function fire(world: World, ax: number, ay: number): void {
   const explodeDamage = w.explodeDamage !== undefined ? w.explodeDamage * m.damageMul : damage * m.explodeFrac
   // Arc Rounds on a chain weapon adds hops instead of its proc.
   const chain = w.chain ? w.chain + (m.arcHops > 0 ? m.arcHops - 1 : 0) : 0
+  const tint = w.id === world.character.startWeapon ? world.baseBulletTint : w.tint
 
   const rng = world.rngs.combat
   for (let i = 0; i < count; i++) {
@@ -97,7 +98,7 @@ function fire(world: World, ax: number, ay: number): void {
     const s = p.sprite
     s.visible = true
     s.alpha = 1
-    s.tint = w.tint
+    s.tint = tint
     s.scale.set(scaleX, scale)
   }
 

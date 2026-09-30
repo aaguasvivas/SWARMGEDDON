@@ -1,20 +1,14 @@
 import type { Modifiers } from './perks.ts'
 
 /**
- * Unlock metadata, carried by every selectable cosmetic/loadout item from day
- * one so the future store drops in without rework:
- *   default:  always available.
- *   earn:     unlocked by play (condition checked against a finished run).
- *   premium:  reserved for the cosmetic IAP (dual unlock stays possible: an
- *              `earned` condition may coexist with a `sku`).
+ * How an item is owned (section 7.4). Every selectable pilot, world and paint
+ * carries one. An `earn` item is locked until the feat that rewards it is done;
+ * `sku` leaves room for a cosmetic purchase without code changes.
  */
 export interface UnlockMeta {
   how: 'default' | 'earn' | 'premium'
-  /** Human-readable earn condition, e.g. "reach Lv 8 in one run". */
-  earnDesc?: string
-  /** Condition evaluated when a run ends. */
-  earned?: (r: { time: number; kills: number; level: number; mode: string }) => boolean
-  /** Future store product id. */
+  /** The feat whose reward this item is. */
+  feat?: string
   sku?: string
 }
 
@@ -70,7 +64,7 @@ export const CHARACTERS: readonly CharacterDef[] = [
     passiveName: 'Overcharge',
     passiveDesc: '+15% damage',
     applyPassive: (m) => (m.damageMul *= 1.15),
-    unlock: { how: 'earn', earnDesc: 'reach Lv 8 in one run', earned: (r) => r.level >= 8 },
+    unlock: { how: 'earn', feat: 'overcharged' },
   },
   {
     id: 'vesper',
@@ -84,7 +78,7 @@ export const CHARACTERS: readonly CharacterDef[] = [
     passiveName: 'Reaper',
     passiveDesc: '+1 HP per kill',
     applyPassive: (m) => (m.lifestealPerKill += 1),
-    unlock: { how: 'earn', earnDesc: 'survive 6:00 in one run', earned: (r) => r.time >= 360 },
+    unlock: { how: 'earn', feat: 'thick_hide' },
   },
 ]
 

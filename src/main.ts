@@ -35,6 +35,7 @@ import { Leaderboard } from './ui/leaderboard.ts'
 import { dismissNamePrompt } from './ui/namePrompt.ts'
 import { submitScore } from './net/leaderboard.ts'
 import { TouchHint } from './ui/touchHint.ts'
+import { Toast } from './ui/toast.ts'
 import { bakeIcons } from './ui/icons.ts'
 import { FONT } from './ui/tokens.ts'
 import { tweens } from './ui/tween.ts'
@@ -44,11 +45,16 @@ import { loadSettings, saveSettings, type Settings } from './state/settings.ts'
 import { recordWorldBest, loadWorldBest } from './state/persistence.ts'
 import { buildRunResult, type RunEnd, type RunResult } from './state/runResult.ts'
 import { updateLifetime } from './state/stats.ts'
+import { evaluateFeats } from './state/feats.ts'
+import { migrateSave } from './state/migrate.ts'
 import { shareRunCard } from './share/shareCard.ts'
 import { flushUpdatePrompt, setupUpdatePrompt } from './pwa/updatePrompt.ts'
-import { CHARACTERS, DEFAULT_CHARACTER_ID, characterById } from './content/characters.ts'
+import { CHARACTERS, DEFAULT_CHARACTER_ID, characterById, type CharacterDef } from './content/characters.ts'
 import { ARENAS, DEFAULT_ARENA_ID, arenaById } from './content/arenas.ts'
-import { evaluateUnlocks, grant, isUnlocked } from './state/unlocks.ts'
+import { FEATS, featForReward, validateFeats } from './content/feats.ts'
+import { FACTORY_PAINT_ID, paintById, type PaintDef } from './content/paints.ts'
+import { WEAPONS } from './content/weapons.ts'
+import { grant, isOwned, ownedPaintIds, resolvePools } from './state/unlocks.ts'
 import { spawnEnemy, debugFloodSwarmers } from './systems/spawn.ts'
 import { clampPlayerToCage, directorJumpTo, directorTick } from './systems/director.ts'
 import { hazardsTick } from './systems/hazards.ts'
@@ -74,6 +80,9 @@ type AfterRun = 'recap' | 'menu' | 'retry'
  */
 async function boot(): Promise<void> {
   await initStorage()
+  const featErrors = validateFeats()
+  if (featErrors.length > 0) throw new Error('feat table: ' + featErrors.join('; '))
+  const welcome = migrateSave(todayStr())
   initSafeArea()
   // Fonts load alongside the renderer; every Text is created after both.
   const fontsReady = loadFonts()
@@ -148,13 +157,14 @@ async function boot(): Promise<void> {
   const settingsPanel = new SettingsPanel()
   const leaderboard = new Leaderboard()
   const touchHint = new TouchHint()
+  const toast = new Toast()
   // Dev instrument only: null in prod so the class, its per-frame update, and
   // the backtick toggle are all tree-shaken from the shipped bundle.
   const debug = import.meta.env.DEV ? new DebugOverlay() : null
   // vignette sits at the bottom of the UI (above the world, below the HUD).
   layers.ui.addChild(
     vignette.view, hud.view, input.touch.view, hurtOverlay, flashOverlay, crosshair,
-    touchHint.view, modal.view, winPanel.view, mainMenu.view, gameOver.view, settingsPanel.view, leaderboard.view,
+    touchHint.view, modal.view, winPanel.view, mainMenu.view, gameOver.view, settingsPanel.view, leaderboard.view, toast.view,
   )
   if (debug) layers.ui.addChild(debug.view)
 
@@ -199,6 +209,8 @@ async function boot(): Promise<void> {
   let submitToken = 0
   /** UTC day the current run started on (a run belongs to its start date). */
   let runDate = ''
+  /** Paint id the current run flies. */
+  let runPaint = FACTORY_PAINT_ID
 
   // Register the SW + "new version" toast, but never mid-run ("Update"
   // reloads the page, which would destroy an active run). Parked toasts are
@@ -208,22 +220,36 @@ async function boot(): Promise<void> {
   // --- loadout selection (persisted; locked picks resolve to the default) ---
   let selCharId = loadJSON('sel:char', DEFAULT_CHARACTER_ID)
   let selArenaId = loadJSON('sel:arena', DEFAULT_ARENA_ID)
+  let selPaintId = loadJSON('sel:paint', FACTORY_PAINT_ID)
+
+  /** The selected paint while it is owned; null flies the pilot's own colors. */
+  function selectedPaint(): PaintDef | null {
+    const p = paintById(selPaintId)
+    return p && isOwned('paint:' + p.id) ? p : null
+  }
 
   function refreshLoadoutUI(): void {
     const c = characterById(selCharId)
     const a = arenaById(selArenaId)
-    const cOpen = isUnlocked(c.id, c.unlock)
-    const aOpen = isUnlocked(a.id, a.unlock)
+    const cOpen = isOwned(c.id)
+    const aOpen = isOwned(a.id)
+    const paint = selectedPaint()
     // Two SHORT lines (pilot, then arena): a single run-on line wraps
     // unpredictably on phones and is hard to scan.
-    const cHint = cOpen ? `${c.name}: ${c.passiveDesc}` : `🔒 ${c.name}: ${c.unlock.earnDesc}`
-    const aHint = aOpen ? `${a.name}: vs ${a.broodName}` : `🔒 ${a.name}: ${a.unlock.earnDesc}`
+    const cHint = cOpen ? `${c.name}: ${c.passiveDesc}` : `🔒 ${c.name}: ${featForReward(c.id)!.desc}`
+    const aHint = aOpen ? `${a.name}: vs ${a.broodName}` : `🔒 ${a.name}: ${featForReward(a.id)!.desc}`
     mainMenu.setLoadout(
       cOpen ? `▸ ${c.name}` : `🔒 ${c.name}`,
       aOpen ? `▸ ${a.name}` : `🔒 ${a.name}`,
+      ownedPaintIds().length > 1 ? `▸ ${paint ? paint.name : 'FACTORY'}` : null,
       `${cHint}\n${aHint}`,
-      c.colors.body,
+      (paint ?? c.colors).body,
     )
+    // The ship idling behind the menu previews the pilot and paint.
+    if (screen === 'menu') {
+      const ship = cOpen ? c : characterById(DEFAULT_CHARACTER_ID)
+      player.paint(paint ?? ship.colors, ship.shape)
+    }
     // The selected world's personal best (best time + most kills), shown on the
     // menu and refreshed each time the arena selector cycles.
     mainMenu.setWorldBest(a.name, loadWorldBest(a.id))
@@ -240,15 +266,21 @@ async function boot(): Promise<void> {
     saveJSON('sel:arena', selArenaId)
     refreshLoadoutUI()
   }
+  mainMenu.onCyclePaint = () => {
+    const ids = ownedPaintIds()
+    selPaintId = ids[(ids.indexOf(selectedPaint()?.id ?? FACTORY_PAINT_ID) + 1) % ids.length]!
+    saveJSON('sel:paint', selPaintId)
+    refreshLoadoutUI()
+  }
   refreshLoadoutUI()
 
   /** Resolve the effective run loadout: locked picks fall back to the default,
    *  and the Daily's arena rotates deterministically by date for everyone. */
-  function resolveLoadout(mode: RunMode): { char: (typeof CHARACTERS)[number]; theme: (typeof ARENAS)[number] } {
+  function resolveLoadout(mode: RunMode): { char: CharacterDef; theme: (typeof ARENAS)[number] } {
     const cSel = characterById(selCharId)
-    const char = isUnlocked(cSel.id, cSel.unlock) ? cSel : characterById(DEFAULT_CHARACTER_ID)
+    const char = isOwned(cSel.id) ? cSel : characterById(DEFAULT_CHARACTER_ID)
     let theme = arenaById(selArenaId)
-    if (!isUnlocked(theme.id, theme.unlock)) theme = arenaById(DEFAULT_ARENA_ID)
+    if (!isOwned(theme.id)) theme = arenaById(DEFAULT_ARENA_ID)
     if (mode === 'daily') theme = ARENAS[seedFromString('swarmgeddon:arena:' + todayStr()) % ARENAS.length]!
     return { char, theme }
   }
@@ -257,6 +289,14 @@ async function boot(): Promise<void> {
     const { char, theme } = resolveLoadout(mode)
     runDate = todayStr()
     world.beginRun(runSeed(mode), mode, char, theme)
+    // Pools and paint resolve once here; a grant mid-run never changes this run.
+    const pools = resolvePools(mode)
+    world.perkPool = pools.perks
+    world.weaponPool = pools.weapons
+    const paint = selectedPaint()
+    runPaint = paint ? paint.id : FACTORY_PAINT_ID
+    player.paint(paint ?? char.colors, char.shape)
+    world.baseBulletTint = paint ? paint.bullet : WEAPONS[char.startWeapon]!.tint
     audio.setTheme(theme.music)
     feel.reset()
     deathBeat = false
@@ -284,26 +324,26 @@ async function boot(): Promise<void> {
   function endRun(end: RunEnd, after: AfterRun = 'recap'): void {
     pauseReason = 'none'
     winPanel.hide()
-    // Until the Daily lifecycle and paints exist, every Daily is ranked and the paint is factory.
-    const result = buildRunResult(world, end, { date: runDate, ranked: world.mode === 'daily', dailyNumber: 0, paint: 'factory' })
+    // Until the Daily lifecycle exists, every Daily is ranked.
+    const result = buildRunResult(world, end, { date: runDate, ranked: world.mode === 'daily', dailyNumber: 0, paint: runPaint })
     lastResult = result
     feel.time.reset()
-    updateLifetime(result)
+    const lifetime = updateLifetime(result)
     const gains = recordWorldBest(result)
-    const fresh = evaluateUnlocks(result)
-    if (fresh.length > 0) refreshLoadoutUI()
+    const done = evaluateFeats(result, lifetime)
+    if (done.length > 0) refreshLoadoutUI()
     if (after === 'menu') {
       toMenu()
       return
     }
     // A quick retry skips the recap only when the run has no news to show.
-    if (after === 'retry' && fresh.length === 0 && !gains.score && !gains.time && !gains.kills) {
+    if (after === 'retry' && done.length === 0 && !gains.score && !gains.time && !gains.kills) {
       startRun(world.mode)
       return
     }
     gameOver.show(result, gains)
-    feel.runEnded(gains.score, fresh.length > 0)
-    if (fresh.length > 0) gameOver.setUnlocks(fresh)
+    feel.runEnded(gains.score, done.length > 0)
+    gameOver.setUnlocks(done)
     screen = 'gameover'
     input.setEnabled(false)
     // Submit to the global leaderboard (no-op if unconfigured). The token pins
@@ -450,6 +490,7 @@ async function boot(): Promise<void> {
     gameOver.layout(w, h)
     settingsPanel.layout(w, h)
     leaderboard.layout(w, h)
+    toast.layout(w, insets)
     // Pin the bloom to the visible window (not the whole 2800x1900 arena).
     layers.scene.filterArea = new Rectangle(0, 0, w, h)
     hurtOverlay.clear()
@@ -461,6 +502,7 @@ async function boot(): Promise<void> {
   }
   layout()
   toMenu()
+  if (welcome) toast.show(welcome, 6)
   // Bind to the renderer's own resize event (authoritative: it fires exactly when
   // `resizeTo: window` updates app.screen) plus window events as a backstop.
   app.renderer.on('resize', layout)
@@ -721,6 +763,7 @@ async function boot(): Promise<void> {
       camera.apply(camLayers, sh.offsetX * shakeMul, sh.offsetY * shakeMul, sh.rotation * shakeMul)
       numbers.update(renderClock * 1000, camera.zoom)
       tweens.update(renderClock * 1000)
+      toast.update(fd)
 
       // Ambient backdrop (motes + atmosphere). AFTER the camera write above, so
       // camera-bounded mote recycling uses this frame's window (no edge popping).
@@ -845,6 +888,21 @@ async function boot(): Promise<void> {
         selArenaId = arenaId
         refreshLoadoutUI()
       },
+      /** Own every feat reward: Standard pools become the canonical ones. */
+      unlockAll: () => {
+        for (const f of FEATS) grant(f.reward)
+        refreshLoadoutUI()
+      },
+      setPaint: (id: string) => {
+        if (id !== FACTORY_PAINT_ID) grant('paint:' + id)
+        selPaintId = id
+        saveJSON('sel:paint', id)
+        refreshLoadoutUI()
+      },
+      get runPaint() {
+        return runPaint
+      },
+      toast,
       step: (n = 60) => {
         for (let i = 0; i < n; i++) stepSim(FIXED_DT)
       },
@@ -858,6 +916,7 @@ async function boot(): Promise<void> {
       addXp: (n: number) => world.addXp(n),
       give: (id: string) => world.equipWeapon(id),
       saveJSON,
+      loadJSON,
     }
   }
 }

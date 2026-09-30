@@ -4,7 +4,7 @@ import { Pool } from '../core/pool.ts'
 import { RunRngs, SALT, hash32 } from '../core/rng.ts'
 import { hueShiftHex } from '../core/color.ts'
 import { SpatialHash } from '../core/spatialHash.ts'
-import { DEFAULT_WEAPON_ID, WEAPONS, WEAPON_LIST, type WeaponDef } from '../content/weapons.ts'
+import { DEFAULT_WEAPON_ID, PICKUP_WEAPON_IDS, WEAPONS, WEAPON_LIST, type WeaponDef } from '../content/weapons.ts'
 import { resolveScript, type ResolvedScript } from '../content/runScripts.ts'
 import { PERKS, applyBuild, baseModifiers, resetModifiers, type Modifiers, type PerkDef } from '../content/perks.ts'
 import { CHARACTERS, type CharacterDef } from '../content/characters.ts'
@@ -203,6 +203,12 @@ export class World {
   pendingWin = false
   pendingEnd = false
 
+  // P12b: feats, paints, pools
+  /** Pickup weapon ids pods may drop this run, in canonical order (Daily: every one). */
+  weaponPool: readonly string[] = PICKUP_WEAPON_IDS
+  /** Projectile tint of the pilot's start weapon; the paint sets it. Presentation only. */
+  baseBulletTint = WEAPONS[DEFAULT_WEAPON_ID]!.tint
+
   constructor(
     readonly arena: Arena,
     readonly player: Player,
@@ -265,7 +271,6 @@ export class World {
     this.arena.setTheme(this.arenaTheme)
     this.ichor.stampTintA = this.arenaTheme.ichorA
     this.ichor.stampTintB = this.arenaTheme.ichorB
-    this.player.paint(this.character.colors, this.character.shape)
     this.player.speed = this.character.speed
     this.baseWeaponId = this.character.startWeapon
     this.perkStacks.clear()
@@ -338,6 +343,8 @@ export class World {
     this.cleared = false
     this.pendingWin = false
     this.pendingEnd = false
+    this.weaponPool = PICKUP_WEAPON_IDS
+    this.baseBulletTint = WEAPONS[this.character.startWeapon]!.tint
 
     const b = this.arena.bounds
     this.player.spawn(b.x + b.w / 2, b.y + b.h / 2)

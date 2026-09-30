@@ -860,6 +860,13 @@ export interface RunResult {
   6. If `daily:last.date` is today, write `daily:<today>` with `rankedStarted: true` and `ranked.legacy = true`.
   7. Set `meta:v = 2` and show one toast: `Welcome to v2. Your records earned N feats. See RECORDS.`
   8. v1 `best:endless` and `best:daily` are read-only from then on (RECORDS legacy line `v1 best score: 5,234 (old formula)`).
+- **Built in P12b:**
+  - The legacy maxima read `best:endless` and `best:daily` (`{ score, time, kills, level }`) and every `best:world:<id>` of a known world (`{ time, kills }`). A malformed or missing value reads as 0.
+  - Seeding merges: each world's `bestTime` becomes the larger of the stored and the legacy value, and nothing else in an existing `stats` changes. `importedV1` is set only for a veteran, so a fresh save still gets the first-launch screen.
+  - After the seed, the total feats are evaluated against the seeded stats. So FIVE EVERYWHERE (#40) and WORLD TOUR (#15, a world with a best time counts as played) can be credited at migration.
+  - The toast shows only when N >= 1. The v1 Daily record is `{ rankedStarted: true, ranked: { legacy: true } }`; P13 owns the full `DailyDayRecord`.
+  - `main.startRun` resolves the pools after `World.beginRun`, which resets them to the canonical ones (the harness path). The PAIR tag of a draft card names a weapon only when this run's pods can drop it.
+  - Acceptance: `node scripts/test-meta.mjs` (the saves, in Node) and `node scripts/probe-meta.mjs` (the real boot, drafts and pods in the DEV build). `node scripts/feats-pacing.mjs` is the S1 to S10 check.
 
 ### 7.5 Daily v2
 
@@ -2235,6 +2242,8 @@ Reward lines:
 
 If measured kill rates differ from 250 per minute, retune only the kill thresholds (#12, #23, #32, #35).
 
+Pacing check (P12b, `node scripts/feats-pacing.mjs`): a model player on the real save code, with the session budget above, 250 kills per minute and one ranked Daily per session from S3. Every session S1 to S10 unlocks at least one thing, and each one has at least one count feat (runs, play time, kills or ranked Dailies), which no skill assumption decides. The skill assumptions (run lengths, level, no-hit stretch, boss and elite timing) are listed in the script.
+
 ## A13. Paints
 
 All paints are earned. `factory` = the pilot's own colors, always owned.
@@ -2272,6 +2281,8 @@ All paints are earned. `factory` = the pilot's own colors, always owned.
 | extinction | EXTINCTION | 2a2a2a | ff2d4a | ff2d4a | ff2d4a | ff2d4a | 48 |
 
 Screenshot every paint on every world floor at 375x667 mid-swarm. A paint that makes the ship harder to find than FACTORY gets a lighter outline before ship.
+
+Dark paints (P12b): a body under 3:1 on #05070d (APEX, EXTINCTION) draws its outline 4 u wide, so it is at least 2 px down to the minimum camera zoom of 0.5. Every other hull keeps the 3 u outline. `node scripts/paint-shots.mjs` makes the per-world screenshot sheets.
 
 ## A14. Score tiers
 

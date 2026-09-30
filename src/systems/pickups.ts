@@ -7,7 +7,7 @@ import {
   WEAPON_DROP_LIFETIME,
   XP,
 } from '../config.ts'
-import { PICKUP_WEAPON_IDS, WEAPONS, weaponIndex } from '../content/weapons.ts'
+import { WEAPONS, weaponIndex } from '../content/weapons.ts'
 import { FeelKind } from '../effects/feelQueue.ts'
 import { PICKUP_SLOT, PICKUP_SLOTS, type Pickup, type PickupKind } from '../game/pickup.ts'
 import type { World } from '../game/world.ts'
@@ -226,7 +226,7 @@ export function pickupSystem(world: World, dt: number): void {
     world.weaponDropTimer = WEAPON_DROP_INTERVAL
     const b = world.arena.bounds
     const rng = world.rngs.loot
-    const id = rng.pick(PICKUP_WEAPON_IDS)
+    const id = rng.pick(world.weaponPool)
     spawnWeaponDrop(world, b.x + rng.range(0.15, 0.85) * b.w, b.y + rng.range(0.15, 0.85) * b.h, id)
   }
 

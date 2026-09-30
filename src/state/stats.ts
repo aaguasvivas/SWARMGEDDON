@@ -46,6 +46,10 @@ export function loadStats(): LifetimeStats {
   return { ...emptyStats(), ...loadJSON<Partial<LifetimeStats>>(KEY, {}) }
 }
 
+export function saveStats(s: LifetimeStats): void {
+  saveJSON(KEY, s)
+}
+
 /** Fold one finished run into the lifetime stats and save them. */
 export function updateLifetime(r: RunResult): LifetimeStats {
   const s = loadStats()

@@ -6,6 +6,7 @@ import { characterById } from '../content/characters.ts'
 import { arenaById } from '../content/arenas.ts'
 import { WORLD_SCRIPTS } from '../content/runScripts.ts'
 import type { WorldBestGains } from '../state/persistence.ts'
+import type { FeatUnlock } from '../state/feats.ts'
 import type { RunResult } from '../state/runResult.ts'
 import { Button } from './button.ts'
 import { FONT, T } from './tokens.ts'
@@ -68,6 +69,8 @@ export class GameOver {
   }
 
   private hasUnlockBanner = false
+  /** The unlock banner on one line, and split before the `+N MORE` count. */
+  private unlockText: [string, string] | null = null
   private readonly glow: GlowFilter
 
   acceptsInput(): boolean {
@@ -81,11 +84,16 @@ export class GameOver {
     this.relayout() // the banner slot is sized to its content
   }
 
-  /** Banner anything the run just unlocked (owns the rank line's slot). */
-  setUnlocks(names: string[]): void {
-    if (names.length === 0) return
+  /** Banner the feats the run finished (owns the rank line's slot): the new
+   *  items first, at most two names, then a count of the rest. */
+  setUnlocks(unlocks: FeatUnlock[]): void {
+    if (unlocks.length === 0) return
     this.hasUnlockBanner = true
-    this.rank.text = `★ UNLOCKED: ${names.join(' + ')} ★`
+    const fresh = unlocks.filter((u) => u.fresh)
+    const names = fresh.length > 0 ? fresh.map((u) => u.name) : unlocks.map((u) => u.feat.name)
+    const more = unlocks.length - Math.min(2, names.length)
+    const head = `★ ${fresh.length > 0 ? 'UNLOCKED' : unlocks.length > 1 ? 'FEATS DONE' : 'FEAT DONE'}: ${names.slice(0, 2).join(' + ')}`
+    this.unlockText = more > 0 ? [`${head} +${more} MORE ★`, `${head} ★\n+${more} MORE`] : [`${head} ★`, `${head} ★`]
     this.rank.style.fill = 0xffe066
     this.relayout()
   }
@@ -109,7 +117,15 @@ export class GameOver {
     this.backdrop.clear()
     this.backdrop.rect(0, 0, w, h).fill({ color: 0x05070d, alpha: 0.74 })
     const cx = w / 2
-    this.rank.style.wordWrapWidth = Math.min(w - 32, 500)
+    const bannerW = Math.min(w - 32, 500)
+    this.rank.style.wordWrapWidth = bannerW
+    if (this.unlockText) {
+      // The count wraps as one piece: on its own line when the banner is too wide.
+      this.rank.style.wordWrap = false
+      this.rank.text = this.unlockText[0]
+      if (this.rank.width > bannerW) this.rank.text = this.unlockText[1]
+      this.rank.style.wordWrap = true
+    }
     // Flow by REAL text heights: the stats block is 5 lines since the loadout
     // line was added, and the rank slot doubles as the unlock banner (which can
     // wrap). Fixed offsets let them print over each other (owner playtest bug).
@@ -167,6 +183,7 @@ export class GameOver {
             : ''
     this.rank.text = '' // filled in async by setRank() once the submit returns
     this.hasUnlockBanner = false
+    this.unlockText = null
     this.rank.style.fill = 0x57c8ff
     this.stats.text =
       `${result.mode === 'daily' ? 'DAILY CHALLENGE' : 'ENDLESS'}\n` +

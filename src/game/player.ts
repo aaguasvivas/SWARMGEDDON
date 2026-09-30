@@ -2,6 +2,8 @@ import { Container, Graphics } from 'pixi.js'
 import { COLORS, DASH, PLAYER_MAX_HP, PLAYER_RADIUS, PLAYER_SPEED } from '../config.ts'
 import { clamp, lerp, type Vec2 } from '../core/vec.ts'
 import type { CharacterDef } from '../content/characters.ts'
+import type { PaintColors } from '../content/paints.ts'
+import { INK, contrastRatio } from '../ui/tokens.ts'
 import type { Bounds } from './arena.ts'
 
 /** Units a dash covers each tick (the sim always steps FIXED_DT). */
@@ -65,10 +67,13 @@ export class Player {
    * the hitbox is PLAYER_RADIUS for every shape). Each hull says what the pilot
    * IS at a glance: vanguard = round + side pods, dart = swept speed wedge,
    * heavy = wide armored hex. The barrel stub is shared so facing always reads.
+   * A hull darker than 3:1 on INK is found by its outline alone, so that outline
+   * is 4 u: at least 2 px down to the camera's minimum zoom of 0.5.
    */
-  paint(colors: CharacterDef['colors'], shape: CharacterDef['shape'] = 'vanguard'): void {
+  paint(colors: PaintColors, shape: CharacterDef['shape'] = 'vanguard'): void {
     const g = this.g
     const r = PLAYER_RADIUS
+    const ow = contrastRatio(colors.body, INK) < 3 ? 4 : 3
     g.clear()
     // Barrel stub (drawn first so the hull overlaps its root).
     g.rect(r * 0.5, -3.5, r * 1.0, 7).fill(colors.barrel)
@@ -77,7 +82,7 @@ export class Player {
       // EMBER: a swept wedge with a notched tail and twin exhaust embers.
       g.poly([r * 1.3, 0, -r * 0.95, -r * 0.8, -r * 0.45, 0, -r * 0.95, r * 0.8])
         .fill(colors.body)
-        .stroke({ width: 3, color: colors.outline, join: 'round' })
+        .stroke({ width: ow, color: colors.outline, join: 'round' })
       // Canopy slit, swept toward the nose.
       g.ellipse(r * 0.32, 0, r * 0.42, r * 0.26).fill(colors.visor)
       // Exhaust embers at the tail notches (bright enough to catch the bloom).
@@ -91,7 +96,7 @@ export class Player {
         const a = (Math.PI / 3) * i
         pts.push(Math.cos(a) * R, Math.sin(a) * R)
       }
-      g.poly(pts).fill(colors.body).stroke({ width: 3, color: colors.outline, join: 'round' })
+      g.poly(pts).fill(colors.body).stroke({ width: ow, color: colors.outline, join: 'round' })
       // Inner armor plate (smaller hex, barrel tone).
       const inner: number[] = []
       for (let i = 0; i < 6; i++) {
@@ -108,7 +113,7 @@ export class Player {
       g.circle(0, -r * 0.86, r * 0.34).fill(colors.barrel)
       g.circle(0, r * 0.86, r * 0.34).fill(colors.barrel)
       g.circle(0, 0, r).fill(colors.body)
-      g.circle(0, 0, r).stroke({ width: 3, color: colors.outline })
+      g.circle(0, 0, r).stroke({ width: ow, color: colors.outline })
       g.circle(r * 0.34, 0, r * 0.42).fill(colors.visor)
       g.circle(0, 0, r * 1.28).stroke({ width: 1.5, color: colors.body, alpha: 0.4 })
     }
