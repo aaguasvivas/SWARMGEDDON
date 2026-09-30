@@ -2294,11 +2294,13 @@ Other copy:
 ### A16.1 Buses
 
 ```
-voice → [chaffBus | mainBus] → panBus[-1, -0.5, 0, 0.5, 1] → sfxBus → shaper → master
+voice → panBus[-1, -0.5, 0, 0.5, 1] of its tier → [chaffBus | mainBus] → sfxBus → shaper → master
 music → musicBus → musicDuck → musicLP (20 kHz idle) → master
 ```
 
-- Voice cap: 24. A tier 0 sound is dropped at the cap.
+- Voice cap: 24 (a voice is one recipe instance, alive until its last source stops). A tier 0 sound is dropped at the cap. A tier 1 or 2 sound at the cap takes the slot of the oldest voice of the lowest lower tier (8 ms fade); with none, it is dropped.
+- Each tier has its own 5 pan buses in front of its tier bus, so one gain param per tier bus carries every duck.
+- A pan bus is a gain of `Math.SQRT2` into an equal-power StereoPanner, so a center voice keeps the unpanned (v1) level on each channel. Without StereoPanner it is a unity gain.
 - Pan = `clamp((screenX - W/2) / (W/2), -1, 1)`, snapped to the nearest bus.
 
 | Tier | Sounds | On play |
@@ -2307,11 +2309,13 @@ music → musicBus → musicDuck → musicLP (20 kHz idle) → master
 | 1 | shotgun, heavy, crack, weapon, hurt, heal, eliteSpawn, chargerWindup, podSpawn, emptyClick, lowAmmo, heartbeat, ui, uiConfirm, uiBack, cardDeal, countdown, stamp, dash, closecall, shard, bonus_*, multUp, multBreak, alertEvent, alertElite | chaffBus to 0.4 for 40 ms |
 | 2 | boss, bossKill, death, levelup, fusion, evolve, core1, core3, core5, newBest, feat, win, alertBoss | musicDuck to 0.5 (15 ms attack, 400 ms release); chaffBus to 0 for 120 ms. bossKill, death and win: 0.35 with a 900 ms release |
 
+Overlapping music ducks merge: the release starts from the lower of the two levels and ends at the later end time, so a shallower duck never cuts a deeper one short.
+
 States: pause sets LP 600 Hz and duck 0.6. Low HP sets LP 900 Hz. Death sweeps LP to 400 Hz over 600 ms. When hidden, `ctx.suspend()`.
 
 ### A16.2 Recipes
 
-Primitives: `zap`, `tone`, `thump`, `click`, `noiseSweep`, `arp`, `arpAt`. `play(name, { semis, ratio, pan })`.
+Primitives: `zap`, `tone`, `thump`, `click`, `noiseSweep`, `arp`, `arpAt`. `play(name, semis = 0, ratio = 1, pan = 0)` (positional, so a play allocates only its audio nodes); `semis` and `ratio` scale every oscillator of the recipe.
 
 | Name | Recipe | Throttle |
 |---|---|---|
@@ -2347,7 +2351,7 @@ Primitives: `zap`, `tone`, `thump`, `click`, `noiseSweep`, `arp`, `arpAt`. `play
 | multBreak | zap(440,220,.15,'square',.12,2000,800,0) | 300 ms |
 | fusion | arp([523,659,784,1047,1319],.06,'triangle',.2); thump(120,60,.3,.4) | none |
 | evolve | arp([392,523,659,784,1047,1319],.07,'sawtooth',.18); thump(90,40,.5,.5) | none |
-| core1 / core3 / core5 | arp([784,988],.08,'sine',.15) / arp([784,988,1175],.08,'sine',.18) / arp([784,988,1175,1568],.08,'triangle',.22) + thump(100,50,.4,.4) | none |
+| core1 / core3 / core5 | arp([784,988],.08,'sine',.15) / arp([784,988,1175],.08,'sine',.18) / arp([784,988,1175,1568],.08,'triangle',.22) + thump(100,50,.4,.4) (the thump is core5 only) | none |
 | shard | tone(1319,0,.06,'sine',.08); tone(1760,.05,.08,'sine',.07) | 200 ms |
 | bonus_nuke | thump(70,30,.8,.7); noiseSweep(.8,.4,4000,150,'lowpass') | none |
 | bonus_freeze | zap(2400,1200,.3,'sine',.12,6000,3000,0); noiseSweep(.3,.1,6000,2000,'highpass') | none |
@@ -2356,7 +2360,7 @@ Primitives: `zap`, `tone`, `thump`, `click`, `noiseSweep`, `arp`, `arpAt`. `play
 | bonus_vacuum | zap(200,1600,.4,'sine',.12,2000,6000,0) | none |
 | newBest / feat | arp([659,784,988,1319],.07,'triangle',.18) | none |
 
-Kill ladder: `play('kill', { semis: min(12, 2 x (tier - 1)) })`, with the 40 ms throttle kept.
+Kill ladder: `play('kill', min(12, 2 x (tier - 1)), 1, pan)`, with the 40 ms throttle kept.
 
 ### A16.3 Shake per event
 
@@ -2384,7 +2388,8 @@ Kill ladder: `play('kill', { semis: min(12, 2 x (tier - 1)) })`, with the 40 ms 
 - **Native:** Capacitor Haptics impact for light, medium and heavy; notification for success, warning and error; selection start, changed and end.
 - **Web:** `vibrate` with selection 8, light 12, medium 20, heavy 35, success [12,40,12], warning [20,60,20], error [40,50,40].
 - **Throttle:** 80 ms global. Notifications bypass it.
-- **Gamepad rumble:** heavy, success and error only.
+- **Gamepad rumble:** heavy, success and error only, as dual-rumble with weak = 0.6 x strong: heavy 120 ms at 0.5, success 90 ms at 0.4, error 320 ms at 0.9 (the v1 hurt, draft and death values).
+- **Web gesture gate:** no `vibrate` call before the page's first user activation (Chrome blocks and logs it).
 
 | Event | Haptic |
 |---|---|

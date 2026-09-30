@@ -1,4 +1,5 @@
 import { CanvasSource, Container, FederatedPointerEvent, Graphics, NineSliceSprite, Rectangle, Text, Texture } from 'pixi.js'
+import { haptic } from '../platform/haptics.ts'
 import { FONT, INK, MOTION, RADIUS, T, TARGET, TYPE } from './tokens.ts'
 import { Ease, Prop, tweens } from './tween.ts'
 
@@ -61,7 +62,9 @@ export class Button {
       if (this.enabled) this.onClick()
     })
     this.view.on('pointerdown', () => {
-      if (this.enabled) tweens.to(this.face, Prop.Scale, MOTION.pressScale, MOTION.pressInMs, Ease.OutCubic)
+      if (!this.enabled) return
+      haptic('light')
+      tweens.to(this.face, Prop.Scale, MOTION.pressScale, MOTION.pressInMs, Ease.OutCubic)
     })
     const release = (): void => tweens.to(this.face, Prop.Scale, 1, MOTION.pressOutMs, Ease.OutCubic)
     this.view.on('pointerup', release)
