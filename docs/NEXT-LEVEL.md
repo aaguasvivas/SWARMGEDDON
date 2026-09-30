@@ -30,13 +30,14 @@ Terms used below:
 3. Run `wrangler secret put IP_SALT` at deploy.
 4. Publish the store and privacy copy (section 8.6) before uploading the store build.
 5. Calibrate on iPhone (A17 in section 11).
-6. Spawn rings and the camera (C27). `RING_NEAR` and `RING_STD` stay off screen only on the centered 560 x 996 view. `node scripts/measure.mjs <W> <H> ringview all 300` tests every ring spawn of the first 300 s (seed 777, 1414 in Hive) against the P14 camera. Measured in W1:
+6. Spawn rings and the camera (C27), decided below. `RING_NEAR` and `RING_STD` stay off screen only on the centered 560 x 996 view. `node scripts/measure.mjs <W> <H> ringview all 300` tests every ring spawn of the first 300 s (seed 777, 1414 in Hive) against the P14 camera. Measured in W1:
    - 375x667: 29 spawns inside the view with no aim, 84 with the aim look-ahead, 111 with the touch portrait bias; the deepest is 141 u inside.
    - 390x844 (view 560 x 1212): 95, 230 and 177; the deepest is 311 u inside.
    - 844x390: 76 with the aim look-ahead, up to 70 u inside. 667x375: none.
    - Causes: `LONG_MAX_RATIO` 2.2 gives a 1212 u long side on 19.5:9 phones; the look-ahead (78 u), the touch bias (0.06 x view height), the boss pull (140 u) and the 0.92 fight zoom; and the arena clamp, which moves the view away from a wall, toward the side `ringSpawnPoint` spawns on.
    - Larger rings alone cannot fix it: the arena is 1900 u tall, so a ring taller than 950 u leaves no top or bottom side open while the ship is near the middle row.
    - Options: (a) limit the camera: `LONG_MAX_RATIO` near 1.78, offsets that stay inside the ring, and an arena clamp that never shows past the ring; (b) a render-side fog past the ring distance, so arrivals come out of it; (c) keep the pop-in behind the 0.45 s emerge fade. `ringview` is the acceptance check for the option chosen.
+   - **Decided (2026-09-30): option (c), made readable.** An arrival inside the view is allowed, as in Brotato, but it never pops. P15 adds a render-side, world-themed emerge effect (Hive: a membrane tear, Depths: a bubble plume, Wastes: an ember burst) at every spawn that lands inside the current view, timed to the 0.45 s emerge fade, and the enemy cannot bite during the fade. The camera keeps its full horizontal view in portrait (no `LONG_MAX_RATIO` cut), because enemies approach from the sides. Acceptance: `ringview` at 375x667 and 390x844 reports every in-view spawn with an emerge effect, and no spawn lands within 120 u of the ship.
 
 ---
 
