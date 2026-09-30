@@ -110,7 +110,19 @@ function farthestGem(world: World): Pickup | null {
   return best
 }
 
-/** Add `xp` to the bank gem, creating it at (x, y) when there is none. */
+/** Pull the bank gem in to XP.bankLeash from the player when it lies farther. */
+function leashBank(world: World, b: Pickup): void {
+  const pl = world.player
+  const dx = b.x - pl.x
+  const dy = b.y - pl.y
+  const d2 = dx * dx + dy * dy
+  if (d2 <= XP.bankLeash * XP.bankLeash) return
+  const k = XP.bankLeash / Math.sqrt(d2)
+  b.x = pl.x + dx * k
+  b.y = pl.y + dy * k
+}
+
+/** Add `xp` to the bank gem, creating it at (x, y), leashed, when there is none. */
 function bankXp(world: World, x: number, y: number, xp: number): void {
   let b = world.bankGem
   if (!b) {
@@ -120,8 +132,11 @@ function bankXp(world: World, x: number, y: number, xp: number): void {
     b.xp = 0
     b.heal = 0
     b.weaponId = ''
-    b.x = b.prevX = x
-    b.y = b.prevY = y
+    b.x = x
+    b.y = y
+    leashBank(world, b)
+    b.prevX = b.x
+    b.prevY = b.y
     b.vx = 0
     b.vy = 0
     b.radius = 7
@@ -201,8 +216,9 @@ export function vacuumPickups(world: World): void {
  * Periodically drop a weapon pod; collect on contact. Gems and medkits that
  * enter the capture radius (scaled by Magnetic) are captured and home in at
  * XP.homeStart to XP.homeMax u/s, never letting go. Gems never expire;
- * medkits last XP.medkitLife until captured. Pods drift in inside 0.7 x the
- * capture radius.
+ * medkits last XP.medkitLife until captured. The uncaptured bank gem trails
+ * the player at XP.bankLeash at most. Pods drift in inside 0.7 x the capture
+ * radius.
  */
 export function pickupSystem(world: World, dt: number): void {
   world.weaponDropTimer -= dt
@@ -230,6 +246,7 @@ export function pickupSystem(world: World, dt: number): void {
         p.alive = false
         continue
       }
+      if (p === world.bankGem) leashBank(world, p)
     }
 
     const dx = pl.x - p.x

@@ -179,11 +179,6 @@
           } else if (p.kind === 'health') {
             if (!wantHp || d > 600) continue
             d *= 0.6
-          } else if (p.kind === 'bank' && mode === 'roam') {
-            // The crimson bank gem holds the XP past the gem cap: the
-            // invincible roam bot makes the trip (the others treat it as a gem).
-            if (d > 1200) continue
-            d *= 0.4
           } else {
             if (d > 450) continue
           }
@@ -362,8 +357,9 @@
     if (policy === 'random') {
       const r = st.rand
       if (d.rerolls > 0 && r() < 0.15) {
+        const left = d.rerolls
         S.reroll()
-        st.rerollsUsed++
+        if (d.rerolls < left) st.rerollsUsed++
       }
       if (d.banishes > 0 && r() < 0.1) {
         const i = Math.floor(r() * d.count)

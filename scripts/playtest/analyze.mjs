@@ -94,7 +94,6 @@ for (const f of files) {
     podIds: pods.map((p) => p.id),
     equips: equips.map((e) => `${e.t}:${e.id}`),
     secondsOnPickupWeapon: +onPickup.toFixed(1),
-    xpCollected,
     xpDropped: r.xpDropped,
     xpCollected: r.xpCollected,
     xpCollectFrac: r.xpCollectFrac,

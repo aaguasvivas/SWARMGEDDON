@@ -53,7 +53,7 @@ import { pickupSystem } from './systems/pickups.ts'
 import { collisionSystem } from './systems/collision.ts'
 import { acidSystem } from './systems/acid.ts'
 import { dashSystem } from './systems/dash.ts'
-import { banishCard, draftDue, openDraft as dealDraft, pickCard, pickPerkId, rerollDraft, skipDraft } from './systems/draft.ts'
+import { banishCard, canReroll, draftDue, openDraft as dealDraft, pickCard, pickPerkId, rerollDraft, skipDraft } from './systems/draft.ts'
 import { particleSystem } from './systems/particles.ts'
 
 type Screen = 'menu' | 'playing' | 'gameover' | 'leaderboard'
@@ -384,6 +384,7 @@ async function boot(): Promise<void> {
   modal.onSkip = skipCard
   modal.onReroll = () => rerollDraft(world)
   modal.onBanish = (i) => banishCard(world, i)
+  modal.canReroll = () => canReroll(world)
 
   // --- layout (screen-dependent only; the arena/ichor are fixed-size) ---
   function layout(): void {

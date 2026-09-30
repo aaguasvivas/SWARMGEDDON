@@ -150,6 +150,8 @@ export class World {
   /** Seconds left on the Adrenal Wake and Berserker medkit fire-rate windows. */
   adrenalT = 0
   berserkT = 0
+  /** Magazine size of the equipped weapon, Quartermaster included (-1 = infinite). */
+  ammoMax = -1
 
   // P14: UI foundation
   /** The additive muzzle flash quad (section 6.4). */
@@ -298,6 +300,7 @@ export class World {
   equipWeapon(id: string): void {
     this.weapon = WEAPONS[id]!
     this.ammo = this.weapon.ammo < 0 ? -1 : Math.round(this.weapon.ammo * this.mods.ammoMul)
+    this.ammoMax = this.ammo
   }
 
   // --- XP / level ------------------------------------------------------------

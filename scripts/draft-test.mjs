@@ -11,7 +11,7 @@
 // shows a keystone of the pilot family. Then replays one run twice and
 // compares every card (determinism), and runs the exhaustion case: every perk
 // maxed and every fusion owned, 6 drafts in a row, each 3 fallback cards.
-import { DraftState, openDraft, rerollDraft, banishCard, pickCard, skipDraft, TAG_NEW } from '../src/systems/draft.ts'
+import { DraftState, openDraft, rerollDraft, banishCard, pickCard, skipDraft, canReroll, canBanish, TAG_NEW } from '../src/systems/draft.ts'
 import { PERKS, FUSIONS, FAMILY_OF_PILOT, FALLBACKS } from '../src/content/perks.ts'
 import { WEAPONS, PICKUP_WEAPON_IDS } from '../src/content/weapons.ts'
 import { RunRngs, Rng } from '../src/core/rng.ts'
@@ -45,7 +45,7 @@ function makeWorld(seed, pilot, pool) {
 }
 
 const fail = []
-const stats = { opens: 0, rolls: 0, rerolls: 0, banishes: 0, picks: 0, skips: 0, keystoneDrafts: 0, fusionCards: 0, fusionFirst: 0, fallbackCards: 0, rare: 0, common: 0, tagged: 0, prevRepeats: 0 }
+const stats = { opens: 0, rolls: 0, rerolls: 0, rerollsRefused: 0, banishes: 0, picks: 0, skips: 0, keystoneDrafts: 0, fusionCards: 0, fusionFirst: 0, fallbackCards: 0, rare: 0, common: 0, tagged: 0, prevRepeats: 0 }
 
 function check(w, where, prevIds) {
   const d = w.draft
@@ -120,7 +120,15 @@ function run(seed, draftsWanted, log) {
     for (let guard = 0; guard < 6; guard++) {
       const r = act.float()
       if (r < 0.25 && w.draft.rerolls > 0) {
-        rerollDraft(w)
+        const left = w.draft.rerolls
+        const able = canReroll(w)
+        if (rerollDraft(w) !== able) fail.push(`seed ${seed}: rerollDraft disagrees with canReroll`)
+        if (!able) {
+          stats.rerollsRefused++
+          if (w.draft.rerolls !== left) fail.push(`seed ${seed}: a refused reroll was spent`)
+          if (!w.draft.cards.slice(0, w.draft.count).every((c) => c.kind === 'fallback')) fail.push(`seed ${seed}: reroll refused with a perk or fusion on show`)
+          break
+        }
         stats.rerolls++
         ids = check(w, 'reroll', ids)
       } else if (r < 0.4 && w.draft.banishes > 0) {
@@ -170,6 +178,10 @@ for (let k = 0; k < 6; k++) {
   const ids = ex.draft.cards.slice(0, ex.draft.count).map((c) => c.id)
   exhaustion.push(ids.join(','))
   if (ids.length !== 3 || !ex.draft.cards.slice(0, 3).every((c) => c.kind === 'fallback')) fail.push('exhaustion draft ' + k + ': ' + ids)
+  // Only fallbacks can come up: REROLL and BANISH have nothing to act on and spend nothing.
+  const left = [ex.draft.rerolls, ex.draft.banishes]
+  if (canReroll(ex) || canBanish(ex.draft)) fail.push('exhaustion draft ' + k + ': REROLL or BANISH enabled on fallbacks')
+  if (rerollDraft(ex) || banishCard(ex, 0) || ex.draft.rerolls !== left[0] || ex.draft.banishes !== left[1]) fail.push('exhaustion draft ' + k + ': a reroll or banish was spent on fallbacks')
   pickCard(ex, k % 3)
   if (ex.draft.open || ex.pendingLevelUps !== 0) fail.push('exhaustion draft ' + k + ' did not close')
 }

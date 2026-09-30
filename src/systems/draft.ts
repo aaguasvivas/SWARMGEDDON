@@ -112,10 +112,34 @@ export function openDraft(w: World): number {
   return d.count
 }
 
-/** Re-roll the whole draft. False when no reroll is left. */
-export function rerollDraft(w: World): boolean {
+/** Whether REROLL can change anything: a reroll is left and a roll could show
+ *  more than fallbacks (an eligible perk or an open fusion). */
+export function canReroll(w: World): boolean {
   const d = w.draft
   if (!d.open || d.rerolls <= 0) return false
+  const pool = w.perkPool
+  for (let k = 0; k < pool.length; k++) {
+    const p = pool[k]!
+    if (stacksOf(w, p.id) < p.max && !d.banned.has(p.id)) return true
+  }
+  for (let k = 0; k < FUSIONS.length; k++) {
+    const f = FUSIONS[k]!
+    if (stacksOf(w, f.a) > 0 && stacksOf(w, f.b) > 0 && stacksOf(w, f.id) === 0 && !d.banned.has(f.id)) return true
+  }
+  return false
+}
+
+/** Whether BANISH has a target: a banish is left and a card is not a fallback. */
+export function canBanish(d: DraftState): boolean {
+  if (!d.open || d.banishes <= 0) return false
+  for (let k = 0; k < d.count; k++) if (d.cards[k]!.kind !== 'fallback') return true
+  return false
+}
+
+/** Re-roll the whole draft. False (and nothing spent) when `canReroll` is false. */
+export function rerollDraft(w: World): boolean {
+  const d = w.draft
+  if (!canReroll(w)) return false
   d.rerolls--
   d.rerollIndex++
   rollAll(w, true)

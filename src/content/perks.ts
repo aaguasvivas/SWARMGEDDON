@@ -67,55 +67,59 @@ export interface Modifiers {
   podHoldCut: number
 }
 
+/** The build with no perks. A typed literal, so a Modifiers field without a
+ *  base value fails to compile. */
+const BASE_MODIFIERS: Readonly<Modifiers> = Object.freeze({
+  fireRateMul: 1,
+  damageMul: 1,
+  extraProjectiles: 0,
+  extraPierce: 0,
+  spreadMul: 1,
+  knockbackMul: 1,
+  projectileSpeedMul: 1,
+  projectileLifeMul: 1,
+  moveSpeedMul: 1,
+  bonusHp: 0,
+  hpMul: 1,
+  regenPerSec: 0,
+  lifestealPerKill: 0,
+  killHealCap: 6,
+  magnetMul: 1,
+  critChance: 0,
+  critMul: 2,
+  xpMul: 1,
+  seekBounces: 0,
+  explodeRadius: 0,
+  explodeFrac: 0,
+  arcChance: 0,
+  arcHops: 0,
+  slowOnHit: 0,
+  burnDps: 0,
+  staggerT: 0,
+  thorns: 0,
+  dashCharges: 1,
+  dashIframes: DASH.iframes,
+  dashCooldownMul: 1,
+  adrenalWake: 0,
+  shockRadius: 0,
+  shockDamage: 0,
+  damageReduction: 0,
+  revives: 0,
+  berserker: 0,
+  eliteDamageMul: 1,
+  executeFrac: 0,
+  ammoMul: 1,
+  podLifeBonus: 0,
+  podHoldCut: 0,
+} satisfies Modifiers)
+
 export function baseModifiers(): Modifiers {
-  const m = {} as Modifiers
-  resetModifiers(m)
-  return m
+  return { ...BASE_MODIFIERS }
 }
 
-/** Put every field back to its base value (no allocation). */
+/** Put every field back to its base value (runs at pick time, not per tick). */
 export function resetModifiers(m: Modifiers): void {
-  m.fireRateMul = 1
-  m.damageMul = 1
-  m.extraProjectiles = 0
-  m.extraPierce = 0
-  m.spreadMul = 1
-  m.knockbackMul = 1
-  m.projectileSpeedMul = 1
-  m.projectileLifeMul = 1
-  m.moveSpeedMul = 1
-  m.bonusHp = 0
-  m.hpMul = 1
-  m.regenPerSec = 0
-  m.lifestealPerKill = 0
-  m.killHealCap = 6
-  m.magnetMul = 1
-  m.critChance = 0
-  m.critMul = 2
-  m.xpMul = 1
-  m.seekBounces = 0
-  m.explodeRadius = 0
-  m.explodeFrac = 0
-  m.arcChance = 0
-  m.arcHops = 0
-  m.slowOnHit = 0
-  m.burnDps = 0
-  m.staggerT = 0
-  m.thorns = 0
-  m.dashCharges = 1
-  m.dashIframes = DASH.iframes
-  m.dashCooldownMul = 1
-  m.adrenalWake = 0
-  m.shockRadius = 0
-  m.shockDamage = 0
-  m.damageReduction = 0
-  m.revives = 0
-  m.berserker = 0
-  m.eliteDamageMul = 1
-  m.executeFrac = 0
-  m.ammoMul = 1
-  m.podLifeBonus = 0
-  m.podHoldCut = 0
+  Object.assign(m, BASE_MODIFIERS)
 }
 
 /** `b` to the integer power `n` by repeated multiplication, so every engine

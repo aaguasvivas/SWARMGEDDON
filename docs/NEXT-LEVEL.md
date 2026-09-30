@@ -562,7 +562,7 @@ Constants in A6. Rules:
 - **Gem value:** `def.xp x row.xpScale` for non-elite, non-boss kills. Elite and boss XP is not scaled.
 - **SURGE:** after 40 s with no level-up, collected XP counts x2 until the next level-up.
 - **No XP gem expiry.**
-- **Bank gem:** at 200 gems on the field, the uncaptured gem farthest from the player merges into one crimson bank gem and is reused for the new drop, so new XP still lands at the kill. With no uncaptured gem, or while the bank gem is homing in, the new XP merges into the bank gem.
+- **Bank gem:** at 200 gems on the field, the uncaptured gem farthest from the player merges into one crimson bank gem and is reused for the new drop, so new XP still lands at the kill. With no uncaptured gem, or while the bank gem is homing in, the new XP merges into the bank gem. Until it is captured, the bank gem stays within `XP.bankLeash` (150 u) of the player: when the player moves farther away, it is pulled along the line to the player.
 - **Homing:** a gem that enters `125 x magnetMul` is captured and homes at 260 to 900 u/s. It never releases.
 - **VACUUM** captures every gem and medkit.
 - **Pickup pool reservation:** XP 200 + 1 bank gem, medkits 40, pods 4, cores 4, bonuses 2. MAX 400.
@@ -1889,14 +1889,15 @@ export const BONUS = { perXpChance: 0.0015, pityAfter: 40, minGap: 8, maxOnField
 
 ```ts
 export const XP = { firstLevelCost: 6, a: 5, b: 6, c: 1.2, surgeAfter: 40, surgeMul: 2,
-  gemSoftCap: 200, captureRadius: 125, homeStart: 260, homeMax: 900, homeRamp: 0.35, medkitLife: 10 } as const
+  gemSoftCap: 200, captureRadius: 125, homeStart: 260, homeMax: 900, homeRamp: 0.35, medkitLife: 10,
+  bankLeash: 150 } as const
 export function xpForLevel(L: number): number { return L === 1 ? 6 : Math.floor(5 + 6 * L + 1.2 * L * L) }
 export const PICKUP_RESERVE = { xp: 200, bank: 1, health: 40, weapon: 4, core: 4, bonus: 2 } as const // MAX_PICKUPS 400
 ```
 
 Cumulative XP by level: 6 to reach L2, 108 to reach L5, 647 to reach L10, 1906 to reach L15, 4185 to reach L20, 7784 to reach L25.
 
-Bank gem: tint #ff4a6a, scale `min(2.4, 1.2 + 0.25 x log2(1 + xp / 20))`. It appears where the first merged gem lay and never expires. (P5: merging the new XP instead left a bank gem far from the fight once stale gems filled the cap; a hive smart+P bot collected 1 of 763 XP over a minute.)
+Bank gem: tint #ff4a6a, scale `min(2.4, 1.2 + 0.25 x log2(1 + xp / 20))`. It appears where the first merged gem lay, pulled in to at most `bankLeash` (150 u) from the player, and never expires. Until it is captured, every tick pulls it back to 150 u when the player has moved farther away. So it trails the fight inside the phone view (short half-extent 280 u, minus the 78 u aim look-ahead), and a 25 u step toward it captures it. (P5: merging the new XP instead left a bank gem far from the fight once stale gems filled the cap; a hive smart+P bot collected 1 of 763 XP over a minute. P5 review: with no leash the bank sat at the farthest gem, and the hive roam bot collected 83.7% of dropped XP. A 200 u leash gave 88.8% in the same run, because the bot left the bank alone during the PRIME fight; 150 u gave 95.6%.)
 
 ## A7. Run scripts
 

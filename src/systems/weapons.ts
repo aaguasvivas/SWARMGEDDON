@@ -42,7 +42,7 @@ export function weaponSystem(world: World, dt: number, input: InputManager): voi
         world.feel.emit(FeelKind.WeaponEmpty, 0, pl.x, pl.y, 0, weaponIndex(world.weapon.id))
         world.equipWeapon(world.baseWeaponId)
       } else {
-        const low = world.weapon.ammo * 0.2
+        const low = world.ammoMax * 0.2
         if (world.ammo < low && world.ammo + 1 >= low) world.feel.emit(FeelKind.LowAmmo, 0, pl.x, pl.y, world.ammo)
       }
     }

@@ -2,7 +2,7 @@ import { Container, Graphics, Rectangle, Text } from 'pixi.js'
 import { COLORS } from '../config.ts'
 import { FAMILIES } from '../content/perks.ts'
 import type { Insets } from '../platform/safeArea.ts'
-import type { CardRarity, DraftCard, DraftState } from '../systems/draft.ts'
+import { canBanish, type CardRarity, type DraftCard, type DraftState } from '../systems/draft.ts'
 import { Button } from './button.ts'
 import { FONT, T } from './tokens.ts'
 
@@ -47,6 +47,8 @@ export class LevelUpModal {
   onBanish: (i: number) => void = () => {}
   onReroll: () => void = () => {}
   onSkip: () => void = () => {}
+  /** Whether REROLL can change the cards (draft.ts `canReroll`). */
+  canReroll: () => boolean = () => false
 
   private backdrop = new Graphics()
   private title: Text
@@ -131,7 +133,7 @@ export class LevelUpModal {
 
   toggleBanish(): void {
     const d = this.draft
-    if (!d || d.banishes <= 0) return
+    if (!d || !canBanish(d)) return
     this.banishMode = !this.banishMode
     this.refresh()
   }
@@ -251,9 +253,9 @@ export class LevelUpModal {
     const ctrlY = cardsY + cardsH + 14
     const bx = cx - (bw * 3 + 16) / 2
     this.rerollBtn!.setText(`REROLL (${d.rerolls})`)
-    this.rerollBtn!.setEnabled(d.rerolls > 0)
+    this.rerollBtn!.setEnabled(this.canReroll())
     this.banishBtn!.setText(this.banishMode ? 'CANCEL' : `BANISH (${d.banishes})`)
-    this.banishBtn!.setEnabled(d.banishes > 0)
+    this.banishBtn!.setEnabled(canBanish(d))
     this.rerollBtn!.position(bx, ctrlY)
     this.banishBtn!.position(bx + bw + 8, ctrlY)
     this.skipBtn!.position(bx + (bw + 8) * 2, ctrlY)
