@@ -1,4 +1,5 @@
 import { FIXED_DT, MAX_ENEMIES, SPAWN_ROOM } from '../config.ts'
+import { doubleFields } from '../core/fields.ts'
 import { clamp } from '../core/vec.ts'
 import { partDraws, type EventPart, type SwarmEventDef } from '../content/runScripts.ts'
 import { AlertKind, FeelKind } from '../effects/feelQueue.ts'
@@ -60,6 +61,10 @@ export class EventRun {
   oy = 0
   hx = 0
   hy = 0
+
+  constructor() {
+    doubleFields(this)
+  }
 }
 
 /** The first of the rolled side, its opposite and the quarter turns with

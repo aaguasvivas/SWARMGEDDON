@@ -1,5 +1,5 @@
 import { ENEMY_SPEED_CEIL, MAX_ENEMIES, MAX_ENEMY_PROJECTILES, STREAM_EXIT_PAD } from '../config.ts'
-import { clamp } from '../core/vec.ts'
+import { clamp, hypot } from '../core/vec.ts'
 import { AF_HASTED, AF_MOLTEN, AF_SHIELDED, HASTED, MOLTEN_EVERY, SHIELDED } from '../content/affixes.ts'
 import { spawnPoof } from '../effects/fx.ts'
 import { FeelKind } from '../effects/feelQueue.ts'
@@ -8,6 +8,7 @@ import { bossStep } from './bossAI.ts'
 import { spawnEnemy } from './spawn.ts'
 import type { Enemy } from '../game/enemy.ts'
 import type { World } from '../game/world.ts'
+import { setTint } from '../render/textures.ts'
 
 const SEPARATION = 0.9
 /** Total gravity-well drag on the player, units/sec, hard-capped well below
@@ -55,7 +56,7 @@ export function aiSystem(world: World, dt: number): void {
     if (well && !e.submerged) {
       const wx = e.x - px
       const wy = e.y - py
-      const wd = Math.hypot(wx, wy)
+      const wd = hypot(wx, wy)
       if (wd > 1 && wd < well.radius) {
         const k = (well.strength * (1 - wd / well.radius)) / wd
         pullX += wx * k
@@ -63,7 +64,7 @@ export function aiSystem(world: World, dt: number): void {
       }
     }
   }
-  const pullMag = Math.hypot(pullX, pullY)
+  const pullMag = hypot(pullX, pullY)
   if (pullMag > MAX_WELL_PULL) {
     const s = MAX_WELL_PULL / pullMag
     pullX *= s
@@ -104,7 +105,7 @@ export function aiSystem(world: World, dt: number): void {
 
     const dx = px - e.x
     const dy = py - e.y
-    const d = Math.hypot(dx, dy) || 1
+    const d = hypot(dx, dy) || 1
     const ux = dx / d
     const uy = dy / d
 
@@ -245,7 +246,9 @@ export function aiSystem(world: World, dt: number): void {
     if (e.slow > 0) spd *= 1 - e.slowFactor
     if (e.buffed > 0) spd *= e.buffedMul
     if (def.behavior === 'burrower' && e.submerged && def.burrow) spd *= def.burrow.underSpeedMul
-    if (spd > speedCeil && !(def.behavior === 'charger' && e.phase === 2)) spd = speedCeil
+    // Math.min keeps `spd` a raw double: merging the imported constant itself
+    // (an untyped module binding) into it would box it for every enemy.
+    if (!(def.behavior === 'charger' && e.phase === 2)) spd = Math.min(spd, speedCeil)
     // Overpressure stagger stops the body in place, facing kept; its timers
     // keep running.
     if (e.staggerT > 0) {
@@ -270,7 +273,7 @@ export function aiSystem(world: World, dt: number): void {
       }
     }
 
-    const ml = Math.hypot(mx, my) || 1
+    const ml = hypot(mx, my) || 1
     e.vx = (mx / ml) * spd
     e.vy = (my / ml) * spd
     e.x += e.vx * dt
@@ -444,7 +447,7 @@ function fireEnemyShot(world: World, e: Enemy, ux: number, uy: number): void {
   s.alpha = 1
   // Hazard projectiles wear the ARENA's hazard color (acid green / magma
   // orange); others keep their body tint. Presentation only.
-  s.tint = def.leavesAcid ? world.arenaTheme.hazardTint : def.tint
+  setTint(s, def.leavesAcid ? world.arenaTheme.hazardTint : def.tint)
   s.scale.set(1)
   world.feel.emit(FeelKind.EnemyShot, 0, p.x, p.y, p.facing, 0, def)
 }

@@ -1,6 +1,7 @@
 import type { Sprite } from 'pixi.js'
 import type { EnemyDef } from '../content/enemies.ts'
 import { ENEMIES } from '../content/enemies.ts'
+import { doubleFields } from '../core/fields.ts'
 import type { Poolable } from '../core/pool.ts'
 
 /**
@@ -93,5 +94,7 @@ export class Enemy implements Poolable {
   wobFreq = 0
   wobPhase = 0
 
-  constructor(readonly sprite: Sprite) {}
+  constructor(readonly sprite: Sprite) {
+    doubleFields(this)
+  }
 }

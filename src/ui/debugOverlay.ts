@@ -57,8 +57,11 @@ export class DebugOverlay {
     this.view.visible = !this.view.visible
   }
 
+  get shown(): boolean {
+    return this.view.visible
+  }
+
   update(info: DebugInfo): void {
-    if (!this.view.visible) return
     const low = info.fps > 0 && info.fps < 55 ? '  ⚠ LOW' : ''
     const ents = info.enemies + info.projectiles + info.particles
     this.text.text =

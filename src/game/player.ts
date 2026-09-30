@@ -1,5 +1,6 @@
 import { Container, Graphics } from 'pixi.js'
 import { COLORS, DASH, PLAYER_MAX_HP, PLAYER_RADIUS, PLAYER_SPEED } from '../config.ts'
+import { doubleFields } from '../core/fields.ts'
 import { clamp, lerp, type Vec2 } from '../core/vec.ts'
 import type { CharacterDef } from '../content/characters.ts'
 import type { PaintColors } from '../content/paints.ts'
@@ -62,6 +63,7 @@ export class Player {
   constructor() {
     this.view.addChild(this.g)
     this.paint({ body: COLORS.player, outline: COLORS.playerOutline, visor: COLORS.playerVisor, barrel: COLORS.playerBarrel }, 'vanguard')
+    doubleFields(this)
   }
 
   /**

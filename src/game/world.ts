@@ -1,5 +1,6 @@
 import type { Texture } from 'pixi.js'
 import { DASH, GRACE, HASH_CELL, MAX_HAZARDS, PODS, XP } from '../config.ts'
+import { doubleFields } from '../core/fields.ts'
 import { Pool } from '../core/pool.ts'
 import { RunRngs, SALT, hash32 } from '../core/rng.ts'
 import { hueShiftHex } from '../core/color.ts'
@@ -330,6 +331,8 @@ export class World {
       (a) => { a.sprite.visible = false },
       16,
     )
+    doubleFields(this)
+    doubleFields(this.mods)
   }
 
   // --- run lifecycle ---------------------------------------------------------

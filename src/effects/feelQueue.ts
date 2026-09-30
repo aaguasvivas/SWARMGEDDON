@@ -1,3 +1,5 @@
+import { doubleFields } from '../core/fields.ts'
+
 /**
  * The one channel from the sim to presentation. The sim only calls `emit`;
  * FeelDirector drains the queue once per render frame, then clears it. Nothing
@@ -71,6 +73,10 @@ export class RunAlert {
   dirY = 0
   t = 0
   seq = 0
+
+  constructor() {
+    doubleFields(this)
+  }
 }
 
 export const RUN_ALERT_SLOTS = 6

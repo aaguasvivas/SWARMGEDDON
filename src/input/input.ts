@@ -1,13 +1,9 @@
 import { STICK_DEADZONE } from '../config.ts'
-import { normalizeInto, type Vec2 } from '../core/vec.ts'
+import { hypot, normalizeInto, type Vec2 } from '../core/vec.ts'
 import { TouchControls } from './touchControls.ts'
 
 export type InputType = 'kbm' | 'touch' | 'gamepad'
 
-const LEFT_KEYS = new Set(['a', 'arrowleft'])
-const RIGHT_KEYS = new Set(['d', 'arrowright'])
-const UP_KEYS = new Set(['w', 'arrowup'])
-const DOWN_KEYS = new Set(['s', 'arrowdown'])
 const DASH_CODES = new Set(['Space', 'ShiftLeft', 'ShiftRight'])
 /** Gamepad LB, and LT past this travel, press dash on the rising edge. */
 const GP_LB = 4
@@ -50,6 +46,7 @@ export class InputManager {
   private keys = new Set<string>()
   private mouseFiring = false
   private gamepadIndex = -1
+  private padsConnected = 0
   /** A dash press waiting for the next sim step to read it. */
   private dashLatch = false
   private gpDashHeld = false
@@ -93,6 +90,10 @@ export class InputManager {
 
     window.addEventListener('gamepadconnected', this.onGamepadConnected)
     window.addEventListener('gamepaddisconnected', this.onGamepadDisconnected)
+    // A pad pressed during boot fired its one gamepadconnected before this
+    // listener existed; pollGamepad only reads pads once one is counted.
+    const pads = navigator.getGamepads ? navigator.getGamepads() : []
+    for (const p of pads) if (p) this.padsConnected++
   }
 
   /**
@@ -177,24 +178,20 @@ export class InputManager {
   }
 
   private readKeyboardMove(): void {
+    const k = this.keys
     let x = 0
     let y = 0
-    if (this.has(LEFT_KEYS)) x -= 1
-    if (this.has(RIGHT_KEYS)) x += 1
-    if (this.has(UP_KEYS)) y -= 1
-    if (this.has(DOWN_KEYS)) y += 1
-    const l = Math.hypot(x, y)
+    if (k.has('a') || k.has('arrowleft')) x -= 1
+    if (k.has('d') || k.has('arrowright')) x += 1
+    if (k.has('w') || k.has('arrowup')) y -= 1
+    if (k.has('s') || k.has('arrowdown')) y += 1
+    const l = hypot(x, y)
     if (l > 1) {
       x /= l
       y /= l
     }
     this.move.x = x
     this.move.y = y
-  }
-
-  private has(set: Set<string>): boolean {
-    for (const k of set) if (this.keys.has(k)) return true
-    return false
   }
 
   // --- Gamepad ---------------------------------------------------------------
@@ -205,6 +202,11 @@ export class InputManager {
     g.mx = g.my = g.ax = g.ay = 0
     g.aimActive = false
     g.fire = false
+    // getGamepads() builds a new array per call; no pad has connected yet.
+    if (this.padsConnected === 0) {
+      this.gpDashHeld = false
+      return
+    }
 
     const pads = navigator.getGamepads ? navigator.getGamepads() : []
     let pad: Gamepad | null = (this.gamepadIndex >= 0 ? pads[this.gamepadIndex] : null) ?? null
@@ -231,7 +233,7 @@ export class InputManager {
     const rx = pad.axes[2] ?? 0
     const ry = pad.axes[3] ?? 0
 
-    const lmag = Math.hypot(lx, ly)
+    const lmag = hypot(lx, ly)
     if (lmag < STICK_DEADZONE) {
       lx = ly = 0
     } else if (lmag > 1) {
@@ -241,7 +243,7 @@ export class InputManager {
     g.mx = lx
     g.my = ly
 
-    const rmag = Math.hypot(rx, ry)
+    const rmag = hypot(rx, ry)
     if (rmag >= STICK_DEADZONE) {
       g.ax = rx / rmag
       g.ay = ry / rmag
@@ -339,11 +341,13 @@ export class InputManager {
   }
 
   private onGamepadConnected = (e: GamepadEvent): void => {
+    this.padsConnected++
     this.gamepadIndex = e.gamepad.index
     this.lastType = 'gamepad'
   }
 
   private onGamepadDisconnected = (e: GamepadEvent): void => {
+    this.padsConnected = Math.max(0, this.padsConnected - 1)
     if (e.gamepad.index === this.gamepadIndex) this.gamepadIndex = -1
   }
 

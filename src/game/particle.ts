@@ -1,4 +1,5 @@
-import type { Sprite } from 'pixi.js'
+import type { Sprite, Texture } from 'pixi.js'
+import { doubleFields } from '../core/fields.ts'
 import type { Poolable } from '../core/pool.ts'
 
 /** Gibs, sparks, muzzle flashes: short-lived visual confetti. Fades by
@@ -25,6 +26,11 @@ export class Particle implements Poolable {
   tint = 0xffffff
   /** 'normal' for chunky gibs, 'add' for glowing sparks. */
   additive = false
+  /** The frame it is drawn with. The emitter only records the look (texture,
+   *  blend, tint); the renderer applies it to the sprite when it first shows. */
+  tex: Texture | null = null
 
-  constructor(readonly sprite: Sprite) {}
+  constructor(readonly sprite: Sprite) {
+    doubleFields(this)
+  }
 }

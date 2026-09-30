@@ -1,6 +1,7 @@
 import { Container, Sprite, Text } from 'pixi.js'
 import { CH_BANG, CH_K, CH_PLUS, layoutGlyphs, numGlyphs, writeInt } from '../ui/digits.ts'
 import { FONT, INK, T, ensureContrast } from '../ui/tokens.ts'
+import { setTint } from '../render/textures.ts'
 
 export type DamageNumberMode = 'all' | 'big' | 'off'
 
@@ -277,7 +278,7 @@ export class DamageNumbers {
     }
     const row = this.glyphs[i]!
     layoutGlyphs(row, c, n, 0.5)
-    for (let j = 0; j < GLYPHS; j++) row[j]!.tint = tint
+    for (let j = 0; j < GLYPHS; j++) setTint(row[j]!, tint)
     this.size[i] = size
     this.life[i] = kind === KIND_CRIT ? CRIT_LIFE_MS : LIFE_MS
   }

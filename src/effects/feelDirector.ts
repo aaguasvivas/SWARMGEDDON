@@ -6,6 +6,7 @@ import { type EnemyDef } from '../content/enemies.ts'
 import { FUSIONS, PERKS, type PerkDef } from '../content/perks.ts'
 import { WEAPONS, WEAPON_LIST } from '../content/weapons.ts'
 import { CLOSE_CALL_CHAIN } from '../core/rules.ts'
+import { hypot } from '../core/vec.ts'
 import type { World } from '../game/world.ts'
 import { haptic } from '../platform/haptics.ts'
 import { CALLOUT, CALLOUT_COLOR, type Callouts } from '../ui/callouts.ts'
@@ -552,7 +553,7 @@ export class FeelDirector {
     const pl = this.world.player
     const dx = sx - pl.x
     const dy = sy - pl.y
-    const d = Math.hypot(dx, dy)
+    const d = hypot(dx, dy)
     if (d < 1e-3) return
     this.edgeX = dx / d
     this.edgeY = dy / d
@@ -614,7 +615,7 @@ export class FeelDirector {
     const pl = this.world.player
     const dx = pl.x - sx
     const dy = pl.y - sy
-    const d = Math.hypot(dx, dy) || 1
+    const d = hypot(dx, dy) || 1
     this.shake.kick((dx / d) * px, (dy / d) * px)
   }
 }

@@ -17,6 +17,11 @@ export const TRACER_STRETCH_SPEED = 1800
 const MUZZLE_FLASH_LIFE = 0.06
 /** The flash quad's center sits this far ahead of the muzzle (half its length). */
 const MUZZLE_FLASH_AHEAD = 11
+/** One particle's draws, from Rng.fill: an emitter makes no call that returns
+ *  a number, so nothing is boxed on the heap per particle. A value written
+ *  `min + R[k] * (max - min)` is Rng.range(min, max) on that draw, and
+ *  `R[k] * Math.PI * 2` is Rng.angle(), in the order the calls were made. */
+const R = new Float64Array(8)
 
 function begin(p: Particle, x: number, y: number, tint: number): void {
   p.x = p.prevX = x
@@ -27,8 +32,6 @@ function begin(p: Particle, x: number, y: number, tint: number): void {
   p.rotation = 0
   p.additive = false
   p.tint = tint
-  p.sprite.tint = tint
-  p.sprite.visible = true
 }
 
 /** Multiply an 0xRRGGBB color toward black (for gib shade variety). */
@@ -50,13 +53,14 @@ export function spawnGibs(world: World, x: number, y: number, count: number, col
   for (let i = 0; i < count; i++) {
     if (world.particles.size >= MAX_PARTICLES) return
     const p = world.particles.acquire()
-    const a = i < aimed ? base + rng.range(-GIB_CONE, GIB_CONE) : rng.angle()
-    const sp = rng.range(70, 300)
-    const life = rng.range(0.35, 0.7)
-    const size = rng.range(0.7, 1.4)
-    const grow = -rng.range(0.5, 1.1)
-    const spin = rng.range(-14, 14)
-    begin(p, x, y, rng.bool(0.5) ? color : dark)
+    rng.fill(R, 7)
+    const a = i < aimed ? base + (-GIB_CONE + R[0]! * (GIB_CONE - -GIB_CONE)) : R[0]! * Math.PI * 2
+    const sp = 70 + R[1]! * (300 - 70)
+    const life = 0.35 + R[2]! * (0.7 - 0.35)
+    const size = 0.7 + R[3]! * (1.4 - 0.7)
+    const grow = -(0.5 + R[4]! * (1.1 - 0.5))
+    const spin = -14 + R[5]! * (14 - -14)
+    begin(p, x, y, R[6]! < 0.5 ? color : dark)
     p.vx = Math.cos(a) * sp
     p.vy = Math.sin(a) * sp
     p.life = p.maxLife = life
@@ -64,8 +68,7 @@ export function spawnGibs(world: World, x: number, y: number, count: number, col
     p.grow = grow
     p.drag = 5
     p.spin = spin
-    p.sprite.texture = world.gibTex
-    p.sprite.blendMode = 'normal'
+    p.tex = world.gibTex
   }
 }
 
@@ -77,17 +80,17 @@ export function spawnHitSpark(world: World, x: number, y: number, vx: number, vy
     if (world.particles.size >= MAX_PARTICLES) return
     const p = world.particles.acquire()
     begin(p, x, y, COLORS.gib)
-    const a = baseAng + rng.range(-0.9, 0.9)
-    const sp = rng.range(120, 320)
+    rng.fill(R, 4)
+    const a = baseAng + (-0.9 + R[0]! * (0.9 - -0.9))
+    const sp = 120 + R[1]! * (320 - 120)
     p.vx = Math.cos(a) * sp
     p.vy = Math.sin(a) * sp
-    p.life = p.maxLife = rng.range(0.12, 0.26)
-    p.size = rng.range(0.4, 0.8)
+    p.life = p.maxLife = 0.12 + R[2]! * (0.26 - 0.12)
+    p.size = 0.4 + R[3]! * (0.8 - 0.4)
     p.grow = -1.2
     p.drag = 6
     p.additive = true
-    p.sprite.texture = world.sparkTex
-    p.sprite.blendMode = 'add'
+    p.tex = world.sparkTex
   }
 }
 
@@ -106,23 +109,22 @@ export function spawnMuzzle(world: World, x: number, y: number, ang: number): vo
   f.size = 1
   f.grow = -6
   f.additive = true
-  f.sprite.texture = world.flashTex
-  f.sprite.blendMode = 'add'
+  f.tex = world.flashTex
   for (let i = 0; i < 2; i++) {
     if (world.particles.size >= MAX_PARTICLES) return
     const p = world.particles.acquire()
     begin(p, x, y, COLORS.muzzle)
-    const a = ang + rng.range(-0.35, 0.35)
-    const sp = rng.range(180, 420)
+    rng.fill(R, 4)
+    const a = ang + (-0.35 + R[0]! * (0.35 - -0.35))
+    const sp = 180 + R[1]! * (420 - 180)
     p.vx = Math.cos(a) * sp
     p.vy = Math.sin(a) * sp
-    p.life = p.maxLife = rng.range(0.06, 0.14)
-    p.size = rng.range(0.5, 1.0)
+    p.life = p.maxLife = 0.06 + R[2]! * (0.14 - 0.06)
+    p.size = 0.5 + R[3]! * (1.0 - 0.5)
     p.grow = -2
     p.drag = 8
     p.additive = true
-    p.sprite.texture = world.sparkTex
-    p.sprite.blendMode = 'add'
+    p.tex = world.sparkTex
   }
 }
 
@@ -137,8 +139,7 @@ export function spawnImpact(world: World, x: number, y: number): void {
   p.size = 0.5
   p.grow = 4
   p.additive = true
-  p.sprite.texture = world.sparkTex
-  p.sprite.blendMode = 'add'
+  p.tex = world.sparkTex
 }
 
 /** Acid splash burst when a pool forms. */
@@ -148,17 +149,17 @@ export function spawnAcidSplash(world: World, x: number, y: number): void {
     if (world.particles.size >= MAX_PARTICLES) return
     const p = world.particles.acquire()
     begin(p, x, y, world.arenaTheme.hazardTint)
-    const a = rng.angle()
-    const sp = rng.range(40, 160)
+    rng.fill(R, 4)
+    const a = R[0]! * Math.PI * 2
+    const sp = 40 + R[1]! * (160 - 40)
     p.vx = Math.cos(a) * sp
     p.vy = Math.sin(a) * sp
-    p.life = p.maxLife = rng.range(0.2, 0.4)
-    p.size = rng.range(0.5, 1.0)
+    p.life = p.maxLife = 0.2 + R[2]! * (0.4 - 0.2)
+    p.size = 0.5 + R[3]! * (1.0 - 0.5)
     p.grow = -1
     p.drag = 7
     p.additive = true
-    p.sprite.texture = world.sparkTex
-    p.sprite.blendMode = 'add'
+    p.tex = world.sparkTex
   }
 }
 
@@ -169,17 +170,17 @@ export function spawnPoof(world: World, x: number, y: number, tint: number, coun
     if (world.particles.size >= MAX_PARTICLES) return
     const p = world.particles.acquire()
     begin(p, x, y, tint)
-    const a = rng.angle()
-    const sp = rng.range(80, 240)
+    rng.fill(R, 4)
+    const a = R[0]! * Math.PI * 2
+    const sp = 80 + R[1]! * (240 - 80)
     p.vx = Math.cos(a) * sp
     p.vy = Math.sin(a) * sp
-    p.life = p.maxLife = rng.range(0.2, 0.4)
-    p.size = rng.range(0.6, 1.2)
+    p.life = p.maxLife = 0.2 + R[2]! * (0.4 - 0.2)
+    p.size = 0.6 + R[3]! * (1.2 - 0.6)
     p.grow = -1.2
     p.drag = 6
     p.additive = true
-    p.sprite.texture = world.sparkTex
-    p.sprite.blendMode = 'add'
+    p.tex = world.sparkTex
   }
 }
 
@@ -190,11 +191,12 @@ export function spawnExplosion(world: World, x: number, y: number, radius: numbe
   for (let i = 0; i < n; i++) {
     if (world.particles.size >= MAX_PARTICLES) break
     const p = world.particles.acquire()
-    const a = rng.angle()
-    const sp = rng.range(120, radius * 6)
-    const life = rng.range(0.25, 0.5)
-    const size = rng.range(0.9, 1.8)
-    begin(p, x, y, rng.bool(0.5) ? 0xffd27a : COLORS.muzzle)
+    rng.fill(R, 5)
+    const a = R[0]! * Math.PI * 2
+    const sp = 120 + R[1]! * (radius * 6 - 120)
+    const life = 0.25 + R[2]! * (0.5 - 0.25)
+    const size = 0.9 + R[3]! * (1.8 - 0.9)
+    begin(p, x, y, R[4]! < 0.5 ? 0xffd27a : COLORS.muzzle)
     p.vx = Math.cos(a) * sp
     p.vy = Math.sin(a) * sp
     p.life = p.maxLife = life
@@ -202,8 +204,7 @@ export function spawnExplosion(world: World, x: number, y: number, radius: numbe
     p.grow = -1.4
     p.drag = 5
     p.additive = true
-    p.sprite.texture = world.sparkTex
-    p.sprite.blendMode = 'add'
+    p.tex = world.sparkTex
   }
 }
 
@@ -218,8 +219,7 @@ export function spawnRing(world: World, x: number, y: number, color: number, tar
   p.size = 0.2
   p.grow = (targetScale - 0.2) / 0.34
   p.additive = true
-  p.sprite.texture = world.ringTex
-  p.sprite.blendMode = 'add'
+  p.tex = world.ringTex
 }
 
 /** Lightning arc sparks along a segment (chain lightning). */
@@ -230,14 +230,14 @@ export function spawnChainArc(world: World, x1: number, y1: number, x2: number, 
     if (world.particles.size >= MAX_PARTICLES) return
     const t = i / steps
     const p = world.particles.acquire()
-    begin(p, x1 + (x2 - x1) * t + rng.range(-5, 5), y1 + (y2 - y1) * t + rng.range(-5, 5), 0x9be7ff)
+    rng.fill(R, 4)
+    begin(p, x1 + (x2 - x1) * t + (-5 + R[0]! * (5 - -5)), y1 + (y2 - y1) * t + (-5 + R[1]! * (5 - -5)), 0x9be7ff)
     p.vx = 0
     p.vy = 0
-    p.life = p.maxLife = rng.range(0.08, 0.16)
-    p.size = rng.range(0.4, 0.8)
+    p.life = p.maxLife = 0.08 + R[2]! * (0.16 - 0.08)
+    p.size = 0.4 + R[3]! * (0.8 - 0.4)
     p.grow = -1
     p.additive = true
-    p.sprite.texture = world.sparkTex
-    p.sprite.blendMode = 'add'
+    p.tex = world.sparkTex
   }
 }

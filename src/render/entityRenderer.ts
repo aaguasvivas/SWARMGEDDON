@@ -5,7 +5,7 @@ import { lerp, lerpAngle } from '../core/vec.ts'
 import { WEAPONS } from '../content/weapons.ts'
 import type { World } from '../game/world.ts'
 import { SegRing } from './segRing.ts'
-import { WHITE } from './textures.ts'
+import { WHITE, setTint } from './textures.ts'
 
 /** Section 6.4: a struck enemy shows its white silhouette at this scale. */
 const HIT_PULSE = 1.12
@@ -22,23 +22,34 @@ const whiteTex: (Texture | undefined)[] = []
  * (prev -> current by alpha), rotate-to-face, procedural squash/wobble (so one
  * still illustration reads as a living creature), and hit-flash via tint. Pure
  * presentation, no simulation here.
+ *
+ * One function per pool: each loop gets its own optimizer inlining budget, so
+ * the Pixi setters inline and no double is boxed per sprite.
  */
 export function renderEntities(world: World, alpha: number): void {
   const t = world.time + alpha * FIXED_DT
-  const frozen = world.freezeT > 0
+  renderEnemies(world, alpha, t)
+  renderProjectiles(world, alpha)
+  renderEnemyShots(world, alpha, t)
+  renderParticles(world, alpha)
+  renderPickups(world, alpha, t)
+  renderAcid(world, t)
+}
 
+function renderEnemies(world: World, alpha: number, t: number): void {
+  const frozen = world.freezeT > 0
+  const frenzy = world.director.frenzy > 0
   const enemies = world.enemies.active
   for (let i = 0; i < enemies.length; i++) {
     const e = enemies[i]!
     const s = e.sprite
-    s.x = lerp(e.prevX, e.x, alpha)
-    s.y = lerp(e.prevY, e.y, alpha)
+    s.position.set(lerp(e.prevX, e.x, alpha), lerp(e.prevY, e.y, alpha))
     s.rotation = lerpAngle(e.prevFacing, e.facing, alpha)
     if (e.submerged && !e.def.boss) {
       // A faint burrow mound while underground (intangible).
       s.scale.set(e.def.scale * 0.6)
       s.alpha = 0.28
-      s.tint = 0x2a1d10
+      setTint(s, 0x2a1d10)
       continue
     }
     // Emerge: fade/scale in over the first beat after spawn so enemies never
@@ -61,96 +72,27 @@ export function renderEntities(world: World, alpha: number): void {
     const wob = Math.sin(t * 14 + e.animPhase)
     if (hit) {
       s.scale.set(base)
-      s.tint = 0xffffff
+      setTint(s, 0xffffff)
     } else if (e.phase === 1) {
       // Charger windup telegraph: coil (squash along the locked heading, sprite
       // rotation IS the heading) + a fast white flicker. Read-only cosmetics.
       s.scale.set(base * 0.78, base * 1.22)
-      s.tint = Math.sin(t * 42) > 0 ? 0xffffff : e.tint
+      setTint(s, Math.sin(t * 42) > 0 ? 0xffffff : e.tint)
     } else if (e.phase === 2) {
       // Dash: stretch along the line.
       s.scale.set(base * 1.35, base * 0.72)
-      s.tint = e.tint
+      setTint(s, e.tint)
     } else {
       s.scale.set(base * (1 + wob * 0.1), base * (1 - wob * 0.1))
-      s.tint = e.slow > 0 || (frozen && !e.def.boss) ? 0x7fd8ff : e.def.boss && world.director.frenzy > 0 ? lerpHex(e.tint, FRENZY_TINT, 0.3 + 0.25 * Math.sin(t * 8)) : e.tint
+      setTint(
+        s,
+        e.slow > 0 || (frozen && !e.def.boss)
+          ? 0x7fd8ff
+          : e.def.boss && frenzy
+            ? lerpHex(e.tint, FRENZY_TINT, 0.3 + 0.25 * Math.sin(t * 8))
+            : e.tint,
+      )
     }
-  }
-
-  renderProjectiles(world, alpha)
-
-  const eps = world.enemyProjectiles.active
-  for (let i = 0; i < eps.length; i++) {
-    const p = eps[i]!
-    const s = p.sprite
-    s.x = lerp(p.prevX, p.x, alpha)
-    s.y = lerp(p.prevY, p.y, alpha)
-    s.rotation = p.facing
-    // gentle pulse on the acid glob
-    s.scale.set(1 + Math.sin(t * 12 + p.facing) * 0.12)
-  }
-
-  const parts = world.particles.active
-  for (let i = 0; i < parts.length; i++) {
-    const p = parts[i]!
-    const s = p.sprite
-    s.x = lerp(p.prevX, p.x, alpha)
-    s.y = lerp(p.prevY, p.y, alpha)
-    s.rotation = p.rotation
-    s.alpha = p.life / p.maxLife
-    s.scale.set(p.size)
-  }
-
-  const pickups = world.pickups.active
-  for (let i = 0; i < pickups.length; i++) {
-    const p = pickups[i]!
-    const s = p.sprite
-    s.x = lerp(p.prevX, p.x, alpha)
-    s.y = lerp(p.prevY, p.y, alpha)
-    if (p.kind === 'xp') {
-      // Spin + a lively pulse + a vertical bob so gems read as "grab me".
-      s.rotation = t * 2.4 + p.phase
-      s.scale.set(1.15 * (1 + Math.sin(t * 6 + p.phase) * 0.2))
-      s.y += Math.sin(t * 4 + p.phase) * 3
-    } else if (p.kind === 'bank') {
-      // The bank gem grows with the XP it holds (A6).
-      const base = Math.min(2.4, 1.2 + 0.25 * Math.log2(1 + p.xp / 20))
-      s.rotation = t * 1.6 + p.phase
-      s.scale.set(base * (1 + Math.sin(t * 5 + p.phase) * 0.12))
-    } else if (p.kind === 'health') {
-      // Heartbeat pulse + bob; a gentle sway, no spin (reads as a medkit).
-      s.rotation = Math.sin(t * 3 + p.phase) * 0.12
-      s.scale.set(1 + Math.sin(t * 5 + p.phase) * 0.16)
-      s.y += Math.sin(t * 4 + p.phase) * 3
-    } else if (p.kind === 'shard') {
-      s.rotation = Math.sin(t * 2.5) * 0.25
-      s.scale.set(1 + Math.sin(t * 6) * 0.1)
-      s.y += Math.sin(t * 3) * 3
-    } else if (p.kind === 'core') {
-      s.rotation = t * 0.8
-      s.scale.set(1 + Math.sin(t * 3.5) * 0.08)
-    } else if (p.kind === 'bonus') {
-      s.rotation = t * 1.5
-      s.scale.set(1 + Math.sin(t * 7) * 0.12)
-      s.alpha = p.life < BONUS.blinkLast && Math.sin(t * 25) < 0 ? 0.3 : 1
-      continue
-    } else {
-      // A pod swells while the player holds it (hold-to-take fill) and blinks
-      // through its last PODS.blinkLast seconds.
-      s.rotation = Math.sin(t * 2 + p.phase) * 0.15
-      s.scale.set((1 + Math.sin(t * 5 + p.phase) * 0.12) * (1 + 0.2 * p.hold))
-      s.alpha = p.life < PODS.blinkLast && Math.floor(t * POD_BLINK_HZ * 2) % 2 === 1 ? POD_BLINK_ALPHA : 1
-      continue
-    }
-    s.alpha = p.life < 1.5 ? p.life / 1.5 : 1
-  }
-
-  const acid = world.acid.active
-  for (let i = 0; i < acid.length; i++) {
-    const ap = acid[i]!
-    const s = ap.sprite
-    const k = ap.life / ap.maxLife
-    s.alpha = (0.26 + 0.22 * k) * (0.9 + Math.sin(t * 7 + ap.x) * 0.1)
   }
 }
 
@@ -159,9 +101,101 @@ function renderProjectiles(world: World, alpha: number): void {
   for (let i = 0; i < projs.length; i++) {
     const p = projs[i]!
     const s = p.sprite
-    s.x = lerp(p.prevX, p.x, alpha)
-    s.y = lerp(p.prevY, p.y, alpha)
+    s.position.set(lerp(p.prevX, p.x, alpha), lerp(p.prevY, p.y, alpha))
     s.rotation = p.facing
+  }
+}
+
+function renderEnemyShots(world: World, alpha: number, t: number): void {
+  const eps = world.enemyProjectiles.active
+  for (let i = 0; i < eps.length; i++) {
+    const p = eps[i]!
+    const s = p.sprite
+    s.position.set(lerp(p.prevX, p.x, alpha), lerp(p.prevY, p.y, alpha))
+    s.rotation = p.facing
+    // gentle pulse on the acid glob
+    s.scale.set(1 + Math.sin(t * 12 + p.facing) * 0.12)
+  }
+}
+
+function renderParticles(world: World, alpha: number): void {
+  const parts = world.particles.active
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i]!
+    const s = p.sprite
+    // Emitted since the last frame (the pool hides a freed sprite): the
+    // emitter recorded the look, and its Pixi setters stay out of the sim tick.
+    if (!s.visible) {
+      s.texture = p.tex!
+      s.blendMode = p.additive ? 'add' : 'normal'
+      setTint(s, p.tint)
+      s.visible = true
+    }
+    s.position.set(lerp(p.prevX, p.x, alpha), lerp(p.prevY, p.y, alpha))
+    s.rotation = p.rotation
+    s.alpha = p.life / p.maxLife
+    s.scale.set(p.size)
+  }
+}
+
+function renderPickups(world: World, alpha: number, t: number): void {
+  const pickups = world.pickups.active
+  for (let i = 0; i < pickups.length; i++) {
+    const p = pickups[i]!
+    const s = p.sprite
+    const x = lerp(p.prevX, p.x, alpha)
+    let y = lerp(p.prevY, p.y, alpha)
+    // One call per property below: few call sites keep every Pixi setter
+    // inlined, so no double is boxed per pickup.
+    let rot: number
+    let scale: number
+    let a = p.life < 1.5 ? p.life / 1.5 : 1
+    if (p.kind === 'xp') {
+      // Spin + a lively pulse + a vertical bob so gems read as "grab me".
+      rot = t * 2.4 + p.phase
+      scale = 1.15 * (1 + Math.sin(t * 6 + p.phase) * 0.2)
+      y += Math.sin(t * 4 + p.phase) * 3
+    } else if (p.kind === 'bank') {
+      // The bank gem grows with the XP it holds (A6).
+      const base = Math.min(2.4, 1.2 + 0.25 * Math.log2(1 + p.xp / 20))
+      rot = t * 1.6 + p.phase
+      scale = base * (1 + Math.sin(t * 5 + p.phase) * 0.12)
+    } else if (p.kind === 'health') {
+      // Heartbeat pulse + bob; a gentle sway, no spin (reads as a medkit).
+      rot = Math.sin(t * 3 + p.phase) * 0.12
+      scale = 1 + Math.sin(t * 5 + p.phase) * 0.16
+      y += Math.sin(t * 4 + p.phase) * 3
+    } else if (p.kind === 'shard') {
+      rot = Math.sin(t * 2.5) * 0.25
+      scale = 1 + Math.sin(t * 6) * 0.1
+      y += Math.sin(t * 3) * 3
+    } else if (p.kind === 'core') {
+      rot = t * 0.8
+      scale = 1 + Math.sin(t * 3.5) * 0.08
+    } else if (p.kind === 'bonus') {
+      rot = t * 1.5
+      scale = 1 + Math.sin(t * 7) * 0.12
+      a = p.life < BONUS.blinkLast && Math.sin(t * 25) < 0 ? 0.3 : 1
+    } else {
+      // A pod swells while the player holds it (hold-to-take fill) and blinks
+      // through its last PODS.blinkLast seconds.
+      rot = Math.sin(t * 2 + p.phase) * 0.15
+      scale = (1 + Math.sin(t * 5 + p.phase) * 0.12) * (1 + 0.2 * p.hold)
+      a = p.life < PODS.blinkLast && Math.floor(t * POD_BLINK_HZ * 2) % 2 === 1 ? POD_BLINK_ALPHA : 1
+    }
+    s.rotation = rot
+    s.scale.set(scale)
+    s.position.set(x, y)
+    s.alpha = a
+  }
+}
+
+function renderAcid(world: World, t: number): void {
+  const acid = world.acid.active
+  for (let i = 0; i < acid.length; i++) {
+    const ap = acid[i]!
+    const k = ap.life / ap.maxLife
+    ap.sprite.alpha = (0.26 + 0.22 * k) * (0.9 + Math.sin(t * 7 + ap.x) * 0.1)
   }
 }
 

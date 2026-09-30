@@ -5,39 +5,49 @@
  *
  * Rebuilt each tick from current enemy positions: `clear()` then `insert()` all
  * enemies, then `query()` candidate enemies around each projectile / the player.
- * Buckets are reused across frames (clear sets length=0, keeps the arrays) so a
- * steady-state frame allocates nothing.
  *
  * The caller does the precise circle test on the returned candidates; the hash
  * only narrows the field.
  */
+class Bucket<T> {
+  readonly items: T[] = []
+  n = 0
+}
+
 export class SpatialHash<T> {
-  private readonly cells = new Map<number, T[]>()
+  private readonly cells = new Map<number, Bucket<T>>()
+  /** Every bucket ever made, so clear() needs no Map iterator. */
+  private readonly buckets: Bucket<T>[] = []
 
   constructor(private readonly cellSize: number) {}
 
-  /** Empty every bucket but keep the arrays for reuse (no GC churn). */
+  /** Empty every bucket. Counts reset and the arrays stay as they are: setting
+   *  an array's length to 0 frees its backing store in V8, so the next insert
+   *  would allocate a new one. */
   clear(): void {
-    for (const bucket of this.cells.values()) bucket.length = 0
+    const b = this.buckets
+    for (let i = 0; i < b.length; i++) b[i]!.n = 0
   }
 
   insert(item: T, x: number, y: number): void {
     const k = this.keyFor(Math.floor(x / this.cellSize), Math.floor(y / this.cellSize))
     let bucket = this.cells.get(k)
     if (bucket === undefined) {
-      bucket = []
+      bucket = new Bucket<T>()
       this.cells.set(k, bucket)
+      this.buckets.push(bucket)
     }
-    bucket.push(item)
+    bucket.items[bucket.n++] = item
   }
 
   /**
-   * Collect every item whose cell overlaps the (x,y,radius) circle's bounding
-   * box into `out` (cleared first). Returns the count. `out` is caller-owned and
-   * reused to avoid per-query allocation.
+   * Write every item whose cell overlaps the (x,y,radius) circle's bounding box
+   * into `out[0..count)`, in cell order and then insertion order, and return
+   * the count. `out` is caller-owned scratch: entries past the count are stale,
+   * and its length is never cut (that would free its backing store).
    */
   query(x: number, y: number, radius: number, out: T[]): number {
-    out.length = 0
+    let n = 0
     const cs = this.cellSize
     const minCx = Math.floor((x - radius) / cs)
     const maxCx = Math.floor((x + radius) / cs)
@@ -47,11 +57,12 @@ export class SpatialHash<T> {
       for (let cy = minCy; cy <= maxCy; cy++) {
         const bucket = this.cells.get(this.keyFor(cx, cy))
         if (bucket !== undefined) {
-          for (let i = 0; i < bucket.length; i++) out.push(bucket[i]!)
+          const items = bucket.items
+          for (let i = 0; i < bucket.n; i++) out[n++] = items[i]!
         }
       }
     }
-    return out.length
+    return n
   }
 
   /**

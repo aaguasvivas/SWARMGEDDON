@@ -1,4 +1,5 @@
 import type { Sprite } from 'pixi.js'
+import { doubleFields } from '../core/fields.ts'
 import type { Poolable } from '../core/pool.ts'
 
 export type PickupKind = 'xp' | 'bank' | 'weapon' | 'health' | 'shard' | 'core' | 'bonus'
@@ -43,5 +44,7 @@ export class Pickup implements Poolable {
   /** Bonuses: the BONUSES index. Hive Cores: the CORES.table row (0 mid1, 1 mid2, 2 overtime). */
   sub = 0
 
-  constructor(readonly sprite: Sprite) {}
+  constructor(readonly sprite: Sprite) {
+    doubleFields(this)
+  }
 }

@@ -5,6 +5,7 @@ import { FeelKind } from '../effects/feelQueue.ts'
 import type { InputManager } from '../input/input.ts'
 import { tickDown } from '../game/player.ts'
 import type { World } from '../game/world.ts'
+import { setTint } from '../render/textures.ts'
 
 const TAU = Math.PI * 2
 /** An emptied magazine may keep a float remainder this small. */
@@ -140,6 +141,6 @@ function launch(world: World, x: number, y: number, ang: number, dmgMul: number,
   const s = p.sprite
   s.visible = true
   s.alpha = 1
-  s.tint = w.id === world.character.startWeapon ? world.baseBulletTint : w.tint
+  setTint(s, w.id === world.character.startWeapon ? world.baseBulletTint : w.tint)
   s.scale.set(w.tracer ? scale * (1 + speed / TRACER_STRETCH_SPEED) : scale, scale)
 }

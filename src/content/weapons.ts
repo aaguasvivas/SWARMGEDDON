@@ -152,6 +152,26 @@ W.storm_lash = evolved(W.lightning!, 'storm_lash', 'Storm Lash', 'stormChain',
 W.solar_lance = evolved(W.beam!, 'solar_lance', 'Solar Lance', 'rangeRamp',
   { fireRate: 24, damage: 6, pierce: 10, projectileLife: 0.6 })
 
+for (const id in W) W[id] = uniformWeapon(W[id]!)
+
+/**
+ * Every def carries every key in one order (an absent option is undefined), so
+ * all weapons share one hidden class: the per-shot reads of `world.weapon`
+ * stay direct, and the first pickup weapon of a run no longer deoptimizes the
+ * code compiled for the base one. The literal's type lists every key, so a new
+ * WeaponDef key is a compile error here until it is copied.
+ */
+function uniformWeapon(w: WeaponDef): WeaponDef {
+  const d: { [K in keyof Required<WeaponDef>]: WeaponDef[K] | undefined } = {
+    id: w.id, name: w.name, fireRate: w.fireRate, damage: w.damage, projectileSpeed: w.projectileSpeed, spread: w.spread,
+    projectilesPerShot: w.projectilesPerShot, pierce: w.pierce, knockback: w.knockback, projectileLife: w.projectileLife,
+    projectileRadius: w.projectileRadius, tint: w.tint, ammo: w.ammo, kickPx: w.kickPx, sfx: w.sfx,
+    explodeRadius: w.explodeRadius, explodeDamage: w.explodeDamage, chain: w.chain, chainRange: w.chainRange, tracer: w.tracer,
+    pair: w.pair, evolvesTo: w.evolvesTo, evo: w.evo,
+  }
+  return d as WeaponDef
+}
+
 /** Every weapon in a fixed order; the FeelQueue carries weapons by index. */
 export const WEAPON_LIST: readonly WeaponDef[] = Object.values(WEAPONS)
 

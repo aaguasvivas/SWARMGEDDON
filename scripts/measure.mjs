@@ -71,6 +71,16 @@
 //   perf-final [charId] [arenaId]  S.jumpTo(600) (the FINAL SWARM beat fires at once),
 //                                  then 10 s of live combat; same stats plus peak alive.
 //   thrash                         perf variant re-injecting layout thrash (A/B baseline).
+//   bench [charId] [arenaId] [seconds]
+//                                  CPU cost per tick under the vsync cap: live combat at
+//                                  5:00 with the field topped up to 500 every frame
+//                                  (swarmers), auto-fire at a circling cursor, invincible,
+//                                  no level-ups (--perks applies), 5 s warm-up, then
+//                                  `seconds` (default 10) timed with performance.now in
+//                                  the page: stepSim per tick, the render update per frame
+//                                  (everything in the frame callback but Pixi's draw) and
+//                                  Pixi's app.render per frame. Median, p95 and mean ms.
+//                                  Not a perf gate: it compares builds on one machine.
 //   shot <charId> <arenaId> <out>  screenshot of live combat with a varied enemy pack
 //                                  pulled into view (for visual audits / galleries).
 //   --dpr=N                        device pixel ratio for the page (default 1).
@@ -726,6 +736,79 @@ if (MODE === 'shot') {
     console.log(JSON.stringify({ mode: 'ringview', W, H, arenaId, ...r, pass }))
   }
   if (pageErrors.length) console.log(JSON.stringify({ mode: 'ringview', pageErrors }))
+} else if (MODE === 'bench') {
+  const bChar = pos[3] || 'nova'
+  const bArena = pos[4] || 'hive'
+  const seconds = parseFloat(pos[5] || '10')
+  await page.evaluate((c, a, perks) => {
+    const S = window.__SWARM
+    const w = S.world
+    S.setLoadout(c, a)
+    S.startRun('endless')
+    for (const id of perks) w.choosePerk(id)
+    S.give('hailstorm')
+    S.input.autoFire = true
+    S.jumpTo(300)
+    let frame = 0
+    const keepLive = () => {
+      frame++
+      w.player.maxHp = 1e9
+      w.player.hp = 1e9
+      w.xpToNext = 1e12
+      S.input.hasPointer = true
+      S.input.pointerX = S.app.screen.width / 2 + Math.cos(frame * 0.03) * 160
+      S.input.pointerY = S.app.screen.height / 2 + Math.sin(frame * 0.03) * 160
+      if (w.enemies.size < 500) S.flood(500 - w.enemies.size)
+      requestAnimationFrame(keepLive)
+    }
+    requestAnimationFrame(keepLive)
+    // Timers wrap the loop's two callbacks and Pixi's draw; samples go to
+    // preallocated arrays so the instrument adds no allocation of its own.
+    const CAP = 8192
+    const b = (window.__BENCH = { on: false, sim: new Float64Array(CAP), frame: new Float64Array(CAP), pixi: new Float64Array(CAP), ns: 0, nf: 0, np: 0 })
+    const L = S.loop
+    const upd = L.onUpdate
+    const rnd = L.onRender
+    const draw = S.app.render.bind(S.app)
+    L.onUpdate = (dt) => {
+      const t0 = performance.now()
+      upd(dt)
+      if (b.on && b.ns < CAP) b.sim[b.ns++] = performance.now() - t0
+    }
+    L.onRender = (alpha) => {
+      const t0 = performance.now()
+      rnd(alpha)
+      if (b.on && b.nf < CAP) b.frame[b.nf++] = performance.now() - t0
+    }
+    S.app.render = () => {
+      const t0 = performance.now()
+      draw()
+      if (b.on && b.np < CAP) b.pixi[b.np++] = performance.now() - t0
+    }
+  }, bChar, bArena, PERF_PERKS)
+  await new Promise((r) => setTimeout(r, 5000))
+  await page.evaluate(() => { window.__BENCH.on = true; window.__BENCH_T0 = window.__SWARM.world.time })
+  await new Promise((r) => setTimeout(r, seconds * 1000))
+  const out = await page.evaluate(() => {
+    const b = window.__BENCH
+    b.on = false
+    const stats = (arr, n) => {
+      const a = Array.from(arr.subarray(0, n)).sort((x, y) => x - y)
+      const q = (p) => +(a[Math.min(n - 1, Math.floor(n * p))] ?? 0).toFixed(3)
+      return { n, median: q(0.5), p95: q(0.95), mean: +(a.reduce((s, v) => s + v, 0) / Math.max(1, n)).toFixed(3) }
+    }
+    // The frame callback includes Pixi's draw; the render update is the rest.
+    const upd = new Float64Array(b.nf)
+    for (let i = 0; i < b.nf; i++) upd[i] = b.frame[i] - (b.pixi[i] ?? 0)
+    const w = window.__SWARM.world
+    return {
+      sim: stats(b.sim, b.ns), renderUpdate: stats(upd, b.nf), pixi: stats(b.pixi, b.np),
+      enemies: w.enemies.size, particles: w.particles.size, pickups: w.pickups.size, simTime: +(w.time - window.__BENCH_T0).toFixed(1),
+      crossOriginIsolated: self.crossOriginIsolated,
+    }
+  })
+  console.log(JSON.stringify({ mode: 'bench', W, H, charId: bChar, arenaId: bArena, seconds, ...(PERF_PERKS.length ? { perks: PERF_PERKS } : {}), gl: String(glInfo).slice(0, 60), ...out }))
+  if (pageErrors.length) console.log(JSON.stringify({ mode: 'bench', pageErrors }))
 } else {
   // perf [charId] [arenaId]: live combat in any world (default nova/hive).
   // perf-final: the same live measure from the FINAL SWARM beat (10 s).

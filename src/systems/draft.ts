@@ -1,4 +1,5 @@
 import { DRAFT, FALLBACK } from '../config.ts'
+import { doubleFields } from '../core/fields.ts'
 import { SALT, hash32, type Rng } from '../core/rng.ts'
 import {
   FALLBACKS,
@@ -77,6 +78,10 @@ export class DraftState {
   readonly banned = new Set<string>()
   /** Per FUSIONS entry: 0 locked, 1 eligible and never offered, 2 offered. */
   readonly fusionState = new Uint8Array(FUSIONS.length)
+
+  constructor() {
+    doubleFields(this)
+  }
 
   reset(): void {
     this.index = 0

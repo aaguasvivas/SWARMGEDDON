@@ -1087,7 +1087,7 @@ async function boot(): Promise<void> {
       audio.intensity = playing ? Math.min(1, world.enemies.size / 120 + (world.bossAlive ? 0.4 : 0)) : 0.12
       audio.updateMusic()
 
-      if (debug) {
+      if (debug?.shown) {
         debug.update({
           fps: loop.fps,
           frameMs: loop.frameMs,

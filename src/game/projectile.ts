@@ -1,4 +1,5 @@
 import type { Sprite } from 'pixi.js'
+import { doubleFields } from '../core/fields.ts'
 import type { Poolable } from '../core/pool.ts'
 import type { EvoBehavior } from '../content/weapons.ts'
 
@@ -45,5 +46,7 @@ export class Projectile implements Poolable {
   /** FIREBLAST shot: its kills (and the blasts they set off) drop no bonus. */
   noBonus = false
 
-  constructor(readonly sprite: Sprite) {}
+  constructor(readonly sprite: Sprite) {
+    doubleFields(this)
+  }
 }

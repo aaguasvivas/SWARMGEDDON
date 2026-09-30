@@ -2,7 +2,7 @@ import {
   ARC_ROUNDS, BITE, BLAST_CRIT, BLAST_NO_BONUS, BONUS_FX, BOSS_SLOW_CAP, BURN_SEC, CLOSE_CALL, CORES, ENEMY_EMERGE, EVO,
   FUSION, GRACE, HEALTH_DROP_CHANCE, HEALTH_HEAL, HEALTH_HEAL_ELITE, MAX_ENEMIES, PODS, SEEK, SPAWN_ROOM,
 } from '../config.ts'
-import { distSq } from '../core/vec.ts'
+import { distSq, hypot } from '../core/vec.ts'
 import { AF_BROOD, AF_VOLATILE, BROOD, VOLATILE } from '../content/affixes.ts'
 import { powi } from '../content/perks.ts'
 import { SCARCITY } from '../content/threat.ts'
@@ -246,7 +246,7 @@ function applyHit(world: World, e: Enemy, p: Projectile): boolean {
   let dmg = p.damage
   const crit = p.evo === 'firstHitCrit' && p.hitN === 1 ? true : m.critChance > 0 && world.rngs.combat.float() < m.critChance
   if (crit) dmg *= m.critMul
-  const sp = Math.hypot(p.vx, p.vy) || 1
+  const sp = hypot(p.vx, p.vy) || 1
 
   switch (p.evo) {
     case 'pointBlank':
@@ -391,7 +391,7 @@ function seekBounce(world: World, p: Projectile): boolean {
     }
   }
   if (!best) return false
-  const sp = Math.hypot(p.vx, p.vy)
+  const sp = hypot(p.vx, p.vy)
   const d = Math.sqrt(bd) || 1
   p.vx = ((best.x - p.x) / d) * sp
   p.vy = ((best.y - p.y) / d) * sp
@@ -659,7 +659,7 @@ function handleDeath(world: World): void {
       const e = enemies[i]!
       const dx = e.x - pl.x
       const dy = e.y - pl.y
-      const d = Math.hypot(dx, dy) || 1
+      const d = hypot(dx, dy) || 1
       if (d < 220) {
         e.x += (dx / d) * (220 - d)
         e.y += (dy / d) * (220 - d)

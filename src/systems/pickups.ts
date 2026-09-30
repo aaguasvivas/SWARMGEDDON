@@ -8,6 +8,7 @@ import type { World } from '../game/world.ts'
 import { takeBonus } from './bonuses.ts'
 import { takeHiveCore, takeShard } from './cores.ts'
 import { healPlayer } from './damage.ts'
+import { setTint } from '../render/textures.ts'
 
 const R = PICKUP_RESERVE
 /** Guaranteed slots per PICKUP_SLOT index. */
@@ -92,7 +93,7 @@ export function dropGem(world: World, x: number, y: number, xp: number): void {
   world.texReg.applySprite(p.sprite, 'gem')
   const s = p.sprite
   s.visible = true
-  s.tint = COLORS.gem
+  setTint(s, COLORS.gem)
   s.alpha = 1
   s.scale.set(1.15)
 }
@@ -152,7 +153,7 @@ function bankXp(world: World, x: number, y: number, xp: number): void {
     world.texReg.applySprite(b.sprite, 'gem')
     const s = b.sprite
     s.visible = true
-    s.tint = BANK_TINT
+    setTint(s, BANK_TINT)
     s.alpha = 1
   }
   b.xp += xp
@@ -179,7 +180,7 @@ export function dropHealth(world: World, x: number, y: number, heal: number): vo
   world.texReg.applySprite(p.sprite, 'health')
   const s = p.sprite
   s.visible = true
-  s.tint = COLORS.health
+  setTint(s, COLORS.health)
   s.alpha = 1
   s.scale.set(1)
 }
@@ -311,7 +312,7 @@ function spawnPod(world: World, x: number, y: number, weaponId: string, timer: b
   world.texReg.applySprite(p.sprite, 'crate')
   const s = p.sprite
   s.visible = true
-  s.tint = WEAPONS[weaponId]!.tint
+  setTint(s, WEAPONS[weaponId]!.tint)
   s.alpha = 1
   s.scale.set(1)
   world.feel.emit(FeelKind.PodSpawn, 0, p.x, p.y, 0, weaponIndex(weaponId))
@@ -329,7 +330,7 @@ function contactPickup(world: World, kind: PickupKind, x: number, y: number, rad
   world.texReg.applySprite(p.sprite, key)
   const s = p.sprite
   s.visible = true
-  s.tint = tint
+  setTint(s, tint)
   s.alpha = 1
   s.scale.set(1)
   return p
