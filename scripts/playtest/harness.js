@@ -10,7 +10,9 @@
 // evolve (the held weapon's pair perk first, then priority). Never calls
 // endRun itself; a stalemate ends the run through the game's own path. With
 // cfg.dash the bot also dashes out of danger; with cfg.focus it shoots the
-// boss during a fight.
+// boss during a fight. The smart and roam bots sidestep swarm-event streams
+// (STAMPEDE, walls, SHOAL RUN) and step out of every damaging hazard circle
+// (boss attacks, MORTAR BARRAGE, VOLATILE blasts).
 (() => {
   const DT = 1 / 60
   const FEEL_PLAYER_HURT = 5
@@ -26,6 +28,14 @@
   const BOSS_FOCUS = 700
   const POD_LIFE = 20
   const BROOD_GUARD = 140
+  /** Stream dodge: react to a stream unit whose path passes within STREAM_LANE
+   *  of the ship and that arrives within STREAM_HORIZON seconds (never less
+   *  than STREAM_REACT u away, so a slow wall is dodged in time). */
+  const STREAM_LANE = 260
+  const STREAM_HORIZON = 2.2
+  const STREAM_REACT = 300
+  const STREAM_PUSH = 3.2
+  const EVENT_WINDOW = 15
 
   function xpTotal(w) {
     let s = w.xp
@@ -182,6 +192,11 @@
           }
         }
       }
+      if (!st.cfg.noStreamDodge) {
+        const sd = streamDodge(w, pl, st)
+        fx += sd[0]
+        fy += sd[1]
+      }
       const ac = w.acid.active
       for (let i = 0; i < ac.length; i++) {
         const a = ac[i]
@@ -264,9 +279,50 @@
     if (st.cfg.dash && w.dashCharges > 0 && pl.dashTicks === 0 && inDanger(w, pl)) inp.pressDash()
   }
 
+  // Stream dodge: every stream unit on course to cross the ship soon votes to
+  // push it sideways, away from that unit's path. The votes add up to the side
+  // with less of the stream (a wall's nearer end, a stampede band's nearer
+  // edge); the chosen side sticks until no stream threatens, so the bot does
+  // not dither in the middle of a symmetric wall.
+  const sdOut = [0, 0]
+  function streamDodge(w, pl, st) {
+    const act = w.enemies.active
+    let vx = 0
+    let vy = 0
+    let n = 0
+    for (let i = 0; i < act.length; i++) {
+      const e = act[i]
+      if (!e.alive || !e.stream) continue
+      const hx = Math.cos(e.phaseDir)
+      const hy = Math.sin(e.phaseDir)
+      const rx = pl.x - e.x
+      const ry = pl.y - e.y
+      const ahead = rx * hx + ry * hy
+      if (ahead < -(e.radius + pl.radius) || ahead > Math.max(e.speed * STREAM_HORIZON, STREAM_REACT)) continue
+      const lat = -rx * hy + ry * hx
+      if (Math.abs(lat) > STREAM_LANE) continue
+      const side = lat >= 0 ? 1 : -1
+      vx += -hy * side
+      vy += hx * side
+      n++
+    }
+    if (n === 0) {
+      st.streamSide = null
+      sdOut[0] = sdOut[1] = 0
+      return sdOut
+    }
+    st.dodgeSteps++
+    const l = Math.hypot(vx, vy)
+    if (!st.streamSide) st.streamSide = l > 1e-3 ? [vx / l, vy / l] : [-Math.sin(act.find((e) => e.alive && e.stream).phaseDir), Math.cos(act.find((e) => e.alive && e.stream).phaseDir)]
+    sdOut[0] = st.streamSide[0] * STREAM_PUSH
+    sdOut[1] = st.streamSide[1] * STREAM_PUSH
+    return sdOut
+  }
+
   // Dash policy: dash (along the bot's move, else its facing) when a hit is
   // about to land: a shot arriving within 0.2 s, a charging charger on a line
-  // through us, an elite or boss body at contact, or 3+ bodies touching.
+  // through us, an elite or boss body at contact, a stream unit about to run
+  // into us, or 3+ bodies touching.
   function inDanger(w, pl) {
     const eps = w.enemyProjectiles.active
     for (let i = 0; i < eps.length; i++) {
@@ -296,6 +352,10 @@
         if (ahead > 0 && perp < rr + 10) return true
       }
       if ((e.def.elite || e.def.boss) && d < rr + 20) return true
+      if (e.stream && d < rr + 30) {
+        const ahead = Math.cos(e.phaseDir) * dx + Math.sin(e.phaseDir) * dy
+        if (ahead > 0) return true
+      }
       if (d < rr + 6 && ++touching >= 3) return true
     }
     return false
@@ -361,6 +421,19 @@
       satStepsChunk: 0,
       overRowChunk: -Infinity,
       maxSpeedByType: {},
+      streamSide: null,
+      // A3 density: steps outside a cage and outside an event window, and those
+      // at 95%+ of maxAlive. An event window lasts while a part is emitting or
+      // a stream unit lives, and EVENT_WINDOW s after an event beat fires (ring
+      // units are ordinary enemies after that).
+      a3Base: 0,
+      a3Sat: 0,
+      eventStepsChunk: 0,
+      eventUnitsMax: 0,
+      /** HP lost to stream units' contact (the bite source stood on a stream unit). */
+      streamDmg: 0,
+      /** Steps the stream dodge steered the bot. */
+      dodgeSteps: 0,
     }
     window.__PT = st
     S.input.update = function () {
@@ -470,6 +543,16 @@
       for (let i = 0; i < q.n; i++) {
         if (q.kind[i] !== FEEL_PLAYER_HURT) continue
         const f = q.flags[i]
+        if (f & FF_CONTACT) {
+          const act = w.enemies.active
+          for (let k = 0; k < act.length; k++) {
+            const e = act[k]
+            if (e.stream && Math.abs(e.x - q.x[i]) < 1 && Math.abs(e.y - q.y[i]) < 1) {
+              st.streamDmg += q.a[i]
+              break
+            }
+          }
+        }
         const kind = f & FF_ACID ? 'acid' : f & FF_CONTACT ? 'bite' : f & FF_RAM ? 'ram' : f & FF_DISCRETE ? 'shot' : 'other'
         st.hurts.push([w.time, kind, q.a[i]])
       }
@@ -565,6 +648,26 @@
       if (lull) st.lullStepsChunk++
       if (w.bossAlive) st.bossStepsChunk++
       else if (!lull && n >= 0.95 * row.maxAlive) st.satStepsChunk++
+      const runs = w.director.events
+      let evActive = false
+      for (let r = 0; r < runs.length; r++) if (runs[r].active) evActive = true
+      let evUnits = 0
+      let streamAlive = false
+      const all = w.enemies.active
+      for (let i = 0; i < all.length; i++) {
+        if (!all[i].alive) continue
+        if (all[i].eventUnit) evUnits++
+        if (all[i].stream) streamAlive = true
+      }
+      if (evUnits > st.eventUnitsMax) st.eventUnitsMax = evUnits
+      let lastEvent = -Infinity
+      const beats = w.script.beats
+      for (let k = 0; k < beats.length; k++) if (beats[k].kind === 'event' && w.director.firedAt[k] >= 0) lastEvent = Math.max(lastEvent, w.director.firedAt[k])
+      if (evActive || streamAlive || w.time - lastEvent < EVENT_WINDOW) st.eventStepsChunk++
+      else if (!w.director.cage.active) {
+        st.a3Base++
+        if (n >= 0.95 * row.maxAlive) st.a3Sat++
+      }
       if (n - row.maxAlive > st.overRowChunk) st.overRowChunk = n - row.maxAlive
       while (st.alertSeq < w.alerts.seq) {
         const a = w.alerts.slots[st.alertSeq % w.alerts.slots.length]
@@ -583,7 +686,7 @@
       const act = w.enemies.active
       for (let i = 0; i < act.length; i++) {
         const e = act[i]
-        if (e.alive && !(e.def.behavior === 'charger' && e.phase === 2)) {
+        if (e.alive && !e.stream && !(e.def.behavior === 'charger' && e.phase === 2)) {
           const v = Math.hypot(e.vx, e.vy)
           if (!(v <= (st.maxSpeedByType[e.def.id] || 0))) st.maxSpeedByType[e.def.id] = +v.toFixed(1)
         }
@@ -703,6 +806,7 @@
       overRowMax: st.overRowChunk === -Infinity ? null : st.overRowChunk,
       rowMaxAlive: w.script.minutes[Math.min(11, Math.floor(w.time / 60))].maxAlive,
       alerts: st.alertsChunk,
+      eventSteps: st.eventStepsChunk,
     }
     st.killsPrev = w.kills
     st.levelUpsChunk = 0
@@ -721,6 +825,7 @@
     st.bossStepsChunk = 0
     st.satStepsChunk = 0
     st.overRowChunk = -Infinity
+    st.eventStepsChunk = 0
     st.chunks.push(c)
     return c
   }
@@ -766,6 +871,16 @@
       perks: st.perks,
       perkStacks: Object.fromEntries(w.perkStacks),
       maxSpeedByType: st.maxSpeedByType,
+      // A3: every script beat with the sim time it fired (null: not reached, -1: dropped or skipped by the rules).
+      beats: w.script.beats.map((b, i) => {
+        const f = w.director.firedAt[i]
+        return { i, kind: b.kind, at: b.at, id: b.id ?? b.stage ?? null, firedAt: Number.isNaN(f) ? null : +f.toFixed(3) }
+      }),
+      eventUnitsMax: st.eventUnitsMax,
+      streamDmg: +st.streamDmg.toFixed(1),
+      dodgeSteps: st.dodgeSteps,
+      a3Base: st.a3Base,
+      a3Sat: st.a3Sat,
       events: st.events,
       chunks: st.chunks,
       hpHist: st.hpHist,

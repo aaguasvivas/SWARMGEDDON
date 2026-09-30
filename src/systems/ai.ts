@@ -1,7 +1,9 @@
-import { ENEMY_SPEED_CEIL, MAX_ENEMIES, MAX_ENEMY_PROJECTILES } from '../config.ts'
+import { ENEMY_SPEED_CEIL, MAX_ENEMIES, MAX_ENEMY_PROJECTILES, STREAM_EXIT_PAD } from '../config.ts'
 import { clamp } from '../core/vec.ts'
+import { AF_HASTED, AF_MOLTEN, AF_SHIELDED, HASTED, MOLTEN_EVERY, SHIELDED } from '../content/affixes.ts'
 import { spawnPoof } from '../effects/fx.ts'
 import { FeelKind } from '../effects/feelQueue.ts'
+import { spawnAcidPool } from './acid.ts'
 import { bossStep } from './bossAI.ts'
 import { spawnEnemy } from './spawn.ts'
 import type { Enemy } from '../game/enemy.ts'
@@ -87,6 +89,11 @@ export function aiSystem(world: World, dt: number): void {
     const inFight = cage.active && e.brood === fight
     const caged = cage.active && !inFight
     if (inFight) brood++
+    if (e.stream) {
+      if (streamStep(world, e, dt) && caged) fence(e, cage)
+      continue
+    }
+    if (e.affix !== 0) affixStep(world, e, dt)
 
     const dx = px - e.x
     const dy = py - e.y
@@ -166,7 +173,7 @@ export function aiSystem(world: World, dt: number): void {
         faceTarget = true
         e.fireTimer -= dt
         if (e.fireTimer <= 0) {
-          e.fireTimer = def.fireCooldown ?? 2
+          e.fireTimer = (def.fireCooldown ?? 2) * cooldownMul(e)
           if (!caged) fireEnemyShot(world, e, ux, uy)
         }
         break
@@ -187,12 +194,12 @@ export function aiSystem(world: World, dt: number): void {
         faceTarget = true
         e.fireTimer -= dt
         if (e.fireTimer <= 0) {
-          e.fireTimer = def.fireCooldown ?? 2.4
+          e.fireTimer = (def.fireCooldown ?? 2.4) * cooldownMul(e)
           if (!caged) fireEnemyShot(world, e, ux, uy)
         }
         e.stateTimer -= dt
         if (e.stateTimer <= 0 && def.teleport) {
-          e.stateTimer = def.teleport.cooldown
+          e.stateTimer = def.teleport.cooldown * cooldownMul(e)
           teleport(world, e, def.teleport.range)
         }
         break
@@ -266,25 +273,99 @@ export function aiSystem(world: World, dt: number): void {
         ? Math.atan2(uy, ux)
         : Math.atan2(e.vy, e.vx)
       : facingOverride
+    if ((e.affix & AF_SHIELDED) !== 0) e.facing = turnToward(e.prevFacing, e.facing, SHIELDED.turnRate * dt)
 
-    if (caged) {
-      const fx = e.x - cage.x
-      const fy = e.y - cage.y
-      const min = cage.r + e.radius
-      const d2 = fx * fx + fy * fy
-      if (d2 < min * min) {
-        const fd = Math.sqrt(d2)
-        if (fd > 1e-6) {
-          e.x = cage.x + (fx / fd) * min
-          e.y = cage.y + (fy / fd) * min
-        } else {
-          e.x = cage.x + min
-          e.y = cage.y
-        }
-      }
-    }
+    if (caged) fence(e, cage)
   }
   world.director.broodCount = brood
+}
+
+/** The cage fence: an enemy outside the fight stays outside the ring. */
+function fence(e: Enemy, cage: { x: number; y: number; r: number }): void {
+  const fx = e.x - cage.x
+  const fy = e.y - cage.y
+  const min = cage.r + e.radius
+  const d2 = fx * fx + fy * fy
+  if (d2 >= min * min) return
+  const fd = Math.sqrt(d2)
+  if (fd > 1e-6) {
+    e.x = cage.x + (fx / fd) * min
+    e.y = cage.y + (fy / fd) * min
+  } else {
+    e.x = cage.x + min
+    e.y = cage.y
+  }
+}
+
+/**
+ * STREAM mode (section 4.7): the locked heading at the authored speed plus the
+ * lateral wobble; only cryo slows it, and the speed ceiling does not apply. At
+ * its TTL, or STREAM_EXIT_PAD past the arena wall it heads through, the unit
+ * leaves with no credit (a wall that starts past the arena walks in). Returns
+ * false when it left.
+ */
+function streamStep(world: World, e: Enemy, dt: number): boolean {
+  const b = world.arena.bounds
+  e.ttl -= dt
+  if (e.ttl <= 0) {
+    e.alive = false
+    spawnPoof(world, e.x, e.y, e.gibTint, 4)
+    return false
+  }
+  const hx = Math.cos(e.phaseDir)
+  const hy = Math.sin(e.phaseDir)
+  if (
+    (hx < -1e-6 && e.x < b.x - STREAM_EXIT_PAD) || (hx > 1e-6 && e.x > b.x + b.w + STREAM_EXIT_PAD) ||
+    (hy < -1e-6 && e.y < b.y - STREAM_EXIT_PAD) || (hy > 1e-6 && e.y > b.y + b.h + STREAM_EXIT_PAD)
+  ) {
+    e.alive = false
+    return false
+  }
+  const lat = e.wobAmp !== 0 ? e.wobAmp * Math.cos(e.wobFreq * (world.time - e.bornAt) + e.wobPhase) : 0
+  const k = e.slow > 0 ? 1 - e.slowFactor : 1
+  e.vx = (hx * e.speed - hy * lat) * k
+  e.vy = (hy * e.speed + hx * lat) * k
+  e.x += e.vx * dt
+  e.y += e.vy * dt
+  e.facing = e.phaseDir
+  return true
+}
+
+/** MOLTEN drops a pool on its cadence (acid.ts checks MAX_ACID before any draw). */
+function affixStep(world: World, e: Enemy, dt: number): void {
+  if ((e.affix & AF_MOLTEN) !== 0) {
+    e.affixT -= dt
+    if (e.affixT <= 0) {
+      e.affixT += MOLTEN_EVERY
+      spawnAcidPool(world, e.x, e.y)
+    }
+  }
+}
+
+function cooldownMul(e: Enemy): number {
+  return (e.affix & AF_HASTED) !== 0 ? HASTED.cooldownMul : 1
+}
+
+/** `from` turned toward `to` by at most `max` radians, the short way round. */
+function turnToward(from: number, to: number, max: number): number {
+  let d = to - from
+  d -= Math.round(d / (Math.PI * 2)) * Math.PI * 2
+  return d > max ? from + max : d < -max ? from - max : to
+}
+
+/**
+ * An elite's affixes, set once at spawn (A9): HASTED speed and cooldowns,
+ * SHIELDED front armor, the first MOLTEN pool a full cadence away.
+ */
+export function applyAffixes(e: Enemy, mask: number): void {
+  e.affix = mask
+  e.affixT = MOLTEN_EVERY
+  if ((mask & AF_HASTED) !== 0) {
+    e.speed *= HASTED.speedMul
+    e.fireTimer *= HASTED.cooldownMul
+    if (e.def.teleport) e.stateTimer *= HASTED.cooldownMul
+  }
+  if ((mask & AF_SHIELDED) !== 0) e.armor = Math.max(e.armor, SHIELDED.armor)
 }
 
 /** An egg hatches into its brood where it lies; the egg itself gives no credit. */

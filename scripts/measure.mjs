@@ -223,9 +223,13 @@ const DET_HELPER = `(() => {
       const mix = (n) => { const v = Math.round(n * 16); byte(v); byte(v >> 8); byte(v >> 16); byte(v >> 24) }
       const mix32 = (v) => { byte(v); byte(v >>> 8); byte(v >>> 16); byte(v >>> 24) }
       const byType = {}
+      let streams_ = 0
+      let affixed = 0
       for (const e of w.enemies.active) {
-        mix(e.x); mix(e.y); mix(e.hp); mix32(e.uid)
+        mix(e.x); mix(e.y); mix(e.hp); mix32(e.uid); byte(e.affix); byte(e.stream ? 1 : 0)
         byType[e.def.id] = (byType[e.def.id] ?? 0) + 1
+        if (e.stream) streams_++
+        if (e.affix) affixed++
       }
       for (const p of w.pickups.active) { mix(p.x); mix(p.y); mix(p.xp) }
       mix(w.player.x); mix(w.player.y)
@@ -244,10 +248,14 @@ const DET_HELPER = `(() => {
         lullUntil: d.lullUntil, bossBeat: d.bossBeat, lastBossKillAt: d.lastBossKillAt > 0 ? +d.lastBossKillAt.toFixed(2) : null,
         deferred: Array.from(d.deferred),
         runState: d.runState, bossesKilled: d.bossesKilled, cage: d.cage.active ? Math.round(d.cage.r) : 0, hazards: w.hazards.active.length,
+        eventsActive: d.events.filter((r) => r.active).length, streamUnits: streams_, affixedElites: affixed,
+        fired: Array.from(d.firedAt.slice(0, w.script.beats.length), (f) => (Number.isNaN(f) ? null : +f.toFixed(2))),
       }
       mix(d.beatCursor); mix(d.warnCursor); mix(d.pulseT); mix(d.topupAcc); mix(d.lullUntil); mix(d.bossBeat)
       mix(d.lastBossKillAt > 0 ? d.lastBossKillAt : 0)
       for (let k = 0; k < d.deferred.length; k++) mix(d.deferred[k])
+      for (const r of d.events) { byte(r.active ? 1 : 0); mix(r.beat); mix(r.wait); mix(r.emitted); mix(r.t); mix(r.ang); mix(r.ox); mix(r.oy) }
+      for (let k = 0; k < w.script.beats.length; k++) { mix(Number.isNaN(d.firedAt[k]) ? -2 : d.firedAt[k]); byte(d.warned[k]) }
       for (let k = 0; k < d.beatAng.length; k++) { mix(d.beatAng[k]); mix(d.beatAffix[k]) }
       mix(w.boss ? w.boss.hp : -1); mix(st.bosses)
       const bf = w.bossFight

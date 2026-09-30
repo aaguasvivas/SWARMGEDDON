@@ -72,5 +72,24 @@ export class Enemy implements Poolable {
   tint = 0xffffff
   gibTint = 0xffffff
 
+  /** Front armor fraction: the def's, or SHIELDED's. */
+  armor = 0
+  /** Elite affix bits (content/affixes.ts AF_*). */
+  affix = 0
+  /** MOLTEN: seconds to the next pool. */
+  affixT = 0
+  /** BROOD: the half-HP burst already happened. */
+  halfBurst = false
+  /** Spawned by a swarm event. */
+  eventUnit = false
+  /** STREAM mode: heading `phaseDir` at `speed`, no seek or separation, gone
+   *  with no credit after `ttl` seconds or outside the arena. The lateral wobble
+   *  velocity is wobAmp * cos(wobFreq * age + wobPhase). */
+  stream = false
+  ttl = 0
+  wobAmp = 0
+  wobFreq = 0
+  wobPhase = 0
+
   constructor(readonly sprite: Sprite) {}
 }

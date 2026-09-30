@@ -1,8 +1,9 @@
 import {
   ARC_ROUNDS, BITE, BLAST_CRIT, BOSS_SLOW_CAP, BURN_SEC, CLOSE_CALL, EVO, FUSION, GRACE, HEALTH_DROP_CHANCE,
-  HEALTH_HEAL, HEALTH_HEAL_ELITE, PODS, SEEK,
+  HEALTH_HEAL, HEALTH_HEAL_ELITE, MAX_ENEMIES, PODS, SEEK, SPAWN_ROOM,
 } from '../config.ts'
 import { distSq } from '../core/vec.ts'
+import { AF_BROOD, AF_VOLATILE, BROOD, VOLATILE } from '../content/affixes.ts'
 import { powi } from '../content/perks.ts'
 import {
   spawnChainArc,
@@ -19,7 +20,9 @@ import { hurtPlayer, killHeal, refillKillHeal } from './damage.ts'
 import { closeCall, closeCallArmed } from './dash.ts'
 import { dropBossPod, dropGem, dropHealth, dropPod } from './pickups.ts'
 import { directorBossKilled } from './director.ts'
+import { spawnHazard } from './hazards.ts'
 import { spawnEnemy } from './spawn.ts'
+import { HZ_CIRCLE } from '../game/hazard.ts'
 import { KillSource, scoreKill } from '../game/scoring.ts'
 import type { Enemy } from '../game/enemy.ts'
 import { tickDown } from '../game/player.ts'
@@ -238,10 +241,10 @@ function applyHit(world: World, e: Enemy, p: Projectile): boolean {
       break
   }
 
-  // Beetle-style frontal armor; HEADHUNTER crits ignore it.
-  if (e.def.frontArmor && !(crit && m.headhunter > 0)) {
+  // Frontal armor (beetles, SHIELDED elites); HEADHUNTER crits ignore it.
+  if (e.armor > 0 && !(crit && m.headhunter > 0)) {
     const dot = (p.vx / sp) * Math.cos(e.facing) + (p.vy / sp) * Math.sin(e.facing)
-    if (dot < -0.25) dmg *= 1 - e.def.frontArmor
+    if (dot < -0.25) dmg *= 1 - e.armor
   }
 
   // HEADHUNTER's blast takes the elite multipliers at each of its own targets.
@@ -390,16 +393,37 @@ function dealDamage(world: World, e: Enemy, dmg: number): void {
   damageEnemy(world, e, dmg)
 }
 
-/** Remove HP and resolve death; burning enemies take more while INFERNO is held. */
+/** Remove HP and resolve death; burning enemies take more while INFERNO is
+ *  held, and a BROOD elite bursts once when it drops to half HP. */
 function damageEnemy(world: World, e: Enemy, dmg: number): void {
   if (!e.alive) return
   e.hp -= e.burnT > 0 && world.weapon.evo === 'ignite' ? dmg * EVO.infernoBurnMul : dmg
+  if ((e.affix & AF_BROOD) !== 0 && !e.halfBurst && e.hp <= e.maxHp * BROOD.atHpFrac) {
+    e.halfBurst = true
+    broodBurst(world, e)
+  }
   if (e.hp <= 0) killEnemy(world, e)
 }
 
 /** A queued blast hits `e` (blasts.ts); AoE takes the elite and boss multipliers. */
 export function blastHit(world: World, e: Enemy, dmg: number): void {
   dealDamage(world, e, vsTarget(world, e, dmg))
+}
+
+/** BROOD: world fodder around the elite, one spawn draw for the ring's turn. */
+function broodBurst(world: World, e: Enemy): void {
+  if (world.enemies.size >= MAX_ENEMIES - SPAWN_ROOM) return
+  const a0 = world.rngs.spawn.angle()
+  for (let i = 0; i < BROOD.count; i++) {
+    const a = a0 + (i * Math.PI * 2) / BROOD.count
+    spawnEnemy(world, world.script.fodderId, e.x + Math.cos(a) * BROOD.r, e.y + Math.sin(a) * BROOD.r)
+  }
+}
+
+/** Affix effects of an elite's death: BROOD bursts again, VOLATILE leaves its blast. */
+function affixDeath(world: World, e: Enemy): void {
+  if ((e.affix & AF_BROOD) !== 0) broodBurst(world, e)
+  if ((e.affix & AF_VOLATILE) !== 0) spawnHazard(world, HZ_CIRCLE, e.x, e.y, VOLATILE.r, VOLATILE.tele, 0, VOLATILE.dmg)
 }
 
 /** Thorns has no shot, so a thorns kill must not carry the last bullet's
@@ -519,6 +543,8 @@ function killEnemy(world: World, e: Enemy): void {
       if (roll < chance) dropHealth(world, e.x, e.y, HEALTH_HEAL)
     }
   }
+
+  if (e.affix !== 0) affixDeath(world, e)
 
   if (def.behavior === 'splitter' && def.splitInto) {
     const count = def.splitCount ?? 2

@@ -123,6 +123,8 @@ for (const f of files) {
     closeCalls: r.closeCalls ?? 0,
     closeCallsPerMin: +((r.closeCalls ?? 0) / (r.endTime / 60)).toFixed(2),
     fromHalfHp: r.death?.fromHalfHp ?? null,
+    a3: r.beats ? beatFidelity(r) : null,
+    a3Density: r.beats ? { maxAlive: r.maxEnemies, overRowMax: Math.max(-Infinity, ...r.chunks.map((c) => c.overRowMax ?? -Infinity)), satFrac: r.a3Base ? +(r.a3Sat / r.a3Base).toFixed(3) : 0, eventUnitsMax: r.eventUnitsMax } : null,
     frozenSteps: r.frozenSteps,
     perMin,
     levelUpGapsOver60s: lvGaps,
@@ -133,6 +135,95 @@ for (const f of files) {
     wallSeconds: r.wallSeconds,
   })
 }
+/**
+ * A3: replay the deferral rules (section 4.1) over the run's own cage
+ * intervals and compare each beat's fire time with where the rules put it.
+ * An elite or event beat due while a cage is up waits; each boss kill
+ * schedules every held beat, in beat order, 10 s after the kill and 12 s
+ * apart; an event more than 60 s late is dropped; a lull inside a cage is
+ * skipped. Bosses arrive at max(at, last kill + 20), mid2 not after 570 s.
+ */
+function beatFidelity(r) {
+  const TICK = 1 / 60 + 1e-2
+  // Cage intervals from the run's own boss log. Within one tick the director
+  // fires due beats, then held beats, then raises a cage; a kill comes later
+  // in the tick, so at equal times: beat, open, kill.
+  const moments = []
+  let open = false
+  for (const e of r.events) {
+    if (e.type === 'bossSpawn' && !open) {
+      open = true
+      moments.push({ t: e.t, type: 1 })
+    } else if ((e.type === 'bossKill' || e.type === 'stalemate' || e.type === 'win') && open) {
+      open = false
+      moments.push({ t: e.t, type: 2, schedule: e.type === 'bossKill' && e.stage !== 'final' })
+    }
+  }
+  const beats = r.beats
+  for (const b of beats) if (b.kind === 'elite' || b.kind === 'event') moments.push({ t: b.at, type: 0, b })
+  moments.sort((a, b) => a.t - b.t || a.type - b.type)
+  const want = new Map()
+  const cageSpans = []
+  let held = []
+  let cageOn = false
+  let openedAt = 0
+  const flush = (T) => {
+    if (cageOn) return
+    held.sort((a, b) => a.due - b.due)
+    const keep = []
+    for (const h of held) {
+      if (!Number.isNaN(h.due) && h.due <= T + 1e-9) want.set(h.b.i, h.b.kind === 'event' && h.due - h.b.at > 60 ? -1 : h.due)
+      else keep.push(h)
+    }
+    held = keep
+  }
+  for (const m of moments) {
+    flush(m.t)
+    if (m.type === 0) {
+      if (cageOn) held.push({ b: m.b, due: NaN })
+      else want.set(m.b.i, m.b.at)
+    } else if (m.type === 1) {
+      cageOn = true
+      openedAt = m.t
+    } else {
+      cageOn = false
+      cageSpans.push([openedAt, m.t])
+      if (m.schedule) {
+        held.sort((a, b) => a.b.i - b.b.i)
+        let at = m.t + 10
+        for (const h of held) {
+          h.due = at
+          at += 12
+        }
+      }
+    }
+  }
+  if (cageOn) cageSpans.push([openedAt, Infinity])
+  flush(r.endTime)
+  const caged = (t) => cageSpans.some(([a, b]) => t >= a && t <= b)
+  const kills = moments.filter((m) => m.type === 2 && m.schedule).map((m) => m.t)
+  const res = []
+  for (const b of beats) {
+    let w = want.has(b.i) ? want.get(b.i) : null
+    if (b.kind === 'pack') w = b.at
+    else if (b.kind === 'lull') w = caged(b.at) ? -1 : b.at
+    else if (b.kind === 'boss') {
+      const until = b.firedAt !== null && b.firedAt >= 0 ? b.firedAt + TICK : r.endTime + TICK
+      const prior = kills.filter((k) => k < until)
+      const arrive = Math.max(b.at, (prior.length ? prior[prior.length - 1] : -Infinity) + 20)
+      w = b.id === 'mid2' && arrive > 570 ? -1 : arrive
+    }
+    const reached = w !== null && (w < 0 || w <= r.endTime + TICK)
+    const fired = b.firedAt
+    let ok
+    if (!reached) ok = fired === null
+    else if (w < 0) ok = fired === -1 || fired === null
+    else ok = fired !== null && fired >= 0 && Math.abs(fired - w) <= TICK
+    res.push({ i: b.i, label: b.kind === 'boss' || b.kind === 'event' ? b.id : b.kind, at: b.at, fired, want: w === null ? null : +w.toFixed(2), ok })
+  }
+  return res
+}
+
 writeFileSync(join(DIR, 'summary.json'), JSON.stringify(out, null, 1))
 for (const s of out) {
   console.log(
@@ -179,6 +270,21 @@ if (allFights.length) {
   console.log(`A6 kill-to-next-arrival gaps=${gaps.length} min=${gaps.length ? Math.min(...gaps) : '-'} (pass: at least 20 s)`)
 }
 console.log(`WINS ${out.filter((s) => s.won).length}/${out.length} stalemates=${out.filter((s) => s.stalemate).length} runs: ${out.filter((s) => s.won).map((s) => s.file).join(', ')}`)
+
+// A3 beat fidelity: each beat fired on time or where the deferral rules put it.
+const a3Runs = out.filter((s) => s.a3)
+if (a3Runs.length) {
+  let bad = 0
+  for (const s of a3Runs) {
+    const off = s.a3.filter((b) => !b.ok)
+    bad += off.length
+    const d = s.a3Density
+    const line = s.a3.map((b) => `${b.label}@${b.at}${b.fired === null ? ':-' : b.fired < 0 ? ':drop' : b.fired === b.at ? '' : ':' + b.fired}${b.ok ? '' : '(want ' + b.want + ')'}`).join(' ')
+    console.log(`A3 ${s.file} ok=${s.a3.length - off.length}/${s.a3.length} alive max=${d.maxAlive} overRow=${d.overRowMax} sat=${d.satFrac} evUnits=${d.eventUnitsMax} | ${line}`)
+  }
+  const dens = a3Runs.map((s) => s.a3Density)
+  console.log(`A3 beats off-rule=${bad} (pass: 0); alive max=${Math.max(...dens.map((d) => d.maxAlive))} (pass: <= 610); over row maxAlive max=${Math.max(...dens.map((d) => d.overRowMax))} (pass: <= 160); saturated share max=${Math.max(...dens.map((d) => d.satFrac))} (pass: <= 0.25)`)
+}
 
 // A10 readable deaths: seconds from the last moment at 50%+ HP to death.
 const readable = out.map((s) => s.fromHalfHp).filter((v) => v !== null).sort((a, b) => a - b)

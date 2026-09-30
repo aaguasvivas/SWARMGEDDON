@@ -20,6 +20,7 @@ import {
   ELITE_AFFIX_HP,
   ELITE_HP_MUL,
   ELITE_WARN_LEAD,
+  EVENT_SLOTS,
   FRENZY_AFTER,
   FRENZY_CADENCE,
   FRENZY_CADENCE_MAX,
@@ -41,9 +42,10 @@ import {
   WIN_PANEL_DELAY,
 } from '../config.ts'
 import { clamp } from '../core/vec.ts'
+import { AFFIX_BIT, tagTitle } from '../content/affixes.ts'
 import { BOSS_STAGES } from '../content/bosses.ts'
 import { ENEMIES } from '../content/enemies.ts'
-import { AFFIX_BIT, BEAT_DRAW_SLOTS, DEFER_SLOTS, type Beat, type BossStage, type MinuteRow } from '../content/runScripts.ts'
+import { BEAT_DRAW_SLOTS, DEFER_SLOTS, MAX_BEATS, eventDef, type Beat, type BossStage, type MinuteRow } from '../content/runScripts.ts'
 import { WEAPONS } from '../content/weapons.ts'
 import { spawnPoof } from '../effects/fx.ts'
 import { AlertKind, FF_BOSS, FF_ELITE, FeelKind } from '../effects/feelQueue.ts'
@@ -51,7 +53,9 @@ import type { Enemy } from '../game/enemy.ts'
 import { scoreClear } from '../game/scoring.ts'
 import { HZ_CIRCLE, type Hazard } from '../game/hazard.ts'
 import type { World } from '../game/world.ts'
+import { applyAffixes } from './ai.ts'
 import { cancelBossTelegraph } from './bossAI.ts'
+import { EventRun, FROM_WORD, clearEvents, eventAlert, fitSide, quadrant, rollEvent, startEvent, tickEvents } from './events.ts'
 import { clearHazards, clearHazardsNear, spawnHazard } from './hazards.ts'
 import { ringPointAt, ringSpawnPoint, ringOut, spawnEnemy } from './spawn.ts'
 
@@ -62,8 +66,6 @@ const DEG = Math.PI / 180
 /** Spawn points stay this far inside the arena wall. */
 const EDGE_INSET = 24
 const NEW_BUG = 'NEW BUG'
-/** Indexed by the quadrant of the direction from the player (world up = screen up). */
-const FROM_WORD = ['FROM THE EAST', 'FROM THE SOUTH', 'FROM THE WEST', 'FROM THE NORTH'] as const
 
 /**
  * Run-arc state (docs/NEXT-LEVEL.md 4.1, A7.3). Allocated once with the World
@@ -91,9 +93,17 @@ export class Director {
    *  it is up, event and elite beats wait in `deferred` and lulls are skipped. */
   readonly cage = { active: false, x: 0, y: 0, r: 0, formingFrom: 0 }
   /** Held beat indices (-1 = empty slot); fire times are set when the cage
-   *  drops (NaN until then). */
+   *  drops (NaN until then). A held beat's alert plays its lead before it fires. */
   readonly deferred = new Int16Array(DEFER_SLOTS)
   readonly deferredAt = new Float32Array(DEFER_SLOTS)
+  /** Per beat: its alert played for the fire time now set. Holding or
+   *  rescheduling a beat clears it, so the beat is announced again. */
+  readonly warned = new Uint8Array(MAX_BEATS)
+  /** Swarm event parts in emission (section 4.7). */
+  readonly events: EventRun[] = []
+  /** Sim time each beat fired: NaN until it does, -1 when the rules dropped
+   *  or skipped it (an event too late, a lull in the cage, mid2 too late). */
+  readonly firedAt = new Float32Array(MAX_BEATS)
   /** The coming boss's arrival marker and its seq (a recycled hazard has another). */
   marker: Hazard | null = null
   markerSeq = 0
@@ -110,6 +120,10 @@ export class Director {
   /** The current fight's brood alive (aiSystem counts it each tick). */
   broodCount = 0
   bossesKilled = 0
+
+  constructor() {
+    for (let i = 0; i < EVENT_SLOTS; i++) this.events.push(new EventRun())
+  }
 
   reset(): void {
     this.pulseT = 2
@@ -128,6 +142,13 @@ export class Director {
     this.cage.active = false
     this.deferred.fill(-1)
     this.deferredAt.fill(Number.NaN)
+    this.warned.fill(0)
+    for (let i = 0; i < this.events.length; i++) {
+      this.events[i]!.active = false
+      this.events[i]!.def = null
+      this.events[i]!.part = null
+    }
+    this.firedAt.fill(Number.NaN)
     this.marker = null
     this.markerSeq = 0
     this.fightStart = 0
@@ -174,6 +195,7 @@ export function directorTick(world: World, dt: number): void {
     d.beatCursor++
   }
   if (!d.cage.active) tickDeferred(world)
+  tickEvents(world, dt)
   tickBossArrival(world)
   tickFight(world)
   if (d.runState !== 'running' && d.runState !== 'overtime') return
@@ -244,12 +266,21 @@ function warnBeat(world: World, i: number): void {
         }
         d.beatAffix[off + k] = mask
       }
-      if (!d.cage.active) pushEliteAlert(world, i)
+      if (!d.cage.active) {
+        pushEliteAlert(world, i)
+        d.warned[i] = 1
+      }
       break
     }
-    case 'event':
-      d.beatAng[off] = rng.angle()
+    case 'event': {
+      const def = eventDef(world.script, b.id)
+      rollEvent(world, def, off)
+      if (!d.cage.active) {
+        eventAlert(world, def, d.beatAng[off]!)
+        d.warned[i] = 1
+      }
       break
+    }
     case 'boss':
       d.beatAng[off] = rng.angle()
       d.bossBeat = i
@@ -266,9 +297,14 @@ function fireOrDefer(world: World, i: number): void {
   switch (b.kind) {
     case 'pack':
       firePack(world, i)
+      world.director.firedAt[i] = world.time
       break
     case 'lull':
-      if (caged) break
+      if (caged) {
+        world.director.firedAt[i] = -1
+        break
+      }
+      world.director.firedAt[i] = world.time
       world.director.lullUntil = world.time + b.dur
       world.director.lullMin = world.script.minutes[Math.min(11, Math.floor(world.time / 60))]!.minAlive * b.minAliveMul
       if (b.alert) world.alerts.push(world.feel, AlertKind.Lull, b.alert.title, b.alert.sub, 0, 0, world.time, world.player.x, world.player.y)
@@ -276,20 +312,22 @@ function fireOrDefer(world: World, i: number): void {
     case 'elite':
     case 'event':
       if (caged) defer(world, i)
-      else fireBeat(world, i, false)
+      else fireBeat(world, i)
       break
     case 'boss':
       break
   }
 }
 
-/** Swarm events land in P7 (docs/NEXT-LEVEL.md 10.3); their S or G is already rolled. */
-function fireBeat(world: World, i: number, late: boolean): void {
+/** An elite or event beat fires; its draws were rolled at warn time. A beat
+ *  whose alert has not played (its warn fell inside a cage that dropped before
+ *  it came due) is announced now. */
+function fireBeat(world: World, i: number): void {
   const b = world.script.beats[i]!
-  if (b.kind === 'elite') {
-    if (late) pushEliteAlert(world, i)
-    fireElites(world, i)
-  }
+  if (world.director.warned[i] === 0) warnLate(world, i)
+  world.director.firedAt[i] = world.time
+  if (b.kind === 'elite') fireElites(world, i)
+  else if (b.kind === 'event') startEvent(world, i, eventDef(world.script, b.id), world.script.drawOff[i]!)
 }
 
 /** resolveScript guarantees a slot for every event and elite beat, so a held
@@ -300,6 +338,7 @@ function defer(world: World, i: number): void {
     if (d.deferred[k] === -1) {
       d.deferred[k] = i
       d.deferredAt[k] = Number.NaN
+      d.warned[i] = 0
       return
     }
   }
@@ -310,11 +349,49 @@ function tickDeferred(world: World): void {
   const t = world.time
   for (let k = 0; k < DEFER_SLOTS; k++) {
     const i = d.deferred[k]!
-    if (i < 0 || !(t >= d.deferredAt[k]!)) continue
-    d.deferred[k] = -1
+    if (i < 0) continue
+    const at = d.deferredAt[k]!
     const b = world.script.beats[i]!
-    if (b.kind === 'event' && t - b.at > DEFER_DROP_LATE) continue
-    fireBeat(world, i, true)
+    const dropped = b.kind === 'event' && at - b.at > DEFER_DROP_LATE
+    // A boss due first raises its cage and holds the beat again: its alert
+    // waits for the new fire time.
+    if (d.warned[i] === 0 && !dropped && t >= at - leadOf(b) && !(nextBossArrival(world) < at)) warnLate(world, i)
+    if (!(t >= at)) continue
+    d.deferred[k] = -1
+    if (dropped) d.firedAt[i] = -1
+    else fireBeat(world, i)
+  }
+}
+
+/** The arrival time of the next boss (Infinity when none is left): the
+ *  first boss beat not yet spawned or skipped, per the arrival and mid2 rules. */
+function nextBossArrival(world: World): number {
+  const d = world.director
+  const beats = world.script.beats
+  for (let i = 0; i < beats.length; i++) {
+    const b = beats[i]!
+    if (b.kind !== 'boss' || !Number.isNaN(d.firedAt[i]!)) continue
+    const arrive = Math.max(b.at, d.lastBossKillAt + BOSS_MIN_GAP)
+    if (b.stage === 'mid2' && arrive > MID2_LATEST) continue
+    return arrive
+  }
+  return Infinity
+}
+
+/** A beat's alert away from its warn time (a held beat's lead before it
+ *  fires, or at fire time). An event's side is fitted again around where the
+ *  player now stands (no draw). */
+function warnLate(world: World, i: number): void {
+  const b = world.script.beats[i]!
+  world.director.warned[i] = 1
+  if (b.kind === 'elite') {
+    pushEliteAlert(world, i)
+  } else if (b.kind === 'event') {
+    const def = eventDef(world.script, b.id)
+    const off = world.script.drawOff[i]!
+    const ang = world.director.beatAng
+    ang[off] = fitSide(world, ang[off]!, def.fit)
+    eventAlert(world, def, ang[off]!)
   }
 }
 
@@ -347,6 +424,7 @@ export function directorBossKilled(world: World, e: Enemy): void {
     if (slot < 0) break
     prev = d.deferred[slot]!
     d.deferredAt[slot] = at
+    d.warned[prev] = 0
     at += DEFER_GAP
   }
 }
@@ -360,6 +438,7 @@ function win(world: World, e: Enemy): void {
   world.cleared = true
   scoreClear(world)
   world.player.grantInvuln(GRACE.win, 2)
+  clearEvents(world)
   d.purgeT = 0
   d.purgeX = e.x
   d.purgeY = e.y
@@ -430,6 +509,7 @@ function tickBossArrival(world: World): void {
   const t = world.time
   const arrive = Math.max(b.at, d.lastBossKillAt + BOSS_MIN_GAP)
   if (b.stage === 'mid2' && arrive > MID2_LATEST) {
+    d.firedAt[d.bossBeat] = -1
     d.bossBeat = -1
     return
   }
@@ -452,6 +532,7 @@ function tickBossArrival(world: World): void {
   if (world.bossAlive) {
     if (t >= arrive && ascend(world)) {
       d.bossTitle = text.title
+      d.firedAt[d.bossBeat] = t
       d.bossBeat = -1
     }
     return
@@ -470,6 +551,7 @@ function tickBossArrival(world: World): void {
   }
   if (t >= arrive && spawnBoss(world, b.stage, ang)) {
     d.bossTitle = text.title
+    d.firedAt[d.bossBeat] = t
     d.bossBeat = -1
     d.marker = null
   }
@@ -666,8 +748,9 @@ function fireElites(world: World, i: number): void {
     ringPointAt(world, d.beatAng[off + k]!, half)
     const e = spawnInside(world, world.script.eliteId, ringOut.x, ringOut.y)
     if (!e) continue
-    const affixes = bitCount(d.beatAffix[off + k]!)
-    e.hp = e.maxHp = Math.round(e.maxHp * b.hpMul * ELITE_HP_MUL * buildHpScale(world) * (1 + ELITE_AFFIX_HP * affixes))
+    const mask = d.beatAffix[off + k]!
+    e.hp = e.maxHp = Math.round(e.maxHp * b.hpMul * ELITE_HP_MUL * buildHpScale(world) * (1 + ELITE_AFFIX_HP * bitCount(mask)))
+    applyAffixes(e, mask)
     world.feel.emit(FeelKind.EliteSpawn, FF_ELITE, e.x, e.y, 0, 0, e.def)
   }
 }
@@ -688,14 +771,17 @@ function sideAngle(world: World, ang: number): number {
   return inside ? ang : ang + Math.PI
 }
 
+/** The alert names the first elite's side; its title is that elite's name
+ *  tag, or the elite's name and the count when several come at once. */
 function pushEliteAlert(world: World, i: number): void {
   const d = world.director
-  const ang = d.beatAng[world.script.drawOff[i]!]!
-  const dx = Math.cos(ang)
-  const dy = Math.sin(ang)
-  const q = ((Math.round(Math.atan2(dy, dx) / (Math.PI / 2)) % 4) + 4) % 4
-  const name = ENEMIES[world.script.eliteId]!.displayName
-  world.alerts.push(world.feel, AlertKind.Elite, name, FROM_WORD[q]!, dx, dy, world.time, world.player.x, world.player.y)
+  const b = world.script.beats[i]!
+  const off = world.script.drawOff[i]!
+  const ang = d.beatAng[off]!
+  const def = ENEMIES[world.script.eliteId]!
+  const count = b.kind === 'elite' ? b.count : 1
+  const title = count > 1 ? def.displayName + ' x' + count : tagTitle(def.idx, d.beatAffix[off]!)
+  world.alerts.push(world.feel, AlertKind.Elite, title, FROM_WORD[quadrant(ang)]!, Math.cos(ang), Math.sin(ang), world.time, world.player.x, world.player.y)
 }
 
 function spawnInside(world: World, id: string, x: number, y: number) {
@@ -760,4 +846,6 @@ export function directorJumpTo(world: World, t: number): void {
   d.marker = null
   d.deferred.fill(-1)
   d.deferredAt.fill(Number.NaN)
+  d.warned.fill(0)
+  clearEvents(world)
 }
