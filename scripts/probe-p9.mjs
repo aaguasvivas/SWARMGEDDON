@@ -78,7 +78,7 @@ const HELPERS = `(async () => {
   const fresh = (c = 'nova', a = 'hive', seed = 4242) => {
     S.setLoadout(c, a)
     S.startRun('endless')
-    w.beginRun(seed >>> 0, 'endless')
+    S.beginSeed(seed)
     const d = w.director
     d.beatCursor = d.warnCursor = w.script.beats.length
     d.pulseT = 1e9

@@ -1,5 +1,6 @@
 import { Container, Graphics, Rectangle, Text } from 'pixi.js'
 import { CORES } from '../config.ts'
+import { doubleFields } from '../core/fields.ts'
 import { findPerk } from '../content/perks.ts'
 import { WEAPONS } from '../content/weapons.ts'
 import type { Insets } from '../platform/safeArea.ts'
@@ -76,6 +77,7 @@ export class CoreReveal {
     })
     this.view.addChild(this.scrim, this.title, this.sub, ...this.rows, this.extra, this.evolveDesc, this.evolveBtn.view, this.levelsBtn.view, this.hint)
     this.view.visible = false
+    doubleFields(this)
   }
 
   isOpen(): boolean {
