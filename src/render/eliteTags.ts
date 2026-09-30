@@ -2,6 +2,7 @@ import { Container, type Sprite, Text } from 'pixi.js'
 import { affixColor, tagSub, tagTitle } from '../content/affixes.ts'
 import type { World } from '../game/world.ts'
 import { FONT, INK, T } from '../ui/tokens.ts'
+import type { Camera } from './camera.ts'
 import type { TextureRegistry } from './textures.ts'
 
 const TAG_CAP = 8
@@ -16,6 +17,7 @@ const RING_TEX_R = 28
 const RING_ALPHA = 0.85
 /** A buried elite's tag stays this visible so its mound can be tracked. */
 const SUBMERGED_ALPHA = 0.6
+const UNDER_CALLOUT_ALPHA = 0.2
 
 /**
  * Elite name tags and affix outlines (section 4.7, A9). The tag lines (title,
@@ -51,8 +53,11 @@ export class EliteTags {
     }
   }
 
-  /** After renderEntities (it places the sprites this reads). */
-  update(world: World, show: boolean, zoom: number): void {
+  /** After renderEntities (it places the sprites this reads). A tag that would
+   *  rise above world y `topY` (under the HUD rows) hangs below its elite instead;
+   *  a tag under the callout showing now (`lane`, screen x0, y0, x1, y1) dims so
+   *  the two lines never read as one. */
+  update(world: World, show: boolean, zoom: number, topY: number, lane: Float32Array | null, cam: Camera): void {
     this.seen.fill(0)
     if (show) {
       const inv = 1 / zoom
@@ -80,16 +85,33 @@ export class EliteTags {
         const alpha = e.submerged ? SUBMERGED_ALPHA : e.sprite.alpha
         const sub = this.subs[slot]!
         const title = this.titles[slot]!
-        let y = sy - e.radius - RING_PAD - GAP_PX * inv
-        if (sub.visible) {
-          sub.position.set(sx, y)
-          sub.scale.set(inv)
-          sub.alpha = alpha
-          y -= sub.height
-        }
-        title.position.set(sx, y)
         title.scale.set(inv)
         title.alpha = alpha
+        sub.scale.set(inv)
+        sub.alpha = alpha
+        const subH = sub.visible ? sub.height : 0
+        const gap = e.radius + RING_PAD + GAP_PX * inv
+        let tagTop: number
+        if (sy - gap - subH - title.height >= topY) {
+          sub.position.set(sx, sy - gap)
+          title.position.set(sx, sy - gap - subH)
+          tagTop = sy - gap - subH - title.height
+        } else {
+          title.position.set(sx, sy + gap + title.height)
+          sub.position.set(sx, sy + gap + title.height + subH)
+          tagTop = sy + gap
+        }
+        if (lane) {
+          const hw = Math.max(title.width, sub.visible ? sub.width : 0) / 2
+          const x0 = cam.worldToScreenX(sx - hw)
+          const x1 = cam.worldToScreenX(sx + hw)
+          const y0 = cam.worldToScreenY(tagTop)
+          const y1 = cam.worldToScreenY(tagTop + title.height + subH)
+          if (x1 > lane[0]! && x0 < lane[2]! && y1 > lane[1]! && y0 < lane[3]!) {
+            title.alpha = alpha * UNDER_CALLOUT_ALPHA
+            sub.alpha = alpha * UNDER_CALLOUT_ALPHA
+          }
+        }
         const ring = this.ringSprites[slot]!
         ring.visible = e.affix !== 0 && !e.submerged
         if (ring.visible) {

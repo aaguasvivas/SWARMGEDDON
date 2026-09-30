@@ -11,15 +11,17 @@ import { Camera } from './render/camera.ts'
 import { loadFonts } from './render/fonts.ts'
 import { TextureRegistry } from './render/textures.ts'
 import { IchorLayer } from './render/ichorLayer.ts'
-import { renderEntities } from './render/entityRenderer.ts'
+import { PodRings, renderEntities } from './render/entityRenderer.ts'
 import { HazardRenderer } from './render/hazardRenderer.ts'
 import { EliteTags } from './render/eliteTags.ts'
+import { EmergeFx } from './render/emergeFx.ts'
 import { PostFX } from './render/postfx.ts'
 import { Vignette } from './render/vignette.ts'
 import { BackdropSystem } from './render/backdrop.ts'
 import { AudioEngine } from './audio/audio.ts'
 import { DamageNumbers } from './effects/damageNumbers.ts'
 import { FeelDirector } from './effects/feelDirector.ts'
+import { ScreenFx } from './effects/screenFx.ts'
 import { DEATH_BEAT_MS, DEATH_RECAP_MS, DEATH_SKIP_MS, TimePreset } from './effects/timeDirector.ts'
 import { Arena, type DecorSpeck } from './game/arena.ts'
 import { Player } from './game/player.ts'
@@ -27,6 +29,8 @@ import { World, type RunMode } from './game/world.ts'
 import { InputManager } from './input/input.ts'
 import { DebugOverlay } from './ui/debugOverlay.ts'
 import { Hud } from './ui/hud.ts'
+import { Callouts } from './ui/callouts.ts'
+import { OffscreenArrows } from './ui/offscreenArrows.ts'
 import { LevelUpModal } from './ui/levelupModal.ts'
 import { MainMenu } from './ui/mainMenu.ts'
 import { GameOver } from './ui/gameOver.ts'
@@ -38,7 +42,7 @@ import { submitScore } from './net/leaderboard.ts'
 import { TouchHint } from './ui/touchHint.ts'
 import { Toast } from './ui/toast.ts'
 import { bakeIcons } from './ui/icons.ts'
-import { FONT } from './ui/tokens.ts'
+import { FONT, INK, T } from './ui/tokens.ts'
 import { tweens } from './ui/tween.ts'
 import { numGlyphs } from './ui/digits.ts'
 import { flushStorage, initStorage, loadJSON, saveJSON } from './platform/storage.ts'
@@ -72,6 +76,14 @@ import { scoreStep } from './game/scoring.ts'
 import { particleSystem } from './systems/particles.ts'
 
 type Screen = 'menu' | 'playing' | 'gameover' | 'leaderboard'
+/** A discrete hit tints the ship this color for FeelDirector.shipFlash (section 6.5). */
+const SHIP_HURT_TINT = 0xff6a6a
+/** Elite tags keep this many screen px below the HUD rows. */
+const TAG_HUD_GAP = 6
+/** The touch-hint banner's center: below the chip and badge row in portrait; in
+ *  landscape below the plate, between the chip and the badge. */
+const HINT_BELOW_ROW_P = 20
+const HINT_BELOW_PLATE_L = 28
 /** Where the player goes once a run is recorded. */
 type AfterRun = 'recap' | 'menu' | 'retry'
 
@@ -128,6 +140,9 @@ async function boot(): Promise<void> {
   layers.ichor.addChild(hazardView.view)
   const eliteTags = new EliteTags(texReg)
   layers.ichor.addChild(eliteTags.rings)
+  const emerge = new EmergeFx(texReg)
+  const podRings = new PodRings()
+  layers.fx.addChild(podRings.view, emerge.view)
 
   const player = new Player()
   const world = new World(arena, player, ichor, layers, texReg)
@@ -146,15 +161,19 @@ async function boot(): Promise<void> {
 
   const input = new InputManager(app.canvas)
   input.setEnabled(false)
-  const feel = new FeelDirector(world, audio, numbers)
+  const hud = new Hud()
+  const callouts = new Callouts()
+  const arrows = new OffscreenArrows()
+  const feel = new FeelDirector(world, audio, numbers, callouts, arrows, hud)
+  layers.overlay.addChild(feel.shipFx.view)
+  const screenFx = new ScreenFx()
+  const pausedLabel = buildPausedLabel()
   const vignette = new Vignette()
   // Per-world atmosphere: ambient motes (world-space) + screen-space overlay +
   // the color grade/tinted vignette. Bakes its textures once; only tints per world.
   const backdrop = new BackdropSystem(layers, postFX, vignette)
   const crosshair = buildCrosshair()
-  const hurtOverlay = new Graphics()
   const flashOverlay = new Graphics() // brief white pop on level-up
-  const hud = new Hud()
   const modal = new LevelUpModal()
   const mainMenu = new MainMenu()
   const gameOver = new GameOver()
@@ -168,7 +187,7 @@ async function boot(): Promise<void> {
   const debug = import.meta.env.DEV ? new DebugOverlay() : null
   // vignette sits at the bottom of the UI (above the world, below the HUD).
   layers.ui.addChild(
-    vignette.view, hud.view, input.touch.view, hurtOverlay, flashOverlay, crosshair,
+    vignette.view, screenFx.view, arrows.view, hud.view, input.touch.view, flashOverlay, crosshair, callouts.view, pausedLabel,
     touchHint.view, modal.view, winPanel.view, mainMenu.view, gameOver.view, settingsPanel.view, leaderboard.view, toast.view,
   )
   if (debug) layers.ui.addChild(debug.view)
@@ -200,6 +219,7 @@ async function boot(): Promise<void> {
     input.autoFire = s.autoFire
     setHapticsEnabled(s.haptics)
     feel.time.reduceMotion = s.reduceMotion
+    callouts.reduceMotion = s.reduceMotion
     camera.reduceMotion = s.reduceMotion
     tweens.reduceMotion = s.reduceMotion
     numbers.mode = s.damageNumbers
@@ -208,8 +228,8 @@ async function boot(): Promise<void> {
 
   // --- state machine ---
   let screen: Screen = 'menu'
-  /** Why the sim is paused beyond a draft: the win panel is up. */
-  let pauseReason: 'none' | 'win' = 'none'
+  /** Why the sim is paused beyond a draft: the win panel is up, or the pause button. */
+  let pauseReason: 'none' | 'win' | 'pause' = 'none'
   let lastResult: RunResult | null = null
   let submitToken = 0
   /** UTC day the current run started on (a run belongs to its start date). */
@@ -303,13 +323,18 @@ async function boot(): Promise<void> {
     player.paint(paint ?? char.colors, char.shape)
     world.baseBulletTint = paint ? paint.bullet : WEAPONS[char.startWeapon]!.tint
     audio.setTheme(theme.music)
-    feel.reset()
+    feel.reset(loadWorldBest(theme.id).score)
     deathBeat = false
     backdrop.setTheme(theme, arena.glowSpots) // motes/atmosphere/grade/vignette/glows
     camera.reset()
     followCamera(0, true) // seed the camera before the first sim step
-    hud.reset() // don't let last run's dying bars sweep across the fresh run
-    hud.announceWorld(theme.name, `vs ${theme.broodName.toUpperCase()}`, theme.borderGlow)
+    const daily = mode === 'daily'
+    hud.reset(world, daily ? 'DAILY' : '') // don't let last run's dying bars sweep across the fresh run
+    emerge.setTheme(theme)
+    emerge.reset(world)
+    if (daily) feel.intro('DAILY', theme.name + ' · SAME RUN FOR EVERYONE', T.accentGold, true)
+    else feel.intro(theme.name, 'vs ' + theme.broodName.toUpperCase(), theme.borderGlow, false)
+    pausedLabel.visible = false
     touchMoveUsed = false
     touchAimUsed = false
     screen = 'playing'
@@ -329,6 +354,7 @@ async function boot(): Promise<void> {
    *  the player moves on to the recap, the menu or a fresh run. */
   function endRun(end: RunEnd, after: AfterRun = 'recap'): void {
     pauseReason = 'none'
+    pausedLabel.visible = false
     winPanel.hide()
     // Until the Daily lifecycle exists, every Daily is ranked.
     const result = buildRunResult(world, end, { date: runDate, ranked: world.mode === 'daily', dailyNumber: 0, paint: runPaint })
@@ -367,6 +393,7 @@ async function boot(): Promise<void> {
   function toMenu(): void {
     screen = 'menu'
     pauseReason = 'none'
+    pausedLabel.visible = false
     winPanel.hide()
     input.setEnabled(false)
     feel.reset()
@@ -488,10 +515,15 @@ async function boot(): Promise<void> {
     const insets = getInsets()
     camera.resize(w, h)
     feel.shake.resize(w, h)
-    hud.layout(w, h, insets)
+    hud.layout(w, h, insets, world)
     input.touch.layoutDash(w, h, insets)
+    input.touch.setExclusionRect(hud.pauseRect)
+    callouts.layout(w, insets.left, insets.right, hud.laneY, hud.laneScale)
+    pausedLabel.position.set(insets.left + (w - insets.left - insets.right) / 2, hud.laneY)
+    pausedLabel.scale.set(hud.laneScale)
+    screenFx.layout(w, h)
     debug?.layout(insets)
-    touchHint.layout(w, h, insets, input.touch.dashX, input.touch.dashY)
+    touchHint.layout(w, h, insets, input.touch.dashX, input.touch.dashY, hud.pillTop, h > w ? hud.rowBottom + HINT_BELOW_ROW_P : hud.topBottom + HINT_BELOW_PLATE_L)
     vignette.resize(w, h)
     backdrop.layout(w, h)
     modal.setScreen(w, h, insets)
@@ -503,8 +535,6 @@ async function boot(): Promise<void> {
     toast.layout(w, insets, mainMenu.toastSlot)
     // Pin the bloom to the visible window (not the whole 2800x1900 arena).
     layers.scene.filterArea = new Rectangle(0, 0, w, h)
-    hurtOverlay.clear()
-    hurtOverlay.rect(0, 0, w, h).fill(COLORS.hurtFlash)
     flashOverlay.clear()
     flashOverlay.rect(0, 0, w, h).fill(0xeafff6)
     // Idle the player at world center so the menu has a live arena behind it.
@@ -579,6 +609,7 @@ async function boot(): Promise<void> {
     } else if (screen === 'playing') {
       if (e.key === 'Escape') quitRun('recap')
       else if (e.key === 'r' || e.key === 'R') quitRun('retry')
+      else if (e.key === 'p' || e.key === 'P') togglePause()
     } else if (screen === 'gameover') {
       if (e.key === 'Enter' && gameOver.acceptsInput()) startRun(world.mode)
       else if (e.key === 'Escape' && gameOver.acceptsInput()) toMenu()
@@ -654,10 +685,31 @@ async function boot(): Promise<void> {
     else if (draftDue(world)) openDraft()
   }
 
+  /** The HUD pause button (and P): the sim holds until a tap or P. The pause
+   *  sheet (section 9.4) replaces this stand-in. */
+  function togglePause(): void {
+    if (pauseReason === 'pause') {
+      pauseReason = 'none'
+      world.paused = false
+      pausedLabel.visible = false
+      input.setEnabled(true)
+      feel.time.play(TimePreset.Resume)
+      return
+    }
+    if (screen !== 'playing' || world.paused || world.pendingGameOver || pauseReason !== 'none') return
+    pauseReason = 'pause'
+    world.paused = true
+    pausedLabel.visible = true
+    input.setEnabled(false)
+  }
+  hud.onPause = togglePause
+
   // Leaving the death sequence early: a fresh tap after the skip beat, or the
-  // app going to the background, goes straight to the recap.
-  app.canvas.addEventListener('pointerdown', () => {
+  // app going to the background, goes straight to the recap. A tap while the
+  // pause stand-in shows resumes.
+  app.canvas.addEventListener('pointerdown', (e) => {
     if (screen === 'playing' && world.pendingGameOver && feel.time.deathMs >= DEATH_SKIP_MS) endRun('death')
+    else if (pauseReason === 'pause' && !hud.pauseRect.contains(e.offsetX, e.offsetY)) togglePause()
   })
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) return
@@ -671,6 +723,8 @@ async function boot(): Promise<void> {
   })
   onAppPause(() => void flushStorage())
 
+  /** The callout's screen box this frame (arrows step below it). */
+  const laneBox = new Float32Array(4)
   let warpAmt = 0
   // Ambient render clock: advanced by the CLAMPED render delta (never lurches
   // after a backgrounded tab), decoupled from the sim accumulator so backdrop
@@ -710,9 +764,12 @@ async function boot(): Promise<void> {
 
       renderEntities(world, alpha)
       hazardView.update(world, alpha)
+      podRings.update(world, alpha)
+      emerge.update(world, alpha)
       player.render(alpha)
-      // i-frames: the ship blinks at 15 Hz.
+      // i-frames: the ship blinks at 15 Hz; a discrete hit tints it red for a beat.
       player.view.alpha = player.invuln > 0 && (Math.floor(renderClock * 30) & 1) === 1 ? 0.35 : 1
+      player.view.tint = feel.shipFlash > 0 ? SHIP_HURT_TINT : 0xffffff
       ichor.flush()
 
       // Touch UI (sticks + DASH) on touch devices until a mouse or pad takes
@@ -729,7 +786,8 @@ async function boot(): Promise<void> {
       if (showCrosshair) crosshair.position.set(input.pointerX, input.pointerY)
 
       hud.view.visible = playing && !modal.isOpen()
-      if (playing) hud.update(world, fd)
+      feel.update(fd, playing)
+      if (playing) hud.update(world, fd, feel.pulse)
 
       if ((!world.paused || !playing) && modal.isOpen()) modal.close()
 
@@ -743,21 +801,10 @@ async function boot(): Promise<void> {
           saveJSON('seenTouchControls', true)
         }
       }
-      const showTouchHint = playing && isTouchDevice && !input.hasPointer && !touchLearned && !world.bossAlive
+      const showTouchHint = playing && !world.paused && isTouchDevice && !input.hasPointer && !touchLearned && !world.bossAlive
       touchHint.view.visible = showTouchHint
       if (showTouchHint) touchHint.update(fd, touchMoveUsed, touchAimUsed)
 
-      // Hurt vignette + a low-HP danger pulse so you feel the pressure.
-      feel.update(fd, playing)
-      let red = feel.hurtFlash * 0.45
-      if (playing) {
-        const frac = world.player.hp / world.player.maxHp
-        if (frac < 0.32) {
-          const t = performance.now() / 1000
-          red = Math.max(red, (1 - frac / 0.32) * (0.12 + Math.sin(t * 7) * 0.06))
-        }
-      }
-      hurtOverlay.alpha = playing ? red : 0
 
       // Level-up flash.
       levelFlash = Math.max(0, levelFlash - fd * 3.5)
@@ -770,7 +817,22 @@ async function boot(): Promise<void> {
       followCamera(fd)
       camera.apply(camLayers, sh.offsetX * shakeMul, sh.offsetY * shakeMul, sh.rotation * shakeMul)
       numbers.update(renderClock * 1000, camera.zoom)
-      eliteTags.update(world, playing, camera.zoom)
+      if (playing) emerge.scan(world, camera.x, camera.y, camera.w, camera.h)
+      const hudTop = hud.stackBottom
+      const laneShown = callouts.bounds(laneBox)
+      eliteTags.update(world, playing, camera.zoom, camera.screenToWorldY(hudTop + TAG_HUD_GAP), laneShown ? laneBox : null, camera)
+      const shipSX = camera.worldToScreenX(player.view.x)
+      const shipSY = camera.worldToScreenY(player.view.y)
+      screenFx.view.visible = playing
+      if (playing) screenFx.update(feel.hurtFlash, feel.lowHp, feel.pulse, feel.edge, feel.edgeX, feel.edgeY, shipSX, shipSY)
+      const cues = playing && !world.paused
+      callouts.view.visible = playing && !modal.isOpen() && pauseReason === 'none'
+      callouts.update(cues ? fd : 0)
+      arrows.view.visible = cues
+      if (cues) {
+        arrows.avoid(touchUI ? input.touch.dashX : -1e4, input.touch.dashY)
+        arrows.update(world, camera, app.screen.width, hudTop, hud.pillTop, laneShown ? laneBox : null, fd)
+      }
       tweens.update(renderClock * 1000)
       toast.update(fd)
 
@@ -859,9 +921,13 @@ async function boot(): Promise<void> {
       input,
       feel,
       hud,
+      callouts,
+      arrows,
+      emerge,
       loop,
       camera,
       numbers,
+      togglePause: () => togglePause(),
       perfReset: () => loop.resetStats(),
       leaderboard,
       toLeaderboard: () => toLeaderboard(),
@@ -951,6 +1017,21 @@ function makeDecor(rng: Rng, count: number): DecorSpeck[] {
     out.push({ nx: rng.float(), ny: rng.float(), r: rng.range(1, 3.5), alpha: rng.range(0.03, 0.1) })
   }
   return out
+}
+
+/** Stand-in for the pause sheet: a line in the callout lane. */
+function buildPausedLabel(): Container {
+  const c = new Container()
+  const title = new Text({ text: 'PAUSED', style: { fontFamily: FONT.display, fontWeight: '900', fontSize: 26, letterSpacing: 2, fill: T.textHi, stroke: { color: INK, width: 6, join: 'round' } } })
+  title.anchor.set(0.5)
+  title.y = -11
+  const sub = new Text({ text: 'TAP OR PRESS P TO RESUME', style: { fontFamily: FONT.mono, fontWeight: '800', fontSize: 14, fill: T.textPrimary, stroke: { color: INK, width: 5, join: 'round' } } })
+  sub.anchor.set(0.5)
+  sub.y = 18
+  c.addChild(title, sub)
+  c.visible = false
+  c.eventMode = 'none'
+  return c
 }
 
 function buildCrosshair(): Container {

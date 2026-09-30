@@ -289,3 +289,8 @@ export const STREAM_EXIT_PAD = 40
 /** Events and brood ignore maxAlive; they spawn only while the field is under
  *  MAX_ENEMIES minus this. */
 export const SPAWN_ROOM = 20
+
+// P15: HUD, callouts, arrows, in-world visuals (docs/NEXT-LEVEL.md 0 decision 6, 6.5, 9.2)
+/** A new enemy fades in over this long (render: the emerge effect) and cannot
+ *  bite until it has (sim). */
+export const ENEMY_EMERGE = 0.45

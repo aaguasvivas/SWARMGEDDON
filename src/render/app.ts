@@ -92,6 +92,10 @@ export async function createRenderer(mount: HTMLElement): Promise<GameRenderer> 
   // Enable Pixi's event system so interactive UI (the level-up cards) gets
   // pointer events. Gameplay input is handled separately via DOM listeners.
   app.stage.eventMode = 'static'
+  // The game scene and the number overlay hold thousands of nodes and nothing
+  // interactive: skip them when hit-testing every pointermove.
+  layers.scene.eventMode = 'none'
+  layers.overlay.eventMode = 'none'
 
   return { app, layers }
 }

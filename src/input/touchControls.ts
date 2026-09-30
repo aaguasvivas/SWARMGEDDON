@@ -1,14 +1,20 @@
-import { Container, Graphics, Text } from 'pixi.js'
+import { Container, Graphics, Text, type Rectangle } from 'pixi.js'
 import { COLORS, DASH_BTN, TOUCH_STICK_RADIUS, TOUCH_STICK_DEADZONE } from '../config.ts'
 import { normalizeInto, type Vec2 } from '../core/vec.ts'
 import type { Insets } from '../platform/safeArea.ts'
+import { SegRing } from '../render/segRing.ts'
+import { makeIcon } from '../ui/icons.ts'
+import { FONT, INK, T } from '../ui/tokens.ts'
 
 const KNOB_RADIUS = 30
 const DASH_HIT_R2 = DASH_BTN.hitR * DASH_BTN.hitR
 const DASH_EXCL_R2 = (DASH_BTN.hitR + DASH_BTN.aimExclusionPad) ** 2
 const DASH_VIS_R = DASH_BTN.visualD / 2
-/** Recharge sweep redraw resolution (steps per full circle). */
-const SWEEP_STEPS = 32
+/** Charge ring segments: divisible by every charge count up to DASH.maxCharges. */
+const RING_SEGS = 24
+const SEG_READY = 1
+const SEG_FILLING = 0.45
+const SEG_EMPTY = 0.14
 
 /**
  * On-screen dual virtual joysticks for touch. Floating-origin style: each stick
@@ -55,15 +61,20 @@ export class TouchControls {
   private lastAimX = 0
   private lastAimY = 0
 
-  // Placeholder DASH button (final art is P15). Redrawn only when its state changes.
+  // DASH button (A1.2): a dark disc, the dash glyph, and a segmented charge
+  // ring (one arc per charge, the recharging one filling). Sprites only; the
+  // segments change alpha when the state changes.
   private dashView = new Container()
-  private dashSweep = new Graphics()
-  private dashPips = new Graphics()
+  private dashRing = new SegRing(RING_SEGS, DASH_VIS_R, 4, 4)
+  private dashIcon = makeIcon('dash', 24, T.textHi)
   private dashLabel: Text
-  private shownCharges = -1
-  private shownMax = -1
-  private shownSweep = -1
+  private shownKey = -1
   private pressT = 0
+  /** Touches starting here (the pause button, grown by its pad) never become a stick. */
+  private exX = 0
+  private exY = 0
+  private exW = 0
+  private exH = 0
 
   constructor() {
     this.moveStick = this.buildStick()
@@ -71,12 +82,13 @@ export class TouchControls {
     this.aimStick = this.buildStick()
     this.aimKnob = this.aimStick.getChildAt(1) as Graphics
     const base = new Graphics()
-    base.circle(0, 0, DASH_VIS_R).fill({ color: COLORS.void, alpha: 0.6 })
-    base.circle(0, 0, DASH_VIS_R).stroke({ width: 2, color: COLORS.hudText, alpha: 0.55 })
-    this.dashLabel = new Text({ text: 'DASH', style: { fontFamily: 'ui-monospace, Menlo, Consolas, monospace', fontSize: 13, fontWeight: 'bold', fill: 0xeafff6 } })
+    base.circle(0, 0, DASH_VIS_R).fill({ color: INK, alpha: 0.62 })
+    base.circle(0, 0, DASH_VIS_R - 7).stroke({ width: 1, color: T.lineStrong, alpha: 0.5 })
+    this.dashIcon.y = -6
+    this.dashLabel = new Text({ text: 'DASH', style: { fontFamily: FONT.mono, fontSize: 12, fontWeight: '800', fill: T.textHi } })
     this.dashLabel.anchor.set(0.5)
-    this.dashLabel.y = -5
-    this.dashView.addChild(base, this.dashSweep, this.dashPips, this.dashLabel)
+    this.dashLabel.y = 13
+    this.dashView.addChild(base, this.dashRing.view, this.dashIcon, this.dashLabel)
     this.view.addChild(this.dashView, this.moveStick, this.aimStick)
     this.view.eventMode = 'none' // sticks are drawn-only; input comes from window pointer events
   }
@@ -89,33 +101,32 @@ export class TouchControls {
     this.dashView.position.set(this.dashX, this.dashY)
   }
 
-  /** Redraw the button's charge pips and recharge sweep when they change.
-   *  `recharge` is the next charge's progress in [0, 1]. */
+  /** Where a touch never starts a stick (canvas CSS px). */
+  setExclusionRect(r: Rectangle): void {
+    this.exX = r.x
+    this.exY = r.y
+    this.exW = r.width
+    this.exH = r.height
+  }
+
+  /** Light the charge ring: ready charges full, the recharging one by
+   *  `recharge` (its progress in [0, 1]), the rest dim. */
   updateDash(charges: number, max: number, recharge: number, dt: number): void {
-    const sweep = charges < max ? Math.floor(recharge * SWEEP_STEPS) : SWEEP_STEPS
-    if (charges !== this.shownCharges || max !== this.shownMax) {
-      this.shownCharges = charges
-      this.shownMax = max
-      const g = this.dashPips
-      g.clear()
-      const gap = 10
-      const x0 = -((max - 1) * gap) / 2
-      for (let i = 0; i < max; i++) {
-        if (i < charges) g.circle(x0 + i * gap, 12, 3.5).fill(COLORS.xpBar)
-        else g.circle(x0 + i * gap, 12, 3).stroke({ width: 1.5, color: COLORS.xpBar, alpha: 0.7 })
+    const k = RING_SEGS / max
+    const ready = charges * k
+    const filling = charges < max ? ready + Math.floor(recharge * k) : ready
+    const key = ready * 64 + filling
+    if (key !== this.shownKey) {
+      this.shownKey = key
+      const segs = this.dashRing.segs
+      for (let i = 0; i < RING_SEGS; i++) {
+        const sg = segs[i]!
+        sg.tint = i < ready ? T.accentXp : T.textHi
+        sg.alpha = i < ready ? SEG_READY : i < filling ? SEG_FILLING : SEG_EMPTY
       }
-      this.dashLabel.alpha = charges > 0 ? 1 : 0.7
-    }
-    if (sweep !== this.shownSweep) {
-      this.shownSweep = sweep
-      const g = this.dashSweep
-      g.clear()
-      if (sweep < SWEEP_STEPS && sweep > 0) {
-        const a0 = -Math.PI / 2
-        g.arc(0, 0, DASH_VIS_R - 2, a0, a0 + (sweep / SWEEP_STEPS) * Math.PI * 2).stroke({ width: 3, color: COLORS.xpBar, alpha: 0.9 })
-      } else if (sweep === SWEEP_STEPS && charges > 0) {
-        g.circle(0, 0, DASH_VIS_R - 2).stroke({ width: 2, color: COLORS.xpBar, alpha: 0.6 })
-      }
+      const a = charges > 0 ? 1 : 0.5
+      this.dashIcon.alpha = a
+      this.dashLabel.alpha = a
     }
     if (this.pressT > 0) this.pressT = Math.max(0, this.pressT - dt)
     this.dashView.scale.set(this.pressT > 0 ? 0.9 : 1)
@@ -167,6 +178,10 @@ export class TouchControls {
     if (id === this.aimId) this.releaseAim()
 
     const left = x < screenW / 2
+    if (x >= this.exX && x < this.exX + this.exW && y >= this.exY && y < this.exY + this.exH) {
+      this.contacts.set(id, { x, y, left, seen: now, stick: false })
+      return false
+    }
     const ddx = x - this.dashX
     const ddy = y - this.dashY
     const dd2 = ddx * ddx + ddy * ddy

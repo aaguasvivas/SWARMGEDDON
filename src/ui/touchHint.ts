@@ -1,11 +1,15 @@
 import { Container, Graphics, Text } from 'pixi.js'
 import { COLORS, DASH_BTN } from '../config.ts'
 import type { Insets } from '../platform/safeArea.ts'
+import { FONT, INK } from './tokens.ts'
 
-const MONO = 'ui-monospace, Menlo, Consolas, monospace'
-/** Portrait rest points: this far above the safe bottom, which keeps each
- *  guide's label above the weapon pill. */
+/** Portrait rest points: this far above the safe bottom, or higher when the
+ *  guide's label (LABEL_DY below it) would reach the weapon pill. */
 const PORTRAIT_REST_UP = 124
+const LABEL_DY = 84
+/** Section 9.2: the banner wraps at min(W - 32, this). */
+const BANNER_WRAP = 340
+const LABEL_CLEAR = 16
 const GUIDE_R = 56
 const GUIDE_STROKE = 3
 const GUIDE_PULSE = 0.05
@@ -33,8 +37,8 @@ export class TouchHint {
 
   constructor() {
     this.banner = new Text({
-      text: 'drag to play: left side moves, right side aims & fires',
-      style: { fontFamily: MONO, fontSize: 13, fill: COLORS.hudText, align: 'center', wordWrap: true, dropShadow: { color: 0x000000, blur: 0, distance: 1, angle: Math.PI / 4, alpha: 0.8 } },
+      text: 'LEFT THUMB MOVES · RIGHT THUMB AIMS AND FIRES',
+      style: { fontFamily: FONT.mono, fontWeight: '800', fontSize: 13, fill: COLORS.hudText, align: 'center', wordWrap: true, stroke: { color: INK, width: 4, join: 'round' } },
     })
     this.banner.anchor.set(0.5)
     this.left = new Guide('MOVE', COLORS.player)
@@ -43,8 +47,9 @@ export class TouchHint {
     this.view.eventMode = 'none'
   }
 
-  /** `dashX, dashY` = the DASH button center from TouchControls.layoutDash. */
-  layout(w: number, h: number, insets: Insets, dashX: number, dashY: number): void {
+  /** `dashX, dashY` = the DASH button center from TouchControls.layoutDash;
+   *  `pillTop` = the HUD weapon pill's top; `bannerY` = where the banner line sits. */
+  layout(w: number, h: number, insets: Insets, dashX: number, dashY: number, pillTop: number, bannerY: number): void {
     const availW = w - insets.left - insets.right
     const cx = insets.left + availW / 2
     const bottom = h - insets.bottom
@@ -52,14 +57,14 @@ export class TouchHint {
     // 200 px above the bottom on the right, so the rest points sit lower. The
     // aim guide moves left of the button as far as the clearance needs.
     const portrait = h > w
-    const y = portrait ? bottom - PORTRAIT_REST_UP : bottom - (h - insets.top - insets.bottom) * 0.26
+    const y = Math.min(portrait ? bottom - PORTRAIT_REST_UP : bottom - (h - insets.top - insets.bottom) * 0.26, pillTop - LABEL_DY - LABEL_CLEAR)
     const dy = dashY - y
     const minDx = Math.sqrt(Math.max(0, DASH_CLEAR * DASH_CLEAR - dy * dy))
     const rightX = Math.min(insets.left + availW * (portrait ? 0.7 : 0.76), dashX - minDx)
     this.left.view.position.set(Math.min(insets.left + availW * 0.24, rightX - GUIDE_CLEAR), y)
     this.right.view.position.set(rightX, y)
-    this.banner.style.wordWrapWidth = availW - 32
-    this.banner.position.set(cx, insets.top + 70)
+    this.banner.style.wordWrapWidth = Math.min(availW - 32, BANNER_WRAP)
+    this.banner.position.set(cx, bannerY)
   }
 
   /** `moveUsed`/`aimUsed` = whether the player has used that stick this run. */
@@ -85,9 +90,9 @@ class Guide {
     ring.circle(0, 0, GUIDE_R).stroke({ width: GUIDE_STROKE, color, alpha: 0.5 })
     this.knob.circle(0, 0, 24).fill({ color, alpha: 0.4 })
     this.knob.circle(0, 0, 24).stroke({ width: 2.5, color, alpha: 0.9 })
-    this.label = new Text({ text, style: { fontFamily: MONO, fontSize: 13, fontWeight: 'bold', fill: color, dropShadow: { color: 0x000000, blur: 0, distance: 1, angle: Math.PI / 4, alpha: 0.8 } } })
+    this.label = new Text({ text, style: { fontFamily: FONT.mono, fontSize: 13, fontWeight: '800', fill: color, stroke: { color: INK, width: 4, join: 'round' } } })
     this.label.anchor.set(0.5)
-    this.label.position.set(0, 84)
+    this.label.position.set(0, LABEL_DY)
     this.view.addChild(ring, this.knob, this.label)
   }
 

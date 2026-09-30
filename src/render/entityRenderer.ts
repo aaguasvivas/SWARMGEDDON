@@ -1,9 +1,21 @@
-import { BOSS_EMERGE, COLORS, FIXED_DT } from '../config.ts'
+import { Container, type Texture } from 'pixi.js'
+import { BOSS_EMERGE, ENEMY_EMERGE, FIXED_DT, PICKUP_RESERVE, PODS } from '../config.ts'
+import { lerpHex } from '../core/color.ts'
 import { lerp, lerpAngle } from '../core/vec.ts'
+import { WEAPONS } from '../content/weapons.ts'
 import type { World } from '../game/world.ts'
+import { SegRing } from './segRing.ts'
+import { WHITE } from './textures.ts'
 
-/** Seconds an enemy takes to fade/scale in after spawning (cosmetic only). */
-const EMERGE_TIME = 0.45
+/** Section 6.4: a struck enemy shows its white silhouette at this scale. */
+const HIT_PULSE = 1.12
+/** A pod in its last PODS.blinkLast seconds blinks at this rate (Hz) and dims to this alpha. */
+const POD_BLINK_HZ = 6
+const POD_BLINK_ALPHA = 0.3
+const FRENZY_TINT = 0xff5a6e
+/** Per EnemyDef.idx: the sprite texture and its white silhouette (filled lazily). */
+const baseTex: (Texture | undefined)[] = []
+const whiteTex: (Texture | undefined)[] = []
 
 /**
  * Pushes simulation state onto Pixi sprites each rendered frame: interpolation
@@ -33,11 +45,23 @@ export function renderEntities(world: World, alpha: number): void {
     // can sit in view, and for splitter offspring / queen broods which spawn
     // mid-screen by design. Pure presentation (reads sim time, mutates nothing).
     // A boss is untargetable for its whole BOSS_EMERGE, so it fades in over that.
-    const emerge = Math.min(1, Math.max(0, (t - e.bornAt) / (e.def.boss ? BOSS_EMERGE : EMERGE_TIME)))
+    const emerge = Math.min(1, Math.max(0, (t - e.bornAt) / (e.def.boss ? BOSS_EMERGE : ENEMY_EMERGE)))
     s.alpha = emerge
-    const base = e.def.scale * (e.buffed > 0 ? 1.08 : 1) * (0.55 + 0.45 * emerge)
+    const idx = e.def.idx
+    let base0 = baseTex[idx]
+    if (!base0) {
+      base0 = baseTex[idx] = world.texReg.getTexture(e.def.sprite)
+      whiteTex[idx] = world.texReg.getTexture(e.def.sprite + WHITE)
+    }
+    const hit = e.flash > 0
+    const tex = hit ? whiteTex[idx]! : base0
+    if (s.texture !== tex) s.texture = tex
+    const base = e.def.scale * (e.buffed > 0 ? 1.08 : 1) * (0.55 + 0.45 * emerge) * (hit ? HIT_PULSE : 1)
     const wob = Math.sin(t * 14 + e.animPhase)
-    if (e.phase === 1) {
+    if (hit) {
+      s.scale.set(base)
+      s.tint = 0xffffff
+    } else if (e.phase === 1) {
       // Charger windup telegraph: coil (squash along the locked heading, sprite
       // rotation IS the heading) + a fast white flicker. Read-only cosmetics.
       s.scale.set(base * 0.78, base * 1.22)
@@ -45,10 +69,10 @@ export function renderEntities(world: World, alpha: number): void {
     } else if (e.phase === 2) {
       // Dash: stretch along the line.
       s.scale.set(base * 1.35, base * 0.72)
-      s.tint = e.flash > 0 ? COLORS.swarmerHurt : e.tint
+      s.tint = e.tint
     } else {
       s.scale.set(base * (1 + wob * 0.1), base * (1 - wob * 0.1))
-      s.tint = e.flash > 0 ? COLORS.swarmerHurt : e.slow > 0 ? 0x7fd8ff : e.tint
+      s.tint = e.slow > 0 ? 0x7fd8ff : e.def.boss && world.director.frenzy > 0 ? lerpHex(e.tint, FRENZY_TINT, 0.3 + 0.25 * Math.sin(t * 8)) : e.tint
     }
   }
 
@@ -98,9 +122,12 @@ export function renderEntities(world: World, alpha: number): void {
       s.scale.set(1 + Math.sin(t * 5 + p.phase) * 0.16)
       s.y += Math.sin(t * 4 + p.phase) * 3
     } else {
-      // A pod swells while the player holds it (hold-to-take fill).
+      // A pod swells while the player holds it (hold-to-take fill) and blinks
+      // through its last PODS.blinkLast seconds.
       s.rotation = Math.sin(t * 2 + p.phase) * 0.15
-      s.scale.set((1 + Math.sin(t * 5 + p.phase) * 0.12) * (1 + 0.35 * p.hold))
+      s.scale.set((1 + Math.sin(t * 5 + p.phase) * 0.12) * (1 + 0.2 * p.hold))
+      s.alpha = p.life < PODS.blinkLast && Math.floor(t * POD_BLINK_HZ * 2) % 2 === 1 ? POD_BLINK_ALPHA : 1
+      continue
     }
     s.alpha = p.life < 1.5 ? p.life / 1.5 : 1
   }
@@ -122,5 +149,42 @@ function renderProjectiles(world: World, alpha: number): void {
     s.x = lerp(p.prevX, p.x, alpha)
     s.y = lerp(p.prevY, p.y, alpha)
     s.rotation = p.facing
+  }
+}
+
+const POD_RING_SEGS = 16
+/** The hold ring sits this far outside the pod body (world units). */
+const POD_RING_PAD = 12
+
+/**
+ * Hold-to-take rings (A5.1): while the player stands on a pod, a segmented
+ * ring around it fills with the hold. One per pod slot (PICKUP_RESERVE.weapon).
+ */
+export class PodRings {
+  readonly view = new Container()
+  private readonly rings: SegRing[] = []
+
+  constructor() {
+    for (let i = 0; i < PICKUP_RESERVE.weapon; i++) {
+      const r = new SegRing(POD_RING_SEGS, 30, 4, 6)
+      r.view.visible = false
+      this.rings.push(r)
+      this.view.addChild(r.view)
+    }
+  }
+
+  update(world: World, alpha: number): void {
+    let n = 0
+    const ps = world.pickups.active
+    for (let i = 0; i < ps.length && n < this.rings.length; i++) {
+      const p = ps[i]!
+      if (!p.alive || p.kind !== 'weapon' || p.hold <= 0) continue
+      const ring = this.rings[n++]!
+      ring.view.visible = true
+      ring.view.position.set(lerp(p.prevX, p.x, alpha), lerp(p.prevY, p.y, alpha))
+      ring.view.scale.set((p.radius + POD_RING_PAD) / 30)
+      ring.fill(p.hold * POD_RING_SEGS, WEAPONS[p.weaponId]!.tint, 1, 0.18)
+    }
+    for (let i = n; i < this.rings.length; i++) this.rings[i]!.view.visible = false
   }
 }
