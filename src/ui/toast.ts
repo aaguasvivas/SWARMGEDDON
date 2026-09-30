@@ -31,6 +31,7 @@ export class Toast {
     this.label.anchor.set(0.5, 0)
     this.view.addChild(this.plate.view, this.label)
     this.view.visible = false
+    this.view.eventMode = 'none'
   }
 
   show(text: string, sec = 5): void {

@@ -11,7 +11,7 @@ const ALERT_SLOT = 0
 const ALERT_S = 3
 const ARROW_PX = 20
 const ALERT_PX = 30
-/** Arrows keep this far from the screen edge and from the HUD rows. */
+/** Arrows keep this far inside the safe screen edge and from the HUD rows. */
 const EDGE = 26
 /** A target this far inside the screen edge already reads, so it gets no arrow. */
 const ON_SCREEN_PAD = 8
@@ -41,7 +41,9 @@ export class OffscreenArrows {
   private alertTint = 0xffffff
   private clock = 0
   private n = 0
-  private w = 0
+  /** The safe screen edges (insets included), left and right. */
+  private left = 0
+  private right = 0
   private top = 0
   private bottom = 0
   private sx = 0
@@ -64,6 +66,12 @@ export class OffscreenArrows {
       this.view.addChild(c)
     }
     this.view.eventMode = 'none'
+  }
+
+  /** Screen width and the left and right safe-area insets (the notch side in landscape). */
+  layout(w: number, insetLeft: number, insetRight: number): void {
+    this.left = insetLeft
+    this.right = w - insetRight
   }
 
   /** The DASH button's center (off screen when it is hidden): arrows step above it. */
@@ -89,10 +97,9 @@ export class OffscreenArrows {
   /** `top`/`bottom` bound the band arrows may use (below the HUD rows, above the
    *  pill); `lane` is the callout showing now (x0, y0, x1, y1), which arrows step
    *  below, or null. */
-  update(world: World, cam: Camera, w: number, top: number, bottom: number, lane: Float32Array | null, dt: number): void {
+  update(world: World, cam: Camera, top: number, bottom: number, lane: Float32Array | null, dt: number): void {
     this.lane = lane
     this.clock += dt
-    this.w = w
     this.top = top + EDGE
     this.bottom = bottom - EDGE
     const pl = world.player
@@ -129,7 +136,7 @@ export class OffscreenArrows {
   private target(cam: Camera, wx: number, wy: number, tint: number, kind: number): void {
     const x = cam.worldToScreenX(wx)
     const y = cam.worldToScreenY(wy)
-    if (x > ON_SCREEN_PAD && x < this.w - ON_SCREEN_PAD && y > this.top - EDGE + ON_SCREEN_PAD && y < this.bottom + EDGE - ON_SCREEN_PAD) return
+    if (x > this.left + ON_SCREEN_PAD && x < this.right - ON_SCREEN_PAD && y > this.top - EDGE + ON_SCREEN_PAD && y < this.bottom + EDGE - ON_SCREEN_PAD) return
     const i = this.n++
     this.place(i, x, y, kind === KIND_POD ? ensureContrast(tint, INK) : tint, kind === KIND_BOSS ? 1.15 : 1)
     this.slots[i]!.alpha = kind === KIND_CHARGER ? 0.7 + 0.3 * Math.sin(this.clock * 16) : 1
@@ -140,8 +147,8 @@ export class OffscreenArrows {
     const dx = x - this.sx
     const dy = y - this.sy
     let k = 1
-    if (dx > 0) k = Math.min(k, (this.w - EDGE - this.sx) / dx)
-    else if (dx < 0) k = Math.min(k, (EDGE - this.sx) / dx)
+    if (dx > 0) k = Math.min(k, (this.right - EDGE - this.sx) / dx)
+    else if (dx < 0) k = Math.min(k, (this.left + EDGE - this.sx) / dx)
     if (dy > 0) k = Math.min(k, (this.bottom - this.sy) / dy)
     else if (dy < 0) k = Math.min(k, (this.top - this.sy) / dy)
     k = Math.max(0, k)

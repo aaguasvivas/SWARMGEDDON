@@ -182,8 +182,11 @@ export class FeelDirector {
     }
     const q = this.world.feel
     const n = q.n
-    // A hit halves the chain (ChainHit), then the tier drop follows in this drain.
-    let hitDrop = false
+    // registerHit sets the tier (MultDown) and then emits ChainHit, so a MultDown
+    // right before a ChainHit is a hit drop; one from chain decay stands alone.
+    let downAt = -2
+    let downFrom = 0
+    let downTo = 0
     // The PRIME's kill: Win comes first in the queue and announces the kill with the win.
     let won = false
     for (let i = 0; i < n; i++) {
@@ -341,11 +344,12 @@ export class FeelDirector {
           }
           break
         case FeelKind.ChainHit:
-          hitDrop = true
+          if (downAt === i - 1) this.hud.tierDrop(downFrom, downTo)
           break
         case FeelKind.MultDown:
-          if (hitDrop) this.hud.tierDrop(this.tier, a)
-          hitDrop = false
+          downAt = i
+          downFrom = this.tier
+          downTo = a
           this.tier = a
           this.audio.play('multBreak')
           break
@@ -376,7 +380,7 @@ export class FeelDirector {
           this.shake.add(0.6, 1)
           won = true
           this.bossSlain()
-          this.callouts.show(CALLOUT.win, this.world.script.text.win, 'CLEARED IN ' + clock(this.world.director.clearTime), T.accentGold)
+          this.callouts.show(CALLOUT.win, this.world.script.text.win, 'CLEARED IN ' + clock(this.world.director.clearTime), T.accentGold, true)
           break
         case FeelKind.Stalemate:
           this.audio.play('multBreak')
@@ -532,7 +536,7 @@ export class FeelDirector {
     this.callouts.show(CALLOUT.bossSlain, w.script.text.slain, pts > 0 ? '+' + group(pts) : '', T.accentGold)
     if (w.bossesFlawless > this.flawlessAt) {
       this.flawlessAt = w.bossesFlawless
-      this.callouts.show(CALLOUT.flawless, 'FLAWLESS', '', CALLOUT_COLOR.mint)
+      this.callouts.show(CALLOUT.flawless, 'FLAWLESS', '', CALLOUT_COLOR.mint, true)
     }
   }
 

@@ -46,6 +46,7 @@ export class DebugOverlay {
     // Hidden by default: it's a dev instrument, not player UI (it used to ship
     // visible and crowd the HUD). Press backtick to bring it up.
     this.view.visible = false
+    this.view.eventMode = 'none'
   }
 
   layout(insets: Insets): void {

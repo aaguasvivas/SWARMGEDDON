@@ -4,6 +4,12 @@
 // checks: no two HUD boxes overlap (bitmap DigitStrips included, which a Text
 // dump misses), the DASH hit circle clears the weapon pill, the boss plate and
 // the pause button and the stick rest points, and every Text is at least 12 px.
+// Then, per size: the Daily intro line (the longest world name) keeps 12 px
+// text; the 3 s alert arrows stay inside the safe edges; a real hit
+// (scoring.registerHit) flashes the tier drop and a chain decay does not; and
+// real taps and clicks on the pause button pause and resume the run. At the
+// first size, the boss kill lines (slain, FLAWLESS, the PRIME's win line) all
+// show in order, and a line queued behind a longer one still expires.
 //
 // Usage: node scripts/hud-shots.mjs [sizes] [--out=DIR] [--world=hive]
 //   sizes  comma list of p320,l568,p375,l667,p390,l844 (default p375,l667,p390;
@@ -123,6 +129,102 @@ function measure() {
   }
 }
 
+/** The longest world name, so the Daily intro sub is at its widest. */
+const DAILY_SUB = 'VIOLET DEPTHS \u00b7 SAME RUN FOR EVERYONE'
+
+/** In page: the Daily intro line in the lane, past its enter animation.
+ *  Returns the lane state when it measured (for a failure report). */
+async function stageDaily(sub) {
+  const S = window.__SWARM
+  const c = S.callouts
+  c.clear()
+  S.feel.intro('DAILY', sub, 0xffc24a, true)
+  const t0 = performance.now()
+  while (performance.now() - t0 < 1500 && !(c.box.visible && c.title.text === 'DAILY' && c.age > 0.3)) await new Promise((r) => setTimeout(r, 30))
+  return { title: c.title.text, visible: c.box.visible, view: c.view.visible, prio: c.prio, age: +c.age.toFixed(2), life: +c.life.toFixed(2), paused: S.world.paused, screen: S.screen }
+}
+
+/** In page: the alert arrow toward the west, then the east (screen x of its center). */
+async function arrowProbe() {
+  const S = window.__SWARM
+  const out = {}
+  for (const [side, dx] of [['west', -1], ['east', 1]]) {
+    S.arrows.alert(dx, 0, 0xff5a6e)
+    await new Promise((r) => setTimeout(r, 120))
+    const b = S.arrows.slots[0].getBounds()
+    out[side] = { cx: Math.round(b.minX + b.width / 2), x0: Math.round(b.minX), x1: Math.round(b.maxX), visible: S.arrows.slots[0].visible }
+  }
+  return out
+}
+
+/** In page: the tier-drop flash from the real scoring calls. A chain decay drop
+ *  (MultDown alone) must not flash; a hit (MultDown then ChainHit) must. The sim
+ *  holds meanwhile: the stage forces the tier every frame, so a real hit on the
+ *  ship would drop from a tier the feel director never saw. */
+async function tierProbe() {
+  const S = window.__SWARM
+  const w = S.world
+  const sc = await import('/src/game/scoring.ts')
+  const frames = (n) => new Promise((r) => { let k = 0; const f = () => (++k >= n ? r() : requestAnimationFrame(f)); requestAnimationFrame(f) })
+  const calls = []
+  const orig = S.hud.tierDrop
+  S.hud.tierDrop = function (a, b) { calls.push([a, b]); return orig.call(this, a, b) }
+  w.paused = true
+  try {
+    await frames(2)
+    w.chain = 0
+    w.tier = 1
+    sc.addChain(w, 160)
+    w.chainT = 0
+    sc.scoreStep(w, 2.0)
+    await frames(3)
+    const decay = calls.splice(0)
+    w.chain = 0
+    w.tier = 1
+    sc.addChain(w, 160)
+    sc.registerHit(w)
+    await frames(3)
+    return { decay, hit: calls.splice(0), dropVisible: S.hud.drop.visible }
+  } finally {
+    S.hud.tierDrop = orig
+    w.paused = false
+  }
+}
+
+/** In page: the lane's titles in order while the feel queue plays a boss kill. */
+async function calloutProbe() {
+  const S = window.__SWARM
+  const w = S.world
+  const { FeelKind } = await import('/src/effects/feelQueue.ts')
+  const { CALLOUT } = await import('/src/ui/callouts.ts')
+  const watch = async (ms) => {
+    const seen = []
+    const t0 = performance.now()
+    while (performance.now() - t0 < ms) {
+      const t = S.callouts.box.visible ? S.callouts.title.text : ''
+      if (t && seen[seen.length - 1] !== t) seen.push(t)
+      await new Promise((r) => setTimeout(r, 40))
+    }
+    return seen
+  }
+  const x = w.player.x
+  const y = w.player.y
+  S.callouts.clear()
+  w.bossesFlawless++
+  w.feel.emit(FeelKind.BossKill, 0, x, y)
+  const mid = await watch(4200)
+  S.callouts.clear()
+  w.bossesFlawless++
+  w.feel.emit(FeelKind.Win, 0, x, y)
+  w.feel.emit(FeelKind.BossKill, 0, x, y)
+  const prime = await watch(6600)
+  S.callouts.clear()
+  S.callouts.show(CALLOUT.alertBoss, 'STALE TEST', '', 0xff6aa8)
+  S.callouts.show(CALLOUT.closeCall, 'CLOSE CALL', '', 0x7dffd6)
+  const stale = await watch(3800)
+  return { mid, prime, stale, slain: w.script.text.slain, win: w.script.text.win }
+}
+
 function check(m) {
   const fails = []
   const b = m.boxes
@@ -186,8 +288,64 @@ try {
     await page.screenshot({ path: file })
     const m = await page.evaluate(measure)
     const fails = check(m)
-    report[size.name] = { file, fails, errors, ...m }
-    console.log(JSON.stringify({ size: size.name, file, fails, errors, boxes: m.boxes, dash: m.dash, rest: m.rest, laneY: m.laneY }))
+    const L = size.insets ? size.insets.left : 0
+    const R = size.insets ? size.insets.right : 0
+
+    const dailyLane = await page.evaluate(stageDaily, DAILY_SUB)
+    const dailyFile = path.join(OUT, `${size.name}-${WORLD}-daily.png`)
+    await page.screenshot({ path: dailyFile })
+    const md = await page.evaluate(measure)
+    for (const f of check(md)) fails.push('daily intro: ' + f)
+    const lane = md.boxes.callout
+    if (!lane) fails.push('daily intro: no callout showing ' + JSON.stringify(dailyLane))
+    else if (lane.x < L || lane.x + lane.w > md.W - R) fails.push('daily intro: callout outside the safe width')
+    const dailyTexts = md.texts.filter((t) => t.t.includes('DAILY') || t.t.includes('SAME RUN'))
+
+    const arrows = await page.evaluate(arrowProbe)
+    if (!arrows.west.visible || arrows.west.cx < L + 26 - 1) fails.push(`west alert arrow at x ${arrows.west.cx}, inside the left inset ${L} + 26`)
+    if (!arrows.east.visible || arrows.east.cx > md.W - R - 26 + 1) fails.push(`east alert arrow at x ${arrows.east.cx}, past the right inset ${R} + 26`)
+
+    const tier = await page.evaluate(tierProbe)
+    if (tier.decay.length) fails.push('a chain decay flashed the tier drop: ' + JSON.stringify(tier.decay))
+    if (JSON.stringify(tier.hit) !== '[[5,4]]' || !tier.dropVisible) fails.push('a hit did not flash x5 > x4: ' + JSON.stringify(tier))
+
+    let callouts = null
+    if (size === SIZES[0]) {
+      callouts = await page.evaluate(calloutProbe)
+      const want = (seen, list) => list.every((t, i) => seen[i] === t)
+      if (!want(callouts.mid, [callouts.slain, 'FLAWLESS'])) fails.push('mid boss kill lines: ' + JSON.stringify(callouts.mid))
+      if (!want(callouts.prime, [callouts.slain, 'FLAWLESS', callouts.win])) fails.push('PRIME kill lines: ' + JSON.stringify(callouts.prime))
+      if (callouts.stale.includes('CLOSE CALL')) fails.push('a stale line showed: ' + JSON.stringify(callouts.stale))
+    }
+
+    // Real input last: a mouse click brings up the crosshair, which sits on the button.
+    const pauseC = await page.evaluate(() => {
+      const b = window.__SWARM.hud.pause.getBounds()
+      return { x: b.minX + b.width / 2, y: b.minY + b.height / 2 }
+    })
+    const state = () => page.evaluate(() => ({ paused: window.__SWARM.world.paused, t: window.__SWARM.world.time }))
+    const pause = []
+    const tapThen = async (label, act) => {
+      await act()
+      await sleep(250)
+      const a = await state()
+      await sleep(250)
+      const b = await state()
+      pause.push({ label, paused: a.paused, advancing: b.t > a.t })
+    }
+    await tapThen('touch tap on pause', () => page.touchscreen.tap(pauseC.x, pauseC.y))
+    await tapThen('touch tap on pause again', () => page.touchscreen.tap(pauseC.x, pauseC.y))
+    await tapThen('mouse click on pause', () => page.mouse.click(pauseC.x, pauseC.y))
+    await tapThen('mouse click on pause under the crosshair', () => page.mouse.click(pauseC.x, pauseC.y))
+    await tapThen('mouse click on pause, third', () => page.mouse.click(pauseC.x, pauseC.y))
+    await tapThen('mouse click elsewhere', () => page.mouse.click(size.w / 2, size.h * 0.55))
+    const wantPaused = [true, false, true, false, true, false]
+    pause.forEach((p, i) => {
+      if (p.paused !== wantPaused[i] || p.advancing === wantPaused[i]) fails.push(`${p.label}: paused ${p.paused}, time advancing ${p.advancing}`)
+    })
+
+    report[size.name] = { file, dailyFile, fails, errors, ...m, dailyTexts, arrows, tier, callouts, pause }
+    console.log(JSON.stringify({ size: size.name, file, dailyFile, fails, errors, boxes: m.boxes, dash: m.dash, rest: m.rest, laneY: m.laneY, dailyTexts, arrows, tier, callouts, pause }))
     await ctx.close()
   }
 } finally {

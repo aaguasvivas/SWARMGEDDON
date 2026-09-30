@@ -174,6 +174,9 @@ async function boot(): Promise<void> {
   const backdrop = new BackdropSystem(layers, postFX, vignette)
   const crosshair = buildCrosshair()
   const flashOverlay = new Graphics() // brief white pop on level-up
+  // The stage is 'static', so any drawn node above the HUD that contains a
+  // tap ends Pixi's hit test there and the pause button never hears it.
+  flashOverlay.eventMode = 'none'
   const modal = new LevelUpModal()
   const mainMenu = new MainMenu()
   const gameOver = new GameOver()
@@ -519,6 +522,7 @@ async function boot(): Promise<void> {
     input.touch.layoutDash(w, h, insets)
     input.touch.setExclusionRect(hud.pauseRect)
     callouts.layout(w, insets.left, insets.right, hud.laneY, hud.laneScale)
+    arrows.layout(w, insets.left, insets.right)
     pausedLabel.position.set(insets.left + (w - insets.left - insets.right) / 2, hud.laneY)
     pausedLabel.scale.set(hud.laneScale)
     screenFx.layout(w, h)
@@ -831,7 +835,7 @@ async function boot(): Promise<void> {
       arrows.view.visible = cues
       if (cues) {
         arrows.avoid(touchUI ? input.touch.dashX : -1e4, input.touch.dashY)
-        arrows.update(world, camera, app.screen.width, hudTop, hud.pillTop, laneShown ? laneBox : null, fd)
+        arrows.update(world, camera, hudTop, hud.pillTop, laneShown ? laneBox : null, fd)
       }
       tweens.update(renderClock * 1000)
       toast.update(fd)
@@ -1046,6 +1050,7 @@ function buildCrosshair(): Container {
   g.circle(0, 0, 1.5).fill(col)
   c.addChild(g)
   c.visible = false
+  c.eventMode = 'none'
   return c
 }
 

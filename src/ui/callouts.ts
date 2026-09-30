@@ -35,6 +35,11 @@ export const CALLOUT_COLOR = { boss: 0xff6aa8, event: 0xff5a6e, mint: 0x7dffd6, 
 const QUEUE = 3
 const TITLE_PX = 26
 const SUB_PX = 14
+const SUB_LINE_PX = 18
+/** The sub never shrinks below this (effective px); a longer one takes two lines. */
+const SUB_MIN_PX = 12
+/** Where a two-line sub breaks when it has one. */
+const SUB_SEPARATOR = ' \u00b7 '
 const ENTER_S = 0.14
 const EXIT_S = 0.2
 const ENTER_SCALE = 1.25
@@ -49,8 +54,9 @@ const SUB_LIGHTEN = 0.35
 /**
  * The callout lane (A15): one centered title and sub line at a time, a queue
  * of 3, and a higher priority preempts the one showing. A queued line that
- * waited longer than its own hold is dropped. Text changes only when a line
- * starts (event rate); runs on the real clock.
+ * waited longer than its own hold is dropped, except a line that follows the
+ * one before it (a boss kill's FLAWLESS and win lines), which waits its turn.
+ * Text changes only when a line starts (event rate); runs on the real clock.
  */
 export class Callouts {
   readonly view = new Container()
@@ -67,10 +73,14 @@ export class Callouts {
   private prio = -1
   private age = 0
   private life = 0
+  private subText = ''
+  private seq = 0
   // The queue, as parallel slots (prio -1 = empty).
   private readonly qPrio = new Int8Array(QUEUE).fill(-1)
   private readonly qHold = new Float32Array(QUEUE)
   private readonly qAt = new Float64Array(QUEUE)
+  private readonly qSeq = new Float64Array(QUEUE)
+  private readonly qFollow = new Uint8Array(QUEUE)
   private readonly qColor = new Int32Array(QUEUE)
   private readonly qTitle: string[] = ['', '', '']
   private readonly qSub: string[] = ['', '', '']
@@ -83,7 +93,7 @@ export class Callouts {
     this.title.anchor.set(0.5)
     this.sub = new Text({
       text: '',
-      style: { fontFamily: FONT.mono, fontWeight: '800', fontSize: SUB_PX, letterSpacing: 1, fill: 0xffffff, stroke: { color: INK, width: 5, join: 'round' } },
+      style: { fontFamily: FONT.mono, fontWeight: '800', fontSize: SUB_PX, lineHeight: SUB_LINE_PX, letterSpacing: 1, align: 'center', fill: 0xffffff, stroke: { color: INK, width: 5, join: 'round' } },
     })
     this.sub.anchor.set(0.5)
     this.box.addChild(this.title, this.sub)
@@ -102,7 +112,9 @@ export class Callouts {
     if (this.prio >= 0) this.fit()
   }
 
-  show(spec: CalloutSpec, title: string, sub: string, color: number): void {
+  /** `follows`: the line belongs to the one queued or showing before it, so it
+   *  shows when that one ends however long it waits. */
+  show(spec: CalloutSpec, title: string, sub: string, color: number, follows = false): void {
     if (this.prio < 0 || spec.prio > this.prio) {
       this.start(spec.prio, spec.hold, title, sub, color)
       return
@@ -123,6 +135,8 @@ export class Callouts {
     this.qPrio[slot] = spec.prio
     this.qHold[slot] = spec.hold
     this.qAt[slot] = this.now
+    this.qSeq[slot] = this.seq++
+    this.qFollow[slot] = follows ? 1 : 0
     this.qColor[slot] = color
     this.qTitle[slot] = title
     this.qSub[slot] = sub
@@ -136,7 +150,7 @@ export class Callouts {
     out[0] = this.cx - hw
     out[1] = this.laneY + ((this.sub.visible ? TITLE_DY : 0) - TITLE_PX / 2 - 4) * k
     out[2] = this.cx + hw
-    out[3] = this.laneY + ((this.sub.visible ? SUB_DY + SUB_PX / 2 : TITLE_PX / 2) + 4) * k
+    out[3] = this.laneY + ((this.sub.visible ? this.sub.y + this.sub.height / 2 : TITLE_PX / 2) + 4) * k
     return true
   }
 
@@ -182,11 +196,11 @@ export class Callouts {
     for (let i = 0; i < QUEUE; i++) {
       const p = this.qPrio[i]!
       if (p < 0) continue
-      if (this.now - this.qAt[i]! > this.qHold[i]!) {
+      if (this.qFollow[i] === 0 && this.now - this.qAt[i]! > this.qHold[i]!) {
         this.qPrio[i] = -1
         continue
       }
-      if (best < 0 || p > this.qPrio[best]! || (p === this.qPrio[best]! && this.qAt[i]! < this.qAt[best]!)) best = i
+      if (best < 0 || p > this.qPrio[best]! || (p === this.qPrio[best]! && this.qSeq[i]! < this.qSeq[best]!)) best = i
     }
     if (best < 0) return
     const p = this.qPrio[best]!
@@ -201,25 +215,45 @@ export class Callouts {
     const c = ensureContrast(color, INK)
     this.title.text = title
     this.title.style.fill = c
-    this.sub.text = sub
+    this.subText = sub
     this.sub.style.fill = lerpHex(c, T.textHi, SUB_LIGHTEN)
     this.sub.visible = sub !== ''
     this.title.y = sub ? TITLE_DY : 0
-    this.sub.y = SUB_DY
     this.fit()
     this.box.visible = true
     this.box.alpha = 0
   }
 
   private fit(): void {
-    fitWidth(this.title, this.maxW)
-    fitWidth(this.sub, this.maxW)
+    fitWidth(this.title, this.maxW, 0)
+    const sub = this.sub
+    const minK = SUB_MIN_PX / (SUB_PX * this.base)
+    sub.text = this.subText
+    fitWidth(sub, this.maxW, 0)
+    if (sub.scale.x < minK) {
+      sub.text = twoLines(this.subText)
+      fitWidth(sub, this.maxW, minK)
+    }
+    // A second line grows downward, so the title keeps its place.
+    sub.y = SUB_DY + (sub.text.indexOf('\n') >= 0 ? (SUB_LINE_PX * sub.scale.y) / 2 : 0)
   }
 }
 
-function fitWidth(t: Text, maxW: number): void {
+/** Shrink `t` to `maxW`, but never below scale `minK`. */
+function fitWidth(t: Text, maxW: number, minK: number): void {
   t.scale.set(1)
-  if (t.width > maxW) t.scale.set(maxW / t.width)
+  if (t.width > maxW) t.scale.set(Math.max(minK, maxW / t.width))
+}
+
+/** A sub too long for one line at the minimum size: break it at its separator,
+ *  or at the space nearest the middle. */
+function twoLines(s: string): string {
+  const sep = s.indexOf(SUB_SEPARATOR)
+  if (sep >= 0) return s.slice(0, sep) + '\n' + s.slice(sep + SUB_SEPARATOR.length)
+  const mid = s.length / 2
+  let at = -1
+  for (let i = 0; i < s.length; i++) if (s[i] === ' ' && (at < 0 || Math.abs(i - mid) < Math.abs(at - mid))) at = i
+  return at < 0 ? s : s.slice(0, at) + '\n' + s.slice(at + 1)
 }
 
 function outBack(t: number): number {
