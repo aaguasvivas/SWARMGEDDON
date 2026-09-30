@@ -804,6 +804,17 @@ If the app goes to the background during the sequence, the game jumps straight t
 - **Kill pitch ladder:** `semis = min(12, 2 x (tier - 1))`.
 - **Gem ladder:** each gem within 350 ms of the last steps up the ratios `[1, 9/8, 5/4, 3/2, 5/3, 2, 9/4, 5/2, 3, 10/3, 4]` over 659 Hz.
 
+Built in P15:
+- **Emerge** (decision 6, `src/render/emergeFx.ts`): every non-boss spawn whose body touches the view (24 u pad) gets a 0.45 s effect on sim time, from a 64-slot pool with per-effect variety from a hash of the uid (no sim stream). Hive: a violet membrane disc, an acid slit that opens, 4 shards. Depths: a glow disc and 5 bubbles rising. Wastes: a hot ring and 5 embers. The sim skips an enemy's bite until it is `ENEMY_EMERGE` (0.45 s) old.
+- **Hit flash:** the struck enemy draws its `@white` silhouette at 1.12 scale while `flash > 0`.
+- **Hurt** (`src/effects/screenFx.ts`): the red vignette uses the vignette ramp tinted #ff2d4a at `min(1, 1.1 x hurtFlash + low HP)`, where low HP adds 0.3 plus 0.4 x the heartbeat envelope (two thumps 0.14 s apart, each decaying at 10/s). A discrete hit or ram lights a red glow on the screen edge toward its source (0.9, bites 0.45, decaying 2.5/s) and tints the ship #ff6a6a for 0.12 s.
+- **LIVING ARMOR:** a whole-hit absorb draws a cyan (#57e0ff) ring that grows from the ship over 0.3 s.
+- **Boss kill:** 40 gibs (fx stream) and a second, white ring. The bloom pulse waits for the `flashes` setting (P17). FRENZY pulses the boss tint 5 to 55% toward #ff5a6e (sin 8t). The telegraph cue (the charger windup sound) is pitched per boss: Queen -7, Matron -2, Tyrant -12 semitones.
+- **Hazards:** a damaging hazard flashes white for its first 0.08 s live. An event's arrival markers (BLINK STORM, not cast by the boss) take the event color #ff5a6e 15% toward white; boss markers keep the boss color.
+- **Charger lanes:** a charger in windup shows its dash lane (dashSpeed x dashTime long, 2r wide) in the world's hazard tint, alpha 0.22 to 0.5 at 8 Hz; 6 pooled decals.
+- **Off-screen arrows** (`src/ui/offscreenArrows.ts`): slot 0 is the 3 s alert arrow (boss #ff6aa8, event #ff5a6e, elite gold); the other 7 go to the boss, elites, chargers in windup and pods in that order. Arrows ride a band 26 px inside the safe screen edges (the left and right insets count, so a landscape arrow never sits under the notch), below the HUD rows and above the weapon pill, and step below the showing callout and above the DASH button. A target under an inset counts as off screen. Bonus and core arrows wait for P9.
+- **Pods:** the pod blinks at 6 Hz (alpha 0.3) through its last 3 s, and a 16-segment ring in the weapon tint fills with the hold.
+
 ---
 
 ## 7. Meta, persistence, Daily
@@ -1127,6 +1138,17 @@ Landscape 667x375:
 - **Input exclusion:** `input.setExclusionRects` holds the pause button + 8 and the DASH hit circle + 8. A touch that starts inside never spawns a stick.
 - **Numbers:** they update only when the integer value changes. No template strings per frame.
 - **Touch hint:** `LEFT THUMB MOVES · RIGHT THUMB AIMS AND FIRES`, wrapped at `min(W-32, 340)`.
+
+**Built in P15** (where it differs from the table above, or the table is silent):
+- The HUD is laid out in 375-wide design units and scaled by `uiScale`.
+- **Row A** (portrait T+80, 40 high; landscape the plate bottom + 4) holds the `LEVEL UP x2` chip at the left and the tier badge at the right. In portrait the **boss plate** sits at T+124 whenever a boss lives, so no row moves when a neighbor shows or hides; the top stack ends at T+158 in a fight, as in the table's chip-plus-badge case. In landscape the boss plate is centered on the plate, `min(420, plateW - 244)` wide, so it clears the chip and the badge.
+- **Callout lane** center: portrait `max(T + 158 + 48, 0.30H)` (below the lowest HUD row); landscape `0.36H`, or lower so the title's top stays 4 px under the boss plate. Landscape screens under 360 px tall draw the callout at 0.86 (the 14 px sub stays at 12 px).
+- **HP bar:** the overshield is a cyan (#57e0ff) strip along the bar's bottom, as wide as `overshield / maxHp`, and the number reads `62+18`. Below 25% HP the heartbeat clock pulses the fill.
+- **Tier badge:** one Orbitron 900 20 px Text per tier, created once and shown by tier (no Text re-render on a tier change). The hit-drop flash shows `x6 > x5` as DigitStrips around a chevron icon for 0.9 s.
+- **Weapon pill:** the base weapon shows its name only (no ammo number or bar).
+- **Pause button:** until the pause sheet (P16), a tap on it or P pauses, `PAUSED / TAP OR PRESS P TO RESUME` shows in the callout lane, and a tap on it or elsewhere, or P, resumes. The stage is `eventMode 'static'`, so Pixi hit-tests every node under it, and a drawn node that contains the tap ends the search even when it takes no input. So every node in the UI layer above the HUD that takes no input (the level-up flash, the crosshair, the callout lane, the toast, the debug overlay) is `eventMode 'none'` (P15 review: the full-screen level-up flash swallowed every tap on the pause button).
+- **Touch hint:** the banner sits 20 px below row A in portrait and 28 px below the plate in landscape; the guides rise until their labels keep 16 px above the weapon pill. It hides while the sim is paused.
+- **Not built:** the bonus rings (P9 adds the FREEZE, OVERDRIVE and SHIELD timers they read) and the `DAILY #12` number (P13 adds the Daily number; the tag reads `DAILY`).
 
 ### 9.3 Level-up draft (`src/ui/levelupModal.ts` rewrite; consumes `DraftCard`)
 
@@ -1621,6 +1643,8 @@ Run each phase's acceptance plus this standard block:
   - Standard block, screenshots with a boss alive, a pending chip and tier x5.
   - The DASH hit circle overlaps neither the pill, the boss plate nor the stick rest point.
 - P8 hand-off: the LIVING ARMOR overshield (`world.overshield`, up to 25% of max HP) has no HUD readout. P15 draws it on the HP bar. An absorbed hit already has its cue (FeelKind `ShieldHit`, A3).
+- Built in P15 (details in sections 6.5, 9.2 and A15): `node scripts/hud-shots.mjs p320,l568,p375,l667,p390,l844 --world=<id>` captures the HUD with a boss alive in FRENZY, `LEVEL UP x2`, tier x5, an overshield and a callout, and checks HUD box overlaps (DigitStrips included), text size, and the DASH hit circle against the pill, the boss plate, the pause button and the stick rest points. It passes for hive and wastes at all six sizes and for depths at the four phone sizes from 375 up. After the P15 review it also checks, per size: the Daily intro line with the longest world name keeps 12 px text inside the safe width; the 3 s alert arrows toward the west and the east stay 26 px inside the safe edges; a real hit (`scoring.registerHit`, MultDown then ChainHit) flashes `x5 > x4` and a chain decay drop does not; and real input on the pause button (touch taps, mouse clicks, one with the crosshair over the button) pauses and resumes the run. At the first size it plays a mid boss kill (slain, FLAWLESS) and a PRIME kill (slain, FLAWLESS, win line) through the feel queue and checks the lane shows every line in order, and that a Close Call queued behind a 3 s boss alert is dropped.
+- Decision 6 acceptance, `node scripts/measure.mjs <W> <H> ringview all 300` (P15 build): every non-boss spawn inside any camera variant got its emerge effect (375x667: 259, 146 and 88 in hive, depths and wastes; 390x844: 357, 264 and 139; none missed, none dropped for a full pool). No director spawn (ring, pack, event) lands within 120 u of the ship (closest 245 u, Pack A). Spawns within 120 u come from their source standing there: 38 splitter offspring in Hive and 2 flak turrets (the Tyrant's kit, telegraphed by a marker) in Wastes; neither bites during the emerge.
 
 **P16: Draft UI, pause, win panel, recap** (about 900 lines)
 - Files: `src/ui/levelupModal.ts` (rewrite), `ui/pauseSheet.ts`, `ui/winPanel.ts`, `ui/recap.ts`, `platform/lifecycle.ts` (new); delete `ui/gameOver.ts`; `main.ts`.
@@ -2446,6 +2470,8 @@ Callout lane: center y = `max(T + plateBottom + 56, 0.30H)` in portrait and `0.3
 | outOfAmmo | 1 | 1.2 s | `OUT OF AMMO` | `Back to SIDEARM` | #ff5a6e |
 | revive | 3 | 1.4 s | `SECOND WIND` | | #4dffa0 |
 | hint | 0 | 3.5 s | | hint line | text.hi |
+
+Built in P15 (`src/ui/callouts.ts`): the title is Orbitron 900 26 px with a 6 px INK stroke, the sub JetBrains Mono 800 14 px with a 5 px INK stroke in the title color 35% toward text.hi, and both are fitted to the safe width minus 32. The sub never goes under 12 px effective: when it does not fit on one line at that size it takes two lines (18 px apart), broken at its ` · ` separator or at the space nearest the middle, so the Daily intro sub on a 320 px phone reads `VIOLET DEPTHS` / `SAME RUN FOR EVERYONE` at 14 px. A line enters in 140 ms (scale 1.25 to 1) and leaves in 200 ms. A queued line that waited longer than its own hold is dropped, so a Close Call never shows seconds late behind a boss alert. A line that follows the one before it is never dropped and shows when that line ends: a boss kill's FLAWLESS and the PRIME's win line (P15 review: FLAWLESS, queued behind the 2.2 s slain line with a 1.2 s hold, never showed). The lane hides while the sim is paused (draft, win panel, pause). Wired: every row except bonus (P9 adds the bonus content) and hint (P17). bossSlain's sub is the points scored since the boss arrived; the PRIME's kill shows slain, then FLAWLESS when earned, then the win line. newBest shows once per run, when the score passes the world's best score (none on a world's first run). A world-space elite tag under the showing line dims to 0.2.
 
 Other copy:
 - **Daily card:**

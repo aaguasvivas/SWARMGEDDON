@@ -137,4 +137,8 @@ export class Camera {
   worldToScreenY(wy: number): number {
     return (wy - this.shipY) * this.zoom + this.shipSY
   }
+
+  screenToWorldY(sy: number): number {
+    return (sy - this.shipSY) / this.zoom + this.shipY
+  }
 }

@@ -1,5 +1,5 @@
 import {
-  ARC_ROUNDS, BITE, BLAST_CRIT, BOSS_SLOW_CAP, BURN_SEC, CLOSE_CALL, EVO, FUSION, GRACE, HEALTH_DROP_CHANCE,
+  ARC_ROUNDS, BITE, BLAST_CRIT, BOSS_SLOW_CAP, BURN_SEC, CLOSE_CALL, ENEMY_EMERGE, EVO, FUSION, GRACE, HEALTH_DROP_CHANCE,
   HEALTH_HEAL, HEALTH_HEAL_ELITE, MAX_ENEMIES, PODS, SEEK, SPAWN_ROOM,
 } from '../config.ts'
 import { distSq } from '../core/vec.ts'
@@ -30,6 +30,10 @@ import type { Projectile } from '../game/projectile.ts'
 import type { World } from '../game/world.ts'
 
 const ENEMY_MAX_RADIUS = 58 // broad-phase padding: the largest body (EMBER TYRANT PRIME)
+/** Section 6.5: a boss dies in this many gibs. */
+const BOSS_KILL_GIBS = 40
+/** world.time accumulates FIXED_DT, so 27 ticks can land a hair under ENEMY_EMERGE. */
+const EMERGE_EPS = 1e-6
 /** XP multiplier of the kill being resolved (GUILLOTINE culls drop double). */
 let killXpMul = 1
 
@@ -139,7 +143,8 @@ export function collisionSystem(world: World, dt: number): void {
       closeCall(world)
       armed = false
     }
-    const v = e.damage * BITE.scale * mul
+    // Still emerging (decision 6): an arrival inside the view never bites before it has fully appeared.
+    const v = world.time - e.bornAt + EMERGE_EPS >= ENEMY_EMERGE ? e.damage * BITE.scale * mul : 0
     if (v > b1) {
       b3 = b2
       b2 = b1
@@ -504,12 +509,15 @@ function killEnemy(world: World, e: Enemy): void {
   scoreKill(world, def, KillSource.Weapon)
 
   world.ichor.queueStamp(e.x, e.y, world.rngs.fx)
-  spawnGibs(world, e.x, e.y, def.gibCount, e.gibTint, world.lastHitVx, world.lastHitVy)
+  spawnGibs(world, e.x, e.y, def.boss ? BOSS_KILL_GIBS : def.gibCount, e.gibTint, world.lastHitVx, world.lastHitVy)
   world.feel.emit(FeelKind.Kill, rankFlags(e), e.x, e.y, world.lastHitVx, world.lastHitVy, def)
 
   // Death-pop shockwave ring. Skip the xp-1 chaff so a swarm wipe stays clean
-  // and cheap.
-  if (def.boss) spawnRing(world, e.x, e.y, e.gibTint, 5.5)
+  // and cheap. A boss gets a second, white ring (section 6.5).
+  if (def.boss) {
+    spawnRing(world, e.x, e.y, e.gibTint, 5.5)
+    spawnRing(world, e.x, e.y, 0xffffff, 9)
+  }
   else if (def.elite) spawnRing(world, e.x, e.y, e.gibTint, 3)
   else if (def.xp >= 2) spawnRing(world, e.x, e.y, e.gibTint, 1.4)
 

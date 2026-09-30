@@ -52,6 +52,16 @@
 //                                  inside the view and the deepest overlap in world units;
 //                                  visibleNoWallClamp repeats the test without the arena
 //                                  clamp, to separate the offsets from the wall effect.
+//                                  Decision 6 (P15): every non-boss spawn of any source
+//                                  inside any of those views must get its emerge effect
+//                                  (the render-side EmergeFx scan over the union of the
+//                                  views, pool included), and no director spawn (ring,
+//                                  pack, event) may land within 120 u of the ship.
+//                                  Near spawns are split by source: offspring (a
+//                                  splitter, egg or BROOD elite within 60 u) and kit (the
+//                                  boss fight's brood) appear where their source stands.
+//                                  pass = both hold; ring-only visibility is reported,
+//                                  not failed (option (c)).
 //   perf [charId] [arenaId]        6s live combat at flood(500) + auto-fire; reports
 //                                  fps / p95 / max / long(>20ms) / bad(>33.4ms) frames.
 //                                  Drafts are answered with card 1 and the field is kept
@@ -586,7 +596,17 @@ if (MODE === 'shot') {
       const AIMS = [[0, 0]]
       for (let k = 0; k < 8; k++) AIMS.push([Math.cos((k * Math.PI) / 4), Math.sin((k * Math.PI) / 4)])
       const cls = ['centered', 'aim', 'touch']
-      const out = { ring: 0, elites: 0, duringBoss: 0, visible: {}, visibleDuringBoss: 0, visibleNoWallClamp: 0, maxInside: {}, worst: {} }
+      const out = { ring: 0, elites: 0, duringBoss: 0, visible: {}, visibleDuringBoss: 0, visibleNoWallClamp: 0, maxInside: {}, worst: {},
+        spawns: 0, inView: 0, emerged: 0, emergeMissing: 0, emergeDropped: 0, near: 0, nearById: {}, minDist: 1e9,
+        nearBySource: { director: 0, offspring: 0, kit: 0 }, directorMinDist: 1e9 }
+      const parents = []
+      const union = [0, 0, 0, 0]
+      const grow = (c) => {
+        union[0] = Math.min(union[0], c.x)
+        union[1] = Math.min(union[1], c.y)
+        union[2] = Math.max(union[2], c.x + c.w)
+        union[3] = Math.max(union[3], c.y + c.h)
+      }
       const NO_WALLS = { x: -1e5, y: -1e5, w: 2e5, h: 2e5 }
       for (const c of cls) { out.visible[c] = 0; out.maxInside[c] = 0 }
       const depth = (e) => {
@@ -596,9 +616,55 @@ if (MODE === 'shot') {
       for (let i = 0; i < steps; i++) {
         const seq = w.enemyUidSeq
         const ring = w.time < RING_NEAR_UNTIL ? RING_NEAR : RING_STD
+        // Anything that can drop offspring where it stands (splitters, eggs, BROOD elites).
+        parents.length = 0
+        for (const e of w.enemies.active) if (e.alive && (e.def.splitInto || e.def.hatch || (e.affix & 4))) parents.push(e.x, e.y)
         window.__DET.run(1)
         const pl = w.player
         const boss = w.bossAlive && w.boss ? w.boss : null
+        // Decision 6: every new non-boss enemy in any view variant gets its emerge
+        // effect; the scan sees the union of this step's views.
+        union[0] = union[1] = 1e9
+        union[2] = union[3] = -1e9
+        for (const touch of touches) {
+          for (let a = 0; a < AIMS.length; a++) {
+            cam.reset()
+            cam.update(100, pl.x, pl.y, AIMS[a][0], AIMS[a][1], touch, boss, w.arena.bounds)
+            grow(cam)
+          }
+        }
+        const dropped0 = S.emerge.dropped
+        S.emerge.scan(w, union[0], union[1], union[2] - union[0], union[3] - union[1])
+        S.emerge.update(w, 0)
+        out.emergeDropped += S.emerge.dropped - dropped0
+        const got = new Set(Array.from(S.emerge.lastUids.slice(0, S.emerge.lastN)))
+        for (const e of w.enemies.active) {
+          if (e.uid < seq || !e.alive || e.def.boss) continue
+          out.spawns++
+          const dist = Math.hypot(e.x - pl.x, e.y - pl.y)
+          out.minDist = Math.min(out.minDist, Math.round(dist))
+          let src = 'director'
+          if (e.brood > 0) src = 'kit'
+          else for (let k = 0; k < parents.length; k += 2) if (Math.hypot(e.x - parents[k], e.y - parents[k + 1]) < 60) src = 'offspring'
+          if (src === 'director') out.directorMinDist = Math.min(out.directorMinDist, Math.round(dist))
+          if (dist < 120) {
+            out.near++
+            out.nearById[e.def.id] = (out.nearById[e.def.id] ?? 0) + 1
+            out.nearBySource[src]++
+          }
+          let seen = false
+          for (const touch of touches) {
+            for (let a = 0; a < AIMS.length && !seen; a++) {
+              cam.reset()
+              cam.update(100, pl.x, pl.y, AIMS[a][0], AIMS[a][1], touch, boss, w.arena.bounds)
+              if (depth(e) > 0) seen = true
+            }
+          }
+          if (!seen) continue
+          out.inView++
+          if (got.has(e.uid)) out.emerged++
+          else out.emergeMissing++
+        }
         for (const e of w.enemies.active) {
           if (e.uid < seq || !e.alive || e.def.boss) continue
           if (Math.max(Math.abs(e.x - pl.x) / ring.halfW, Math.abs(e.y - pl.y) / ring.halfH) < 0.9) continue
@@ -643,7 +709,7 @@ if (MODE === 'shot') {
       out.time = +w.time.toFixed(1)
       return out
     }, Math.round(seconds * 60))
-    const pass = r.visible.centered + r.visible.aim + r.visible.touch === 0
+    const pass = r.emergeMissing === 0 && r.emergeDropped === 0 && r.nearBySource.director === 0
     console.log(JSON.stringify({ mode: 'ringview', W, H, arenaId, ...r, pass }))
   }
   if (pageErrors.length) console.log(JSON.stringify({ mode: 'ringview', pageErrors }))

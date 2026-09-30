@@ -2,7 +2,7 @@ import { Container, type Sprite } from 'pixi.js'
 import { FIXED_DT, MAX_HAZARDS } from '../config.ts'
 import { lerpHex } from '../core/color.ts'
 import { ENEMIES } from '../content/enemies.ts'
-import { HZ_CIRCLE, HZ_LANE, HZ_SWEEP } from '../game/hazard.ts'
+import { HZ_CIRCLE, HZ_END_SPAWN, HZ_LANE, HZ_SWEEP } from '../game/hazard.ts'
 import type { World } from '../game/world.ts'
 import { sweepAngle } from '../systems/hazards.ts'
 import { HZ_TEX, type TextureRegistry } from './textures.ts'
@@ -29,6 +29,15 @@ const SWEEP_LIVE_ALPHA = 0.2
 const MAX_SWEEP_LINES = 4
 const CAGE_FORM_SEC = 1.5
 const CAGE_ALPHA = 0.9
+/** Section 6.5: a hazard flashes white for this long when it detonates. */
+const DETONATE_FLASH_S = 0.08
+/** An event's arrival markers (BLINK STORM) wear the event alert color (A15), not the boss's. */
+const EVENT_MARKER_TINT = 0xff5a6e
+/** Charger windup lanes (section 6.5): pooled decals, pulsing at LANE_HZ. */
+const CHARGER_LANES = 6
+const LANE_HZ = 8
+const LANE_ALPHA0 = 0.22
+const LANE_ALPHA1 = 0.5
 
 /**
  * Draws the sim's hazards and the boss cage (world space, on the floor under
@@ -38,6 +47,7 @@ export class HazardRenderer {
   readonly view = new Container()
   private readonly sprites: Sprite[] = []
   private readonly lines: Sprite[] = []
+  private readonly lanes: Sprite[] = []
   private readonly cage: Sprite
 
   constructor(private readonly texReg: TextureRegistry) {
@@ -53,6 +63,11 @@ export class HazardRenderer {
       this.lines.push(s)
       this.view.addChild(s)
     }
+    for (let i = 0; i < CHARGER_LANES; i++) {
+      const s = texReg.makeSprite('hzLane')
+      this.lanes.push(s)
+      this.view.addChild(s)
+    }
     this.cage = texReg.makeSprite('hzCage')
     this.view.addChild(this.cage)
   }
@@ -60,6 +75,7 @@ export class HazardRenderer {
   update(world: World, alpha: number): void {
     const bossTint = world.broodTint(ENEMIES[world.script.boss.midId]!.tint)
     const markTint = lerpHex(bossTint, 0xffffff, MARKER_LIGHTEN)
+    const eventMarkTint = lerpHex(EVENT_MARKER_TINT, 0xffffff, MARKER_LIGHTEN)
     const a = world.hazards.active
     let n = 0
     let nl = 0
@@ -82,7 +98,8 @@ export class HazardRenderer {
         s.rotation = h.ang + h.arc / 2
         s.scale.set(h.len / HZ_TEX.sectorR)
       }
-      s.tint = h.damage > 0 ? DANGER_TINT : markTint
+      const flash = h.tele <= 0 && h.damage > 0 && h.liveMax - h.live < DETONATE_FLASH_S
+      s.tint = flash ? 0xffffff : h.damage > 0 ? DANGER_TINT : h.onEnd === HZ_END_SPAWN && !h.boss ? eventMarkTint : markTint
       const k = h.tele > 0 ? 1 - h.tele / h.teleMax : 1
       if (h.tele > 0) {
         const pale = h.damage === 0 && !(h.shape === HZ_CIRCLE && h.r > MARKER_MAX_R)
@@ -100,6 +117,27 @@ export class HazardRenderer {
     }
     for (let i = n; i < MAX_HAZARDS; i++) this.sprites[i]!.visible = false
     for (let i = nl; i < MAX_SWEEP_LINES; i++) this.lines[i]!.visible = false
+
+    // A charger in windup shows the lane its dash will sweep: 2r wide, as
+    // long as the dash, in the world's hazard tint.
+    const t = world.time + alpha * FIXED_DT
+    const pulse = LANE_ALPHA0 + (LANE_ALPHA1 - LANE_ALPHA0) * (0.5 + 0.5 * Math.sin(t * LANE_HZ * Math.PI * 2))
+    const laneTint = world.arenaTheme.hazardTint
+    let nc = 0
+    const es = world.enemies.active
+    for (let i = 0; i < es.length && nc < CHARGER_LANES; i++) {
+      const e = es[i]!
+      const c = e.def.charge
+      if (!e.alive || e.phase !== 1 || !c) continue
+      const lane = this.lanes[nc++]!
+      lane.visible = true
+      lane.position.set(e.sprite.x, e.sprite.y)
+      lane.rotation = e.phaseDir
+      lane.scale.set((c.dashSpeed * c.dashTime) / HZ_TEX.laneLen, e.radius / HZ_TEX.laneHalf)
+      lane.tint = laneTint
+      lane.alpha = pulse
+    }
+    for (let i = nc; i < CHARGER_LANES; i++) this.lanes[i]!.visible = false
 
     const c = world.director.cage
     const ring = this.cage
