@@ -29,10 +29,31 @@ import { Projectile } from './projectile.ts'
 
 export type RunMode = 'endless' | 'daily'
 
+/** Everything a run is started from (section 7.5). The sim reads the seed,
+ *  mode, pilot, arena, threat and pools; the rest is run identity for
+ *  presentation and the RunResult. */
+export interface RunConfig {
+  mode: RunMode
+  /** The first Daily start of its UTC day. */
+  ranked: boolean
+  seed: number
+  /** UTC day the run started on. */
+  date: string
+  /** 0 outside the Daily. */
+  dailyNumber: number
+  character: CharacterDef
+  theme: ArenaTheme
+  threat: number
+  perkPool: readonly PerkDef[]
+  weaponPool: readonly string[]
+  paint: string
+  baseBulletTint: number
+}
+
 /**
  * Central run state: entity pools, broad-phase hash, the FeelQueue, ichor, weapon+ammo,
  * the perk/Modifiers build, XP/level progression, and boss/run bookkeeping.
- * `beginRun(seed, mode)` (re)seeds and resets everything leak-free.
+ * `beginRun(cfg)` (re)seeds and resets everything leak-free.
  */
 export class World {
   readonly enemies: Pool<Enemy>
@@ -226,6 +247,10 @@ export class World {
   /** Projectile tint of the pilot's start weapon; the paint sets it. Presentation only. */
   baseBulletTint = WEAPONS[DEFAULT_WEAPON_ID]!.tint
 
+  // P13: Daily v2
+  /** The config of the current run; beginRun is its only writer. */
+  run: RunConfig | null = null
+
   constructor(
     readonly arena: Arena,
     readonly player: Player,
@@ -272,14 +297,15 @@ export class World {
 
   // --- run lifecycle ---------------------------------------------------------
 
-  /** Reseed + reset for a fresh run of `mode` as `character` in `theme`. Leak-free. */
-  beginRun(seed: number, mode: RunMode, character?: CharacterDef, theme?: ArenaTheme): void {
+  /** Reseed + reset for a fresh run from `cfg`. The only entry point. Leak-free. */
+  beginRun(cfg: RunConfig): void {
     this.clearAll()
-    this.rngs.begin(seed)
-    this.seed = seed
-    this.mode = mode
-    if (character) this.character = character
-    if (theme) this.arenaTheme = theme
+    this.run = cfg
+    this.rngs.begin(cfg.seed)
+    this.seed = cfg.seed
+    this.mode = cfg.mode
+    this.character = cfg.character
+    this.arenaTheme = cfg.theme
     this.tintCache.clear()
     this.script = resolveScript(this.arenaTheme.id)
     this.director.reset()
@@ -316,7 +342,7 @@ export class World {
     this.alerts.reset()
     this.lastHitVx = 0
     this.lastHitVy = 0
-    this.threat = 0
+    this.threat = cfg.threat
     this.score = 0
     this.killPts = 0
     this.xpSum = 0
@@ -348,7 +374,7 @@ export class World {
     this.damageTaken = 0
     this.lastHitBy = -1
     this.draft.reset()
-    this.perkPool = PERKS
+    this.perkPool = cfg.perkPool
     this.lastLevelAt = 0
     this.xpDropped = 0
     this.xpCollected = 0
@@ -365,8 +391,8 @@ export class World {
     this.lockUid = 0
     this.lockN = 0
     this.lockAt = -1
-    this.weaponPool = PICKUP_WEAPON_IDS
-    this.baseBulletTint = WEAPONS[this.character.startWeapon]!.tint
+    this.weaponPool = cfg.weaponPool
+    this.baseBulletTint = cfg.baseBulletTint
 
     const b = this.arena.bounds
     this.player.spawn(b.x + b.w / 2, b.y + b.h / 2)

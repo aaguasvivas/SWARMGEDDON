@@ -367,7 +367,7 @@
     S.setLoadout(cfg.char, cfg.arena)
     S.startRun('endless')
     const w = S.world
-    w.beginRun(cfg.seed >>> 0, 'endless') // keeps the pilot/theme startRun set
+    S.beginSeed(cfg.seed) // keeps the pilot/theme startRun set
     S.input.autoFire = true
     const st = {
       runId: Math.random(),

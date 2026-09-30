@@ -108,13 +108,8 @@ try {
         S.saveJSON('unlocks', [pilot, world])
         S.setLoadout(pilot, world)
         S.startRun('endless')
-        // A new seed per run: beginRun resets the pools to the canonical ones,
-        // so the ones startRun resolved go back on, as startRun does.
-        const perkPool = w.perkPool
-        const weaponPool = w.weaponPool
-        w.beginRun(seed, 'endless', w.character, w.arenaTheme)
-        w.perkPool = perkPool
-        w.weaponPool = weaponPool
+        // A new seed per run on the pools startRun resolved.
+        S.beginSeed(seed, { perkPool: w.perkPool, weaponPool: w.weaponPool })
         const inp = S.input
         const real = inp.update
         let rnd = seed

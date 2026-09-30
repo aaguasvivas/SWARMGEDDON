@@ -12,6 +12,11 @@ export function isNative(): boolean {
   return Capacitor.isNativePlatform()
 }
 
+/** 'web', 'ios' or 'android'. */
+export function platformId(): string {
+  return Capacitor.getPlatform()
+}
+
 /** Configure status bar + dismiss the splash once the game is up. */
 export async function initNative(): Promise<void> {
   if (!Capacitor.isNativePlatform()) return

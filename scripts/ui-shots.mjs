@@ -56,24 +56,29 @@ async function launch() {
   }
 }
 
-// In-page mock of the leaderboard API (installed before any app script runs).
+// In-page mock of the leaderboard v2 API (installed before any app script runs).
 function installMocks() {
-  const names = ['XXXXXXXXXXXXXX', 'NOVA_ACE', 'HIVEBREAKER', 'mmmmmmmmmmmmmm', 'ICHORQUEEN', 'Zed', 'W1DE_NAME_W1DE', 'ANON', 'swarmlord', 'EMBERMAIN', 'VOIDWALKER', 'ANON']
+  const names = ['XXXXXXXXXXXXXX', 'NOVA_ACE', 'HIVEBREAKER', 'mmmmmmmmmmmmmm', 'ICHORQUEEN', 'Zed', 'W1DE_NAME_W1DE', 'PILOT4F2A', 'swarmlord', 'EMBERMAIN', 'VOIDWALKER', 'PILOTQ9ZX']
   const countries = ['US', 'BR', null, 'DE', 'JP', 'US', 'GB', null, 'FR', 'KR', 'CA', null]
-  const entries = names.map((n, i) => ({ rank: i + 1, name: n, score: Math.round(2345678 / (i + 1)), time: 400 - i * 10, kills: 900 - i * 40, level: 20 - i, country: countries[i] }))
+  const rows = names.map((n, i) => ({
+    rank: i + 1, name: n, country: countries[i], pilot: ['nova', 'ember', 'vesper'][i % 3], paint: 'factory', threat: i % 5 === 0 ? 2 : 0,
+    score: Math.round(2345678 / (i + 1)), timeMs: (400 - i * 10) * 1000, kills: 900 - i * 40, level: 20 - i, cleared: i < 3,
+  }))
   const orig = window.fetch.bind(window)
   window.__apiCalls = []
   window.fetch = async (input, init) => {
     const url = typeof input === 'string' ? input : input.url
-    if (url.includes('/api/score') || url.includes('/api/v2/run')) {
-      window.__apiCalls.push(['score', url])
+    if (url.includes('/api/v2/run')) {
+      window.__apiCalls.push(['run', url])
       await new Promise((r) => setTimeout(r, 150))
-      return new Response(JSON.stringify({ score: 98765, rank: 42 }), { status: 200, headers: { 'content-type': 'application/json' } })
+      const daily = String(init && init.body).includes('"mode":"daily"')
+      const ranks = daily ? { day: { rank: 37, of: 412 } } : { week: { rank: 42, of: 318 }, all: { rank: 140, of: 2118 } }
+      return new Response(JSON.stringify({ ok: true, score: 98765, name: 'TESTER', renamed: false, ranks }), { status: 200, headers: { 'content-type': 'application/json' } })
     }
-    if (url.includes('/api/leaderboard') || url.includes('/api/v2/board')) {
+    if (url.includes('/api/v2/board')) {
       window.__apiCalls.push(['board', url])
       await new Promise((r) => setTimeout(r, 150))
-      return new Response(JSON.stringify({ entries, region: 'US' }), { status: 200, headers: { 'content-type': 'application/json' } })
+      return new Response(JSON.stringify({ rows, total: 2118, me: { rank: 347, of: 2118, pct: 17, score: 48210 } }), { status: 200, headers: { 'content-type': 'application/json' } })
     }
     return orig(input, init)
   }
@@ -221,6 +226,14 @@ async function runSize(browser, size) {
   }
 
   await step('01-menu-fresh', () => shot('01-menu-fresh'))
+  // P13: the ranked Daily asks first (a fresh save has today's ranked attempt).
+  await step('03b-daily-confirm', async () => {
+    await tap(page, size, 'DAILY #')
+    await sleep(400)
+    await shot('03b-daily-confirm')
+    await tap(page, size, 'BACK')
+    await sleep(300)
+  })
   await step('03-settings', async () => {
     await tap(page, size, 'SETTINGS')
     await sleep(400)
@@ -429,6 +442,48 @@ async function runSize(browser, size) {
     await page.keyboard.press('Escape')
     await sleep(600)
     await shot('02-menu-returning')
+  })
+
+  // P13: the recap's opt-in card, the name prompt, the posted rank line (a dev
+  // server with VITE_LEADERBOARD_URL and VITE_LEADERBOARD_DEV_SUBMIT posts to the
+  // in-page mock) and the leaderboard with the player's own row.
+  await step('16-recap-optin', async () => {
+    await page.evaluate(() => {
+      const S = window.__SWARM
+      const w = S.world
+      S.saveJSON('stats', { ...S.loadJSON('stats', {}), runs: 5 })
+      S.saveJSON('lb:asked', 0)
+      S.setLoadout('nova', 'depths')
+      S.startRun('endless')
+      S.step(30)
+      w.kills = 212
+      w.level = 9
+      w.time = 372.4
+      w.score = w.killPts = 48210
+      w.xpSum = 900
+      S.endRun('quit')
+    })
+    await sleep(900)
+    await shot('16-recap-optin')
+  })
+  await step('17-name-prompt', async () => {
+    await tap(page, size, 'CHOOSE A NAME')
+    await sleep(500)
+    await shot('17-name-prompt')
+    await page.keyboard.type('TESTER')
+    await page.keyboard.press('Enter')
+    await sleep(900)
+    await shot('18-recap-rank')
+  })
+  await step('19-leaderboard', async () => {
+    await page.evaluate(() => window.__SWARM.toLeaderboard())
+    await sleep(900)
+    await shot('19-leaderboard')
+    await tap(page, size, 'ALL TIME')
+    await sleep(600)
+    await shot('20-leaderboard-all')
+    await tap(page, size, 'BACK')
+    await sleep(300)
   })
 
   meta.apiCalls = await page.evaluate(() => window.__apiCalls)

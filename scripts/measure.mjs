@@ -20,7 +20,7 @@
 //                                  or `seconds` pass (default 600), the run ends through
 //                                  endRun ('death' after 60 death-sequence ticks, else
 //                                  'quit'), and one FNV hash covers the RunResult (all
-//                                  fields but the wall-clock date) and all 7 RNG stream
+//                                  fields but date, ranked and paint) and all 7 RNG stream
 //                                  states. Same invariant as det.
 //   det-long [charId] [arenaId|all] [seconds]
 //                                  the full run arc: invincible, no flood, move
@@ -65,8 +65,12 @@
 //   --dpr=N                        device pixel ratio for the page (default 1).
 //   --settings=JSON                settings merged into the save before boot, e.g.
 //                                  '{"shake":0,"reduceMotion":true,"damageNumbers":"off","flashes":false,"glow":0}'
-//   --mode=daily                   det / det-long start Daily runs (the date picks the
-//                                  world, so the arena argument is ignored).
+//   --mode=daily                   det / det-long / det-death start Daily runs (the date
+//                                  picks the pilot, world and threat, so the pilot and
+//                                  arena arguments are ignored). Each result line carries
+//                                  `offers`, a hash of every draft's cards, and the run's
+//                                  Daily identity.
+//   --date=YYYY-MM-DD              with --mode=daily: play that day's Daily (default today).
 //   --save=unlocked                det modes own every feat reward first, so Standard
 //                                  drafts and drops from the canonical pools (default:
 //                                  the fresh save plus the pilot and world, the start pools).
@@ -98,6 +102,7 @@ const MODE = pos[2] || 'perf'
 const DPR = flags.dpr ? parseFloat(flags.dpr) : 1
 const SETTINGS = flags.settings ? JSON.parse(flags.settings) : null
 const RUN_MODE = flags.mode === 'daily' ? 'daily' : 'endless'
+const DAILY_DATE = flags.date || null
 const SAVE_PREP = { unlocked: flags.save === 'unlocked', paint: flags.paint || null }
 const PERF_PERKS = flags.perks ? flags.perks.split(',') : []
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -111,6 +116,7 @@ const DET_HELPER = `(() => {
   const w = S.world
   const inp = S.input
   const PREP = ${JSON.stringify(SAVE_PREP)}
+  const DATE = ${JSON.stringify(DAILY_DATE)}
   let st = null
   let owned = null
   const nearest = () => {
@@ -170,6 +176,16 @@ const DET_HELPER = `(() => {
     inp.move.x = Math.cos(0.7 * w.time)
     inp.move.y = Math.sin(0.9 * w.time)
   }
+  const identity = () => {
+    let h = 0x811c9dc5
+    const all = st.offers.join('|')
+    for (let i = 0; i < all.length; i++) { h ^= all.charCodeAt(i); h = Math.imul(h, 0x01000193) }
+    const r = w.run
+    return {
+      offers: (h >>> 0).toString(16), offerCount: st.offers.length, firstOffers: st.offers.slice(0, 3),
+      daily: r.mode === 'daily' ? { date: r.date, number: r.dailyNumber, ranked: r.ranked, pilot: r.character.id, world: r.theme.id, threat: r.threat, seed: r.seed } : null,
+    }
+  }
   window.__DET = {
     start(c, a, runMode, long, realHp, rerolls = -1) {
       S.loop.stop()
@@ -180,10 +196,15 @@ const DET_HELPER = `(() => {
       } else {
         S.saveJSON('unlocks', owned)
       }
-      if (runMode !== 'daily') S.setLoadout(c, a)
-      else S.setLoadout(c, 'hive')
-      S.startRun(runMode)
-      st = { drafts: 0, bosses: 0, realUpdate: inp.update, wasBoss: false, tick: 0, realHp: !!realHp, rerolls, rerollsUsed: 0 }
+      if (runMode !== 'daily') {
+        S.setLoadout(c, a)
+        S.startRun(runMode)
+      } else if (DATE) {
+        S.startDaily(DATE)
+      } else {
+        S.startRun('daily')
+      }
+      st = { drafts: 0, bosses: 0, realUpdate: inp.update, wasBoss: false, tick: 0, realHp: !!realHp, rerolls, rerollsUsed: 0, offers: [] }
       if (!realHp) {
         w.player.maxHp = 1e9
         w.player.hp = 1e9
@@ -197,6 +218,7 @@ const DET_HELPER = `(() => {
         S.step(1)
         while (w.paused && w.draft.open) {
           st.drafts++
+          st.offers.push(w.draft.cards.slice(0, w.draft.count).map((c) => c.id).join(','))
           if (st.rerolls < 0) {
             S.pickCard(0)
             continue
@@ -228,7 +250,9 @@ const DET_HELPER = `(() => {
       let h = 0x811c9dc5
       const byte = (v) => { h ^= v & 0xff; h = Math.imul(h, 0x01000193) }
       const mix32 = (v) => { byte(v); byte(v >>> 8); byte(v >>> 16); byte(v >>> 24) }
-      const { date, ...rest } = r
+      // date, ranked and paint are run identity, not sim: a Daily's second pass
+      // is practice, and a Daily flown in any paint must hash the same.
+      const { date, ranked, paint, ...rest } = r
       const canon = JSON.stringify(rest)
       for (let i = 0; i < canon.length; i++) byte(canon.charCodeAt(i))
       const streams = {}
@@ -237,7 +261,7 @@ const DET_HELPER = `(() => {
         mix32(s)
         streams[k] = s.toString(16)
       }
-      return { hash: (h >>> 0).toString(16), result: rest, streams, drafts: st.drafts, screen: S.screen }
+      return { hash: (h >>> 0).toString(16), result: rest, streams, drafts: st.drafts, screen: S.screen, ...identity() }
     },
     finish() {
       inp.update = st.realUpdate
@@ -299,7 +323,7 @@ const DET_HELPER = `(() => {
         dashes: w.dashes, closeCalls: w.closeCalls, damageTaken: Math.round(w.damageTaken),
         rerollsUsed: st.rerollsUsed, xpDropped: +w.xpDropped.toFixed(1), xpCollected: +w.xpCollected.toFixed(1),
         perks: Object.fromEntries(w.perkStacks),
-        score: w.score, chain: w.chain, peakTier: w.peakTier, hits: w.hits,
+        score: w.score, chain: w.chain, peakTier: w.peakTier, hits: w.hits, ...identity(),
       }
     },
   }
@@ -416,7 +440,8 @@ if (MODE === 'shot') {
     const r = runs[0]
     console.log(JSON.stringify({
       mode: MODE, runMode: RUN_MODE, W, H, dpr: DPR, settings: SETTINGS ? applied : null, charId, arenaId: r.arena, steps,
-      hash: r.hash, rerunMatch: r.hash === runs[1].hash, save: flags.save || 'fresh', paint: flags.paint || 'factory', enemies: r.enemies, kills: r.kills, level: r.level,
+      hash: r.hash, rerunMatch: r.hash === runs[1].hash && r.offers === runs[1].offers, save: flags.save || 'fresh', paint: flags.paint || 'factory',
+      offers: r.offers, offerCount: r.offerCount, firstOffers: r.firstOffers, daily: r.daily, enemies: r.enemies, kills: r.kills, level: r.level,
       drafts: r.drafts, dashes: r.dashes, closeCalls: r.closeCalls, damageTaken: r.damageTaken,
       score: r.score, chain: r.chain, peakTier: r.peakTier, hits: r.hits, pickups: r.pickups, time: r.time, bosses: r.bosses, director: r.director, streams: r.streams, byType: r.byType,
     }))
@@ -443,7 +468,8 @@ if (MODE === 'shot') {
     const x = r.result
     console.log(JSON.stringify({
       mode: MODE, runMode: RUN_MODE, W, H, dpr: DPR, settings: SETTINGS ? applied : null, charId, arenaId: x.arena,
-      hash: r.hash, rerunMatch: r.hash === runs[1].hash, save: flags.save || 'fresh', paint: x.paint, screen: r.screen, end: x.end, time: +x.time.toFixed(2),
+      hash: r.hash, rerunMatch: r.hash === runs[1].hash && r.offers === runs[1].offers, save: flags.save || 'fresh', paint: flags.paint || 'factory', screen: r.screen, end: x.end, time: +x.time.toFixed(2),
+      offers: r.offers, offerCount: r.offerCount, daily: r.daily,
       kills: x.kills, level: x.level, score: x.score, killPts: x.killPts, xpSum: x.xpSum, bestChain: x.bestChain,
       peakTier: x.peakTier, hits: x.hits, damageTaken: x.damageTaken, killer: x.killer, nextBeat: x.nextBeat,
       revivesUsed: x.revivesUsed, podsEquipped: x.podsEquipped, weapons: x.weapons, drafts: r.drafts, streams: r.streams,
@@ -486,7 +512,7 @@ if (MODE === 'shot') {
         S.setLoadout('nova', arena)
         S.startRun('endless')
         const w = S.world
-        w.beginRun(seed, 'endless')
+        S.beginSeed(seed)
         w.player.maxHp = w.player.hp = 1e9
         const inView = (e) => e.alive && !e.submerged && Math.abs(e.x - w.player.x) < hw && Math.abs(e.y - w.player.y) < hh
         const realUpdate = S.input.update

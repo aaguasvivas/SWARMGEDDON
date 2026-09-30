@@ -2,6 +2,7 @@ import { Container, Graphics, Text } from 'pixi.js'
 import { GlowFilter } from 'pixi-filters'
 import { COLORS } from '../config.ts'
 import { leaderboardEnabled } from '../net/leaderboard.ts'
+import type { Insets } from '../platform/safeArea.ts'
 import { characterById } from '../content/characters.ts'
 import { arenaById } from '../content/arenas.ts'
 import { WORLD_SCRIPTS } from '../content/runScripts.ts'
@@ -9,16 +10,25 @@ import type { WorldBestGains } from '../state/persistence.ts'
 import type { FeatUnlock } from '../state/feats.ts'
 import type { RunResult } from '../state/runResult.ts'
 import { Button } from './button.ts'
+import { OptInCard } from './optInCard.ts'
+import type { ToastSlot } from './toast.ts'
 import { FONT, T } from './tokens.ts'
 
 /** Taps are ignored this long after the screen appears, so a tap meant for the
  *  game cannot land on RETRY. */
 const INPUT_LOCK_MS = 450
+/** Width of the RETRY/MENU column. */
+const COL_W = 336
+const CARD_MAX_W = 343
+const CARD_MIN_W = 260
 
 function fmtTime(s: number): string {
   const m = Math.floor(s / 60)
   return `${m}:${Math.floor(s % 60).toString().padStart(2, '0')}`
 }
+
+/** The tone of the leaderboard line under the title. */
+export type RankTone = 'rank' | 'muted'
 
 /** Death screen: run stats + new-best flag + Retry / Menu / Share. */
 export class GameOver {
@@ -27,6 +37,9 @@ export class GameOver {
   onMenu: () => void = () => {}
   onShare: () => void = () => {}
   onLeaderboard: () => void = () => {}
+  readonly optIn = new OptInCard()
+  /** Where a toast may show on this screen without covering its content. */
+  toastSlot: ToastSlot | null = null
 
   private backdrop = new Graphics()
   private title: Text
@@ -39,6 +52,7 @@ export class GameOver {
   private board: Button
   private w = 0
   private h = 0
+  private insets: Insets = { top: 0, right: 0, bottom: 0, left: 0 }
   private readyAt = 0
 
   constructor() {
@@ -64,7 +78,7 @@ export class GameOver {
     this.share.onClick = () => this.acceptsInput() && this.onShare()
     this.board.onClick = () => this.acceptsInput() && this.onLeaderboard()
 
-    this.view.addChild(this.backdrop, this.title, this.best, this.rank, this.stats, this.retry.view, this.menu.view, this.share.view, this.board.view)
+    this.view.addChild(this.backdrop, this.title, this.best, this.rank, this.stats, this.retry.view, this.menu.view, this.share.view, this.board.view, this.optIn.view)
     this.view.visible = false
   }
 
@@ -77,11 +91,13 @@ export class GameOver {
     return performance.now() >= this.readyAt
   }
 
-  /** Show the player's global rank once the async submit comes back. */
-  setRank(rank: number): void {
-    if (this.hasUnlockBanner) return // an unlock is the bigger news, keep it
-    this.rank.text = `◆  GLOBAL RANK #${rank}  ◆`
-    this.relayout() // the banner slot is sized to its content
+  /** The leaderboard line (A15): a rank once the async post returns, or why
+   *  the score did not post. An unlock banner owns the slot. */
+  setRankLine(text: string, tone: RankTone): void {
+    if (this.hasUnlockBanner) return
+    this.rank.text = text
+    this.rank.style.fill = tone === 'rank' ? T.accentXp : T.textMuted
+    this.relayout()
   }
 
   /** Banner the feats the run finished (owns the rank line's slot): at most two
@@ -100,50 +116,70 @@ export class GameOver {
     this.relayout()
   }
 
-  /** The score never reached the leaderboard; say so instead of silence. */
-  setSubmitFailed(): void {
-    if (this.hasUnlockBanner || !leaderboardEnabled()) return
-    this.rank.text = 'score not submitted, check your connection'
-    this.rank.style.fill = 0x5f8f83
+  /** Whether the opt-in card fits this screen with the recap as it is now
+   *  (a long unlock banner takes more room). */
+  canShowOptIn(): boolean {
+    const was = this.optIn.view.visible
+    this.optIn.view.visible = true
+    const fits = this.relayout()
+    this.optIn.view.visible = was
+    this.relayout()
+    return fits
+  }
+
+  setOptInVisible(on: boolean): void {
+    this.optIn.view.visible = on
     this.relayout()
   }
 
-  layout(w: number, h: number): void {
+  layout(w: number, h: number, insets: Insets): void {
     this.w = w
     this.h = h
+    this.insets = insets
     this.relayout()
   }
 
-  private relayout(): void {
-    const { w, h } = this
+  /** Lays the screen out; false when the content overflows it. */
+  private relayout(): boolean {
+    const { w, h, insets } = this
     this.backdrop.clear()
     this.backdrop.rect(0, 0, w, h).fill({ color: 0x05070d, alpha: 0.74 })
-    const cx = w / 2
-    const bannerW = Math.min(w - 32, 500)
-    this.rank.style.wordWrapWidth = bannerW
+    const short = h < 560
+    const card = this.optIn.view.visible
+    // Short screens put the opt-in card in a column right of the recap.
+    const side = card && short
+    const left = insets.left + 16
+    const right = w - insets.right - 16
+    const cx = side ? left + COL_W / 2 : w / 2
+    const colW = side ? COL_W : Math.min(right - left, 500)
+    this.rank.style.wordWrapWidth = colW
     if (this.unlockText) {
       // The count wraps as one piece: on its own line when the banner is too wide.
       this.rank.style.wordWrap = false
       this.rank.text = this.unlockText[0]
-      if (this.rank.width > bannerW) this.rank.text = this.unlockText[1]
+      if (this.rank.width > colW) this.rank.text = this.unlockText[1]
       this.rank.style.wordWrap = true
     }
-    // Flow by REAL text heights: the stats block is 5 lines since the loadout
-    // line was added, and the rank slot doubles as the unlock banner (which can
-    // wrap). Fixed offsets let them print over each other (owner playtest bug).
-    const short = h < 560
     // Long headers (THE QUEEN ESCAPED) shrink to the width instead of clipping.
     this.title.scale.set(1)
-    const room = w - 32
-    if (this.title.width > room) this.title.scale.set(room / this.title.width)
-    // Never above the top edge (phone landscape is only 375 tall).
-    let y = Math.max(h * 0.5 - (short ? 170 : 156), this.title.height / 2 + 4)
+    if (this.title.width > colW) this.title.scale.set(colW / this.title.width)
+
+    // Flow by REAL text heights, from the title center down.
+    const rankH = Math.max(22, this.rank.height + 6)
+    const bodyH = 34 + 22 + rankH + this.stats.height + 22 + 64 + 46
+    const cardW = Math.min(CARD_MAX_W, side ? right - (left + COL_W + 16) : right - left)
+    const cardH = card ? this.optIn.layout(cardW) : 0
+    const colH = this.title.height / 2 + bodyH + (card && !side ? 16 + cardH : 0)
+    const top = insets.top + 8
+    const room = h - insets.top - insets.bottom - 16
+    const fits = colH <= room && (!card || (cardW >= CARD_MIN_W && cardH <= room))
+    let y = Math.max(top, top + (room - colH) / 2) + this.title.height / 2
     this.title.position.set(cx, y)
     y += 34
     this.best.position.set(cx, y)
     y += 22
     this.rank.position.set(cx, y)
-    y += Math.max(22, this.rank.height + 6)
+    y += rankH
     this.stats.position.set(cx, y + this.stats.height / 2)
     y += this.stats.height + 22
     this.retry.position(cx - 168, y)
@@ -158,6 +194,19 @@ export class GameOver {
     } else {
       this.share.position(cx - 68, y)
     }
+    y += 46
+
+    // The card sits under the buttons, or in the side column; a toast takes its place.
+    if (side) {
+      const x = left + COL_W + 16
+      this.optIn.view.position.set(x, Math.max(top, top + (room - cardH) / 2))
+      this.toastSlot = { x, y: top, w: right - x }
+    } else {
+      const x = (w - cardW) / 2
+      this.optIn.view.position.set(x, y + 16)
+      this.toastSlot = { x: left, y: y + 12, w: right - left }
+    }
+    return fits
   }
 
   show(result: RunResult, gains: WorldBestGains): void {
@@ -183,12 +232,12 @@ export class GameOver {
           : gains.kills
             ? '★ MOST KILLS ★'
             : ''
-    this.rank.text = '' // filled in async by setRank() once the submit returns
+    this.rank.text = '' // filled in async by setRankLine() once the post returns
     this.hasUnlockBanner = false
     this.unlockText = null
-    this.rank.style.fill = 0x57c8ff
+    this.optIn.view.visible = false
     this.stats.text =
-      `${result.mode === 'daily' ? 'DAILY CHALLENGE' : 'ENDLESS'}\n` +
+      `${result.mode === 'daily' ? `DAILY #${result.dailyNumber} · ${result.ranked ? 'RANKED' : 'PRACTICE'}` : 'ENDLESS'}\n` +
       `${characterById(result.character).name} · ${arenaById(result.arena).name}\n` +
       `survived  ${fmtTime(result.time)}\n` +
       `kills  ${result.kills}     level  ${result.level}\n` +

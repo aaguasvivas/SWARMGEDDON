@@ -181,6 +181,11 @@ export class MainMenu {
     this.info.text = played ? `${worldName} best: ${fmtTime(best.time)} · ${best.kills} kills${score}` : `${worldName}: no runs yet`
   }
 
+  /** `DAILY #12` while today's ranked attempt is open, `DAILY #12 PRACTICE` after it. */
+  setDailyLabel(text: string): void {
+    this.daily.setText(text)
+  }
+
   show(): void {
     this.view.visible = true
   }

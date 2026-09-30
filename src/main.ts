@@ -2,7 +2,7 @@ import { Container, Graphics, Rectangle, Sprite, Text } from 'pixi.js'
 import { COLORS, DASH, DEFAULT_SEED, FIXED_DT, MAX_FRAME_TIME } from './config.ts'
 import { GameLoop } from './core/time.ts'
 import { Rng } from './core/rng.ts'
-import { seedFromString } from './core/rules.ts'
+import { dailySpec, seedFromString } from './core/rules.ts'
 import { initSafeArea, getInsets } from './platform/safeArea.ts'
 import { setHapticsEnabled } from './platform/haptics.ts'
 import { initNative, onAppPause, registerBackButton } from './platform/native.ts'
@@ -23,7 +23,7 @@ import { FeelDirector } from './effects/feelDirector.ts'
 import { DEATH_BEAT_MS, DEATH_RECAP_MS, DEATH_SKIP_MS, TimePreset } from './effects/timeDirector.ts'
 import { Arena, type DecorSpeck } from './game/arena.ts'
 import { Player } from './game/player.ts'
-import { World, type RunMode } from './game/world.ts'
+import { World, type RunConfig, type RunMode } from './game/world.ts'
 import { InputManager } from './input/input.ts'
 import { DebugOverlay } from './ui/debugOverlay.ts'
 import { Hud } from './ui/hud.ts'
@@ -33,10 +33,11 @@ import { GameOver } from './ui/gameOver.ts'
 import { WinPanel } from './ui/winPanel.ts'
 import { SettingsPanel } from './ui/settingsPanel.ts'
 import { Leaderboard } from './ui/leaderboard.ts'
-import { dismissNamePrompt } from './ui/namePrompt.ts'
-import { submitScore } from './net/leaderboard.ts'
+import { dismissNamePrompt, namePromptOpen, promptName } from './ui/namePrompt.ts'
+import { ConfirmSheet } from './ui/confirmSheet.ts'
+import { getPlayerName, markAsked, optIn, optInState, optOut, setPlayerName, shouldAskOptIn, submitRun, type SubmitOutcome } from './net/leaderboard.ts'
 import { TouchHint } from './ui/touchHint.ts'
-import { Toast } from './ui/toast.ts'
+import { Toast, type ToastSlot } from './ui/toast.ts'
 import { bakeIcons } from './ui/icons.ts'
 import { FONT } from './ui/tokens.ts'
 import { tweens } from './ui/tween.ts'
@@ -44,17 +45,22 @@ import { numGlyphs } from './ui/digits.ts'
 import { flushStorage, initStorage, loadJSON, saveJSON } from './platform/storage.ts'
 import { loadSettings, saveSettings, type Settings } from './state/settings.ts'
 import { recordWorldBest, loadWorldBest } from './state/persistence.ts'
-import { buildRunResult, type RunEnd, type RunResult } from './state/runResult.ts'
+import { buildRunResult, type RunEnd, type RunMeta, type RunResult } from './state/runResult.ts'
+import {
+  CHECKPOINT_EVERY_S, clearCheckpoint, loadCheckpoint, loadDay, markRankedStarted, postable, pruneDays, rankedAvailable,
+  rankedRun, recordDailyEnd, saveCheckpoint, todayUtc,
+} from './state/daily.ts'
 import { updateLifetime } from './state/stats.ts'
 import { evaluateFeats } from './state/feats.ts'
 import { migrateSave } from './state/migrate.ts'
 import { shareRunCard } from './share/shareCard.ts'
 import { flushUpdatePrompt, setupUpdatePrompt } from './pwa/updatePrompt.ts'
-import { CHARACTERS, DEFAULT_CHARACTER_ID, characterById, type CharacterDef } from './content/characters.ts'
+import { CHARACTERS, DEFAULT_CHARACTER_ID, characterById } from './content/characters.ts'
 import { ARENAS, DEFAULT_ARENA_ID, arenaById } from './content/arenas.ts'
 import { FEATS, featForReward, validateFeats } from './content/feats.ts'
 import { FACTORY_PAINT_ID, paintById, type PaintDef } from './content/paints.ts'
-import { WEAPONS } from './content/weapons.ts'
+import { PICKUP_WEAPON_IDS, WEAPONS } from './content/weapons.ts'
+import { PERKS } from './content/perks.ts'
 import { grant, isOwned, ownedPaintIds, resolvePools } from './state/unlocks.ts'
 import { spawnEnemy, debugFloodSwarmers } from './systems/spawn.ts'
 import { clampPlayerToCage, directorJumpTo, directorTick } from './systems/director.ts'
@@ -84,7 +90,8 @@ async function boot(): Promise<void> {
   await initStorage()
   const featErrors = validateFeats()
   if (featErrors.length > 0) throw new Error('feat table: ' + featErrors.join('; '))
-  const welcome = migrateSave(todayStr())
+  const welcome = migrateSave(todayUtc())
+  pruneDays(todayUtc())
   initSafeArea()
   // Fonts load alongside the renderer; every Text is created after both.
   const fontsReady = loadFonts()
@@ -161,6 +168,7 @@ async function boot(): Promise<void> {
   const winPanel = new WinPanel()
   const settingsPanel = new SettingsPanel()
   const leaderboard = new Leaderboard()
+  const confirm = new ConfirmSheet()
   const touchHint = new TouchHint()
   const toast = new Toast()
   // Dev instrument only: null in prod so the class, its per-frame update, and
@@ -169,7 +177,7 @@ async function boot(): Promise<void> {
   // vignette sits at the bottom of the UI (above the world, below the HUD).
   layers.ui.addChild(
     vignette.view, hud.view, input.touch.view, hurtOverlay, flashOverlay, crosshair,
-    touchHint.view, modal.view, winPanel.view, mainMenu.view, gameOver.view, settingsPanel.view, leaderboard.view, toast.view,
+    touchHint.view, modal.view, winPanel.view, mainMenu.view, gameOver.view, settingsPanel.view, leaderboard.view, confirm.view, toast.view,
   )
   if (debug) layers.ui.addChild(debug.view)
 
@@ -212,10 +220,8 @@ async function boot(): Promise<void> {
   let pauseReason: 'none' | 'win' = 'none'
   let lastResult: RunResult | null = null
   let submitToken = 0
-  /** UTC day the current run started on (a run belongs to its start date). */
-  let runDate = ''
-  /** Paint id the current run flies. */
-  let runPaint = FACTORY_PAINT_ID
+  /** Sim time of the next ranked Daily checkpoint. */
+  let nextCkptAt = CHECKPOINT_EVERY_S
 
   // Register the SW + "new version" toast, but never mid-run ("Update"
   // reloads the page, which would destroy an active run). Parked toasts are
@@ -279,29 +285,58 @@ async function boot(): Promise<void> {
   }
   refreshLoadoutUI()
 
-  /** Resolve the effective run loadout: locked picks fall back to the default,
-   *  and the Daily's arena rotates deterministically by date for everyone. */
-  function resolveLoadout(mode: RunMode): { char: CharacterDef; theme: (typeof ARENAS)[number] } {
-    const cSel = characterById(selCharId)
-    const char = isOwned(cSel.id) ? cSel : characterById(DEFAULT_CHARACTER_ID)
+  /** The config a run starts from. Standard: the selected pilot and world
+   *  (locked picks fall back to the default) and the owned pools. The Daily:
+   *  the date's spec for everyone, locks ignored, canonical pools. Pools and
+   *  paint resolve once here; a grant mid-run never changes this run. */
+  function buildRunConfig(mode: RunMode, date: string): RunConfig {
+    const paint = selectedPaint()
+    const pools = resolvePools(mode)
+    let char = characterById(selCharId)
     let theme = arenaById(selArenaId)
-    if (!isOwned(theme.id)) theme = arenaById(DEFAULT_ARENA_ID)
-    if (mode === 'daily') theme = ARENAS[seedFromString('swarmgeddon:arena:' + todayStr()) % ARENAS.length]!
-    return { char, theme }
+    let seed = runSeed()
+    let threat = 0
+    let dailyNumber = 0
+    if (mode === 'daily') {
+      const spec = dailySpec(date)
+      char = characterById(spec.pilot)
+      theme = arenaById(spec.world)
+      seed = spec.seed
+      threat = spec.threat
+      dailyNumber = spec.number
+    } else {
+      if (!isOwned(char.id)) char = characterById(DEFAULT_CHARACTER_ID)
+      if (!isOwned(theme.id)) theme = arenaById(DEFAULT_ARENA_ID)
+    }
+    return {
+      mode,
+      ranked: mode === 'daily' && rankedAvailable(date),
+      seed,
+      date,
+      dailyNumber,
+      character: char,
+      theme,
+      threat,
+      perkPool: pools.perks,
+      weaponPool: pools.weapons,
+      paint: paint ? paint.id : FACTORY_PAINT_ID,
+      baseBulletTint: paint ? paint.bullet : WEAPONS[char.startWeapon]!.tint,
+    }
   }
 
-  function startRun(mode: RunMode): void {
-    const { char, theme } = resolveLoadout(mode)
-    runDate = todayStr()
-    world.beginRun(runSeed(mode), mode, char, theme)
-    // Pools and paint resolve once here; a grant mid-run never changes this run.
-    const pools = resolvePools(mode)
-    world.perkPool = pools.perks
-    world.weaponPool = pools.weapons
-    const paint = selectedPaint()
-    runPaint = paint ? paint.id : FACTORY_PAINT_ID
-    player.paint(paint ?? char.colors, char.shape)
-    world.baseBulletTint = paint ? paint.bullet : WEAPONS[char.startWeapon]!.tint
+  function runMeta(): RunMeta {
+    const run = world.run!
+    return { date: run.date, ranked: run.ranked, dailyNumber: run.dailyNumber, paint: run.paint }
+  }
+
+  function startRun(mode: RunMode, date = todayUtc()): void {
+    const cfg = buildRunConfig(mode, date)
+    // The ranked attempt is spent before the first sim step, whatever ends it.
+    if (cfg.ranked) markRankedStarted(cfg.date)
+    world.beginRun(cfg)
+    nextCkptAt = CHECKPOINT_EVERY_S
+    const theme = cfg.theme
+    player.paint(selectedPaint() ?? cfg.character.colors, cfg.character.shape)
     audio.setTheme(theme.music)
     feel.reset()
     deathBeat = false
@@ -319,9 +354,31 @@ async function boot(): Promise<void> {
     winPanel.hide()
     mainMenu.hide()
     toast.hide()
+    confirm.close()
     gameOver.hide()
     settingsPanel.hide()
     leaderboard.hide()
+  }
+
+  /** The Daily from the menu or a retry: the ranked attempt asks first. */
+  function playDaily(): void {
+    const date = todayUtc()
+    if (!rankedAvailable(date)) {
+      startRun('daily', date)
+      return
+    }
+    confirm.open(
+      'RANKED ATTEMPT',
+      'Your first Daily run today is the ranked one. After it, practice as much as you like.',
+      'START',
+      'BACK',
+      () => startRun('daily', date),
+    )
+  }
+
+  function retry(): void {
+    if (world.mode === 'daily') playDaily()
+    else startRun('endless')
   }
 
   /** Every exit from a live run comes through here (death, quit, clear,
@@ -330,38 +387,94 @@ async function boot(): Promise<void> {
   function endRun(end: RunEnd, after: AfterRun = 'recap'): void {
     pauseReason = 'none'
     winPanel.hide()
-    // Until the Daily lifecycle exists, every Daily is ranked.
-    const result = buildRunResult(world, end, { date: runDate, ranked: world.mode === 'daily', dailyNumber: 0, paint: runPaint })
+    const result = buildRunResult(world, end, runMeta())
     lastResult = result
     feel.time.reset()
     const lifetime = updateLifetime(result)
     const gains = recordWorldBest(result)
     const done = evaluateFeats(result, lifetime)
+    if (result.mode === 'daily') recordDailyEnd(result)
     if (done.length > 0) refreshLoadoutUI()
     if (after === 'menu') {
+      void postRun(result, false)
       toMenu()
       return
     }
-    // A quick retry skips the recap only when the run has no news to show.
-    if (after === 'retry' && done.length === 0 && !gains.score && !gains.time && !gains.kills) {
-      startRun(world.mode)
+    // A quick retry skips the recap only when the run has no news to show. A
+    // Daily always shows its recap (its rank is the news).
+    if (after === 'retry' && result.mode !== 'daily' && done.length === 0 && !gains.score && !gains.time && !gains.kills) {
+      void postRun(result, false)
+      startRun('endless')
       return
     }
     gameOver.show(result, gains)
     feel.runEnded(gains.score, done.length > 0)
     gameOver.setUnlocks(done)
+    const ask = shouldAskOptIn(lifetime.runs) && gameOver.canShowOptIn()
+    if (ask) markAsked()
+    gameOver.setOptInVisible(ask)
     screen = 'gameover'
     input.setEnabled(false)
-    // Submit to the global leaderboard (no-op if unconfigured). The token pins
-    // the async response to THIS run: a slow response from run N must never
-    // stamp its rank (or overwrite the rank) on run N+1's death screen.
-    const token = ++submitToken
-    void submitScore(result).then((r) => {
-      if (token !== submitToken || screen !== 'gameover') return
-      if (r) gameOver.setRank(r.rank)
-      else gameOver.setSubmitFailed()
-    })
+    void postRun(result, true)
     flushUpdatePrompt() // a parked "new version" toast may show now
+  }
+
+  /** Post a finished run when it qualifies (section 8.1). The token pins the
+   *  async answer to THIS recap: a slow answer from run N never lands on run N+1's. */
+  async function postRun(r: RunResult, recap: boolean): Promise<void> {
+    const token = ++submitToken
+    const out = await submitRun(postable(r))
+    if (out.kind === 'posted' && out.renamed) showToast(`That name is not allowed. Posted as ${out.name}.`)
+    if (!recap || token !== submitToken || screen !== 'gameover') return
+    const line = rankLine(r, out)
+    if (line) gameOver.setRankLine(line[0], line[1])
+  }
+
+  /** The recap's leaderboard line (A15). */
+  function rankLine(r: RunResult, out: SubmitOutcome): [string, 'rank' | 'muted'] | null {
+    const n = (v: number): string => v.toLocaleString('en-US')
+    switch (out.kind) {
+      case 'posted':
+        if (out.day) return [`RANK ${n(out.day.rank)} OF ${n(out.day.of)} TODAY`, 'rank']
+        if (out.week && out.all) return [`${arenaById(r.arena).name}: #${n(out.week.rank)} THIS WEEK · #${n(out.all.rank)} ALL TIME`, 'rank']
+        return null
+      case 'duplicate':
+        return ['Your ranked Daily is already posted.', 'muted']
+      case 'failed':
+        return ['Score not posted. Check your connection.', 'muted']
+      case 'gone':
+        return ['Score not posted. The leaderboard is offline.', 'muted']
+      case 'outdated':
+        return ['Score not posted. Update the game to post scores.', 'muted']
+      case 'rejected':
+        return ['Score not posted.', 'muted']
+      case 'off':
+        return null
+    }
+  }
+
+  /** CHOOSE A NAME: the prompt, then posting turns on and the recap's run plus
+   *  today's ranked Daily post. Resolves false when the player cancels. */
+  async function joinLeaderboard(): Promise<boolean> {
+    const name = await promptName(getPlayerName())
+    if (name === null) return false
+    optIn(name)
+    const ranked = rankedRun(todayUtc())
+    const current = screen === 'gameover' ? lastResult : null
+    if (current) void postRun(current, true)
+    const same = current && current.mode === 'daily' && current.ranked && ranked && current.date === ranked.date
+    if (ranked && !same) void submitRun(ranked)
+    return true
+  }
+
+  /** The screen a toast shows over decides where it may sit. */
+  function toastSlot(): ToastSlot | null {
+    return screen === 'gameover' ? gameOver.toastSlot : mainMenu.toastSlot
+  }
+
+  function showToast(text: string, sec = 5): void {
+    toast.layout(app.screen.width, getInsets(), toastSlot())
+    toast.show(text, sec)
   }
 
   function toMenu(): void {
@@ -375,7 +488,10 @@ async function boot(): Promise<void> {
     gameOver.hide()
     settingsPanel.hide()
     leaderboard.hide()
+    confirm.close()
+    toast.hide()
     refreshLoadoutUI() // re-read the selected world's best (a run may have set one)
+    refreshDailyLabel()
     mainMenu.show()
     // Reset the whole presentation to the hive home base. The menu idles a live
     // arena behind it (see the player.spawn at world center), so music, floor
@@ -390,28 +506,54 @@ async function boot(): Promise<void> {
     flushUpdatePrompt()
   }
 
+  function refreshDailyLabel(): void {
+    const date = todayUtc()
+    const n = dailySpec(date).number
+    mainMenu.setDailyLabel(rankedAvailable(date) ? `DAILY #${n}` : `DAILY #${n} PRACTICE`)
+  }
+
   function toLeaderboard(): void {
     screen = 'leaderboard'
     input.setEnabled(false)
     mainMenu.hide()
     toast.hide()
     gameOver.hide()
-    leaderboard.open()
+    leaderboard.open(selArenaId)
   }
 
-  mainMenu.onPlay = startRun
+  mainMenu.onPlay = (mode) => {
+    if (mode === 'daily') playDaily()
+    else startRun(mode)
+  }
   mainMenu.onSettings = () => {
     toast.hide()
     settingsPanel.open(settings)
   }
   mainMenu.onLeaderboard = toLeaderboard
-  gameOver.onRetry = () => startRun(world.mode)
+  gameOver.onRetry = retry
   gameOver.onMenu = toMenu
   gameOver.onLeaderboard = toLeaderboard
   gameOver.onShare = () => {
     if (lastResult) void shareRunCard(lastResult)
   }
+  gameOver.optIn.onChoose = () => {
+    void joinLeaderboard().then((joined) => {
+      if (joined && screen === 'gameover') gameOver.setOptInVisible(false)
+    })
+  }
+  gameOver.optIn.onDecline = () => {
+    optOut()
+    gameOver.setOptInVisible(false)
+    showToast('You can turn this on in Settings.')
+  }
   leaderboard.onBack = toMenu
+  leaderboard.onJoin = async () => {
+    await joinLeaderboard()
+  }
+  leaderboard.onEditName = async () => {
+    const name = await promptName(getPlayerName())
+    if (name !== null && optInState() === true) setPlayerName(name)
+  }
   settingsPanel.onChange = (s) => {
     settings = s
     applySettings(s)
@@ -497,10 +639,11 @@ async function boot(): Promise<void> {
     modal.setScreen(w, h, insets)
     winPanel.layout(w, h, insets)
     mainMenu.layout(w, h)
-    gameOver.layout(w, h)
+    gameOver.layout(w, h, insets)
     settingsPanel.layout(w, h)
-    leaderboard.layout(w, h)
-    toast.layout(w, insets, mainMenu.toastSlot)
+    leaderboard.layout(w, h, insets)
+    confirm.layout(w, h, insets)
+    toast.layout(w, insets, toastSlot())
     // Pin the bloom to the visible window (not the whole 2800x1900 arena).
     layers.scene.filterArea = new Rectangle(0, 0, w, h)
     hurtOverlay.clear()
@@ -512,7 +655,9 @@ async function boot(): Promise<void> {
   }
   layout()
   toMenu()
-  if (welcome) toast.show(welcome, 6)
+  const recovered = recoverCheckpoint()
+  const bootToast = [recovered, welcome].filter((t) => t !== null).join('\n')
+  if (bootToast) showToast(bootToast, 6)
   // Bind to the renderer's own resize event (authoritative: it fires exactly when
   // `resizeTo: window` updates app.screen) plus window events as a backstop.
   app.renderer.on('resize', layout)
@@ -525,6 +670,10 @@ async function boot(): Promise<void> {
     // Dismiss the topmost overlay first: back must never exit the app while
     // something closable is open (Android store-review expectation).
     if (dismissNamePrompt()) return true
+    if (confirm.isOpen()) {
+      confirm.close()
+      return true
+    }
     if (settingsPanel.isOpen()) {
       settingsPanel.hide()
       return true
@@ -560,6 +709,8 @@ async function boot(): Promise<void> {
     // read as game input: 'r' would restart, Enter would start a run.
     const tgt = e.target as HTMLElement | null
     if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)) return
+    if (namePromptOpen()) return
+    if (confirm.pressKey(e.key)) return
     if (modal.isOpen()) {
       if (e.key === '1' || e.key === '2' || e.key === '3') modal.pressCard(Number(e.key) - 1)
       else if (e.key === 'r' || e.key === 'R') modal.reroll()
@@ -580,9 +731,9 @@ async function boot(): Promise<void> {
       if (e.key === 'Escape') quitRun('recap')
       else if (e.key === 'r' || e.key === 'R') quitRun('retry')
     } else if (screen === 'gameover') {
-      if (e.key === 'Enter' && gameOver.acceptsInput()) startRun(world.mode)
+      if (e.key === 'Enter' && gameOver.acceptsInput()) retry()
       else if (e.key === 'Escape' && gameOver.acceptsInput()) toMenu()
-    } else if (screen === 'menu' && e.key === 'Enter' && !settingsPanel.isOpen()) {
+    } else if (screen === 'menu' && e.key === 'Enter' && !settingsPanel.isOpen() && !confirm.isOpen()) {
       startRun('endless')
     }
   })
@@ -662,6 +813,7 @@ async function boot(): Promise<void> {
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) return
     if (screen === 'playing' && world.pendingGameOver) endRun('death')
+    else writeCheckpoint()
     void flushStorage()
   })
   // A page closed or reloaded mid-run still records the run; after the PRIME kill it counts as EXTRACT.
@@ -669,7 +821,33 @@ async function boot(): Promise<void> {
     if (screen === 'playing') endRun(leaveEnd('interrupted'), 'menu')
     void flushStorage()
   })
-  onAppPause(() => void flushStorage())
+  onAppPause(() => {
+    writeCheckpoint()
+    void flushStorage()
+  })
+
+  /** The ranked Daily as it stands, in case the app dies without ending it. */
+  function writeCheckpoint(): void {
+    const run = world.run
+    if (screen !== 'playing' || !run || !run.ranked || world.pendingGameOver) return
+    saveCheckpoint(buildRunResult(world, leaveEnd('interrupted'), runMeta()))
+  }
+
+  /** A ranked Daily the app lost (killed in the background) becomes that day's
+   *  ranked result at the next boot. Returns the toast, or null. */
+  function recoverCheckpoint(): string | null {
+    const r = loadCheckpoint()
+    if (!r) return null
+    clearCheckpoint()
+    if (loadDay(r.date).ranked) return null
+    const lifetime = updateLifetime(r)
+    recordWorldBest(r)
+    if (evaluateFeats(r, lifetime).length > 0) refreshLoadoutUI()
+    recordDailyEnd(r)
+    refreshDailyLabel()
+    void postRun(r, false)
+    return `Ranked Daily #${r.dailyNumber} saved at ${Math.floor(r.time / 60)}:${String(Math.floor(r.time % 60)).padStart(2, '0')} when the app closed.`
+  }
 
   let warpAmt = 0
   // Ambient render clock: advanced by the CLAMPED render delta (never lurches
@@ -701,6 +879,11 @@ async function boot(): Promise<void> {
       }
       loop.timeScale = time.scale(world.paused)
       const playing = screen === 'playing'
+
+      if (playing && world.time >= nextCkptAt) {
+        nextCkptAt = world.time + CHECKPOINT_EVERY_S
+        writeCheckpoint()
+      }
 
       if (playing && showGemHint && world.firstGemAt >= 0) {
         showGemHint = false
@@ -871,6 +1054,14 @@ async function boot(): Promise<void> {
         return screen
       },
       startRun: (mode: RunMode) => startRun(mode),
+      /** The Daily of any UTC day, straight in (no confirm sheet). */
+      startDaily: (date: string) => startRun('daily', date),
+      /** Harness: restart the current run's config on `seed` with the canonical
+       *  pools (plus any overrides), keeping pilot and world. */
+      beginSeed: (seed: number, over: Partial<RunConfig> = {}) => {
+        world.beginRun({ ...world.run!, seed: seed >>> 0, perkPool: PERKS, weaponPool: PICKUP_WEAPON_IDS, ...over })
+      },
+      dailySpec,
       endRun: (end: RunEnd = 'death', after: AfterRun = 'recap') => endRun(end, after),
       get lastResult() {
         return lastResult
@@ -909,7 +1100,7 @@ async function boot(): Promise<void> {
         refreshLoadoutUI()
       },
       get runPaint() {
-        return runPaint
+        return world.run?.paint
       },
       toast,
       step: (n = 60) => {
@@ -930,18 +1121,14 @@ async function boot(): Promise<void> {
   }
 }
 
-// DEV-only testing affordance. In prod this shipped as a cheat door: ?seed=X
-// applied to DAILY runs too, letting a practiced seed onto the daily board.
+// DEV-only testing affordance for Standard runs. The Daily always plays its
+// date's seed: in v1 ?seed=X reached the Daily and let a practiced seed onto its board.
 const SEED_OVERRIDE = import.meta.env.DEV ? new URLSearchParams(location.search).get('seed') : null
-function todayStr(): string {
-  return new Date().toISOString().slice(0, 10)
-}
-function runSeed(mode: RunMode): number {
+function runSeed(): number {
   if (SEED_OVERRIDE) {
     const n = Number(SEED_OVERRIDE)
     return Number.isFinite(n) ? n >>> 0 : seedFromString(SEED_OVERRIDE)
   }
-  if (mode === 'daily') return seedFromString('swarmgeddon:' + todayStr())
   return (performance.now() * 1000) >>> 0 || DEFAULT_SEED
 }
 
