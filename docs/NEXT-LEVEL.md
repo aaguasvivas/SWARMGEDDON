@@ -1470,6 +1470,7 @@ Run each phase's acceptance plus this standard block:
   - Partial: Overpressure has its knockback but no stagger (`staggerT`). Quartermaster has its ammo but no pod life or hold cut (`podLifeBonus`, `podHoldCut`). Vampiric heals per kill with no cap, although its card shows `max N HP/s` (`killHealCap`, the kill-heal bucket of task 3). Ricochet still bounces off walls (v1), not toward the nearest enemy as its card says.
   - All 10 fusions: offered, taken and recorded, but `applyBuild` has no effect code for them.
   - Not P8: `world.perkPool = PERKS` also drafts the 10 locked perks until P12b adds `resolvePools`.
+  - P8 landed every item above; the A6 note in section 11 has the re-measured Hive fights.
 - Acceptance:
   - Standard block.
   - Every `Modifiers` field has a reader outside `content/perks.ts`, and every FUSIONS id has effect code (grep).
@@ -1648,6 +1649,10 @@ node scripts/measure.mjs 390 844 perf ; node scripts/measure.mjs 390 844 perf-fi
   - Default bot: mid1 median 77.9 s (8 kills, longest 108.1 s), mid2 median 52.7 s (5 kills, longest 134.6 s), final 50.66 s and 158.83 s, 2 wins. Kill-to-next-arrival at least 45.4 s.
   - **A6 FAIL on the default bot:** the seed 9009 PRIME fight took 158.83 s, over the 150 s cap. The build was survival (Vampiric, Regrowth 2, Bulwark 2, Vitality 3, and LIVING ARMOR, which has no effect until P8) with one damage perk, Heavy Rounds 1. So buildScale was about 1.22 (PRIME HP 4876 = 4200 x 1.22^0.75), and the default bot shoots the nearest enemy, often the swarm outside the cage.
   - Every W2 number ran with the inert picks listed in the P8 W2 hand-off (section 10.3). P19 re-measures after P8.
+- **P8 branch (every hand-off pick live), Hive, seeds 1001 x 1 to 10, default bot `smart:SEED:14:nova:priority`.**
+  - mid1 median 69.8 s (10 kills, 26.4 to 89.6 s), mid2 median 67.3 s (6 kills, longest 108.5 s), final 74.6 s (1 kill), 1 win. No fight goes over 150 s, so the default-bot A6 check passes. Kill-to-next-arrival at least 110.8 s.
+  - Seed 9009 died at 9:41, before the PRIME, so its 158.83 s W2 fight has no P8 counterpart.
+  - Two changes move these numbers against W2: Vampiric kill healing is now capped (A2), and the harness bot stops on a pod it wants (hold to take, A5.1).
 
 **A1 note (P4 review).**
 - "Both phone views" means the P14 normalized camera views: 560 x 996 (portrait) and 996 x 560 (landscape). Measure them with `node scripts/measure.mjs 375 667 opening 560 996` and `node scripts/measure.mjs 375 667 opening 996 560`.
@@ -1828,6 +1833,17 @@ Card desc (the draft card shows the two parents as its tag line):
 
 Blast queue: `BLAST_CAP 64`, `Float32Array(64 * 6)` holding x, y, r, dmg, readyAt and flags (`NO_BONUS 1`, `KNOCK 2`, `CRIT 4`). It drains at the end of `collisionSystem`, and entries pushed during a drain wait for the next tick.
 
+Resolved in P8:
+- **Blasts.** A full queue drops new blasts. A blast hits every enemy whose center lies inside r, and elite and boss targets take eliteDamageMul, as every AoE does (section 4.5). KNOCK shoves non-elite, non-boss enemies `BLAST_KNOCK_PX` (40 u) away from the center. CRIT marks the Explosion feel event. NO_BONUS rides along for the P9 bonus rule.
+- **On-hit order.** A bullet's slow, stagger and burn land after its damage. So SHATTER needs an enemy slowed before the killing hit, and COLD BLOOD's +30% starts with the second hit. A boss death queues no SHATTER blast.
+- **FIRESTORM.** Arc hops include the Arc Lash chain hops. The ignite is Incendiary's burn: 6 per stack x damageMul dps for 2 s.
+- **HEADHUNTER.** The blast is 40% of the killing hit after crit, armor and eliteDamageMul.
+- **GUILLOTINE.** Without it, Executioner culls non-elite, non-boss enemies only.
+- **BLOODRUSH and Vampiric.** The kill-heal bucket holds 1 s of the cap and refills every tick.
+- **LIVING ARMOR.** Every heal goes through `healPlayer`: regen, kill healing, medkits, SKIP and FIELD REPAIR.
+- **RAM.** "radius + 30" is the contact distance (enemy radius + ship radius) + 30 u. The damage takes eliteDamageMul on elites and bosses. "Sideways" is perpendicular to the dash heading, away from its line.
+- **SALVO STEP.** One bullet per ring slot, starting at the dash heading. Each bullet keeps the weapon's and the build's pierce, speed, explosion and chain.
+
 ## A4. Weapons
 
 ### A4.1 Pickup weapons
@@ -1866,6 +1882,16 @@ Trigger: a Hive Core, while holding the pickup weapon with its pair at 2+ stacks
 | ARC LASH | STORM LASH `storm_lash` | fireRate 7, dmg 18, chain 7, range 200 | chainFrac 0.75 per hop; the last hop queues a 70 u blast at 50% |
 | PHOTON BEAM | SOLAR LANCE `solar_lance` | fireRate 24, dmg 6, pierce 10, life 0.6 | rangeRamp: +12% per 100 u traveled, max +90% |
 
+Unlisted stats come from the source weapon. Resolved in P8:
+- **pointBlank.** Flight time under 0.12 s.
+- **lockOn.** The first hit on an enemy is x1.00, and each consecutive hit on the same uid adds 5%, so the 16th reaches x1.75. A hit on another enemy, or a gap over 0.4 s, starts over.
+- **pierceRamp.** The n-th enemy a bullet hits takes x min(2.5, 1.2^(n-1)).
+- **firstHitCrit.** The first hit of each bullet crits without a roll.
+- **ignite.** 10 x damageMul dps. With Incendiary the stronger burn wins. The +25% applies to all damage.
+- **bomblets.** At 0, 120 and 240 degrees from the mortar's heading, at 35% of its explosion damage (crit included).
+- **stormChain.** Every hop deals 75% of the hit (Arc Lash: 60%). The chain's last target gets a 70 u blast at 50% of the hit.
+- **rangeRamp.** Distance traveled = flight time x speed, applied linearly.
+
 ## A5. Pods, cores, bonuses
 
 ### A5.1 Pods
@@ -1875,6 +1901,13 @@ export const PODS = { first: 20, interval: 15, life: 20, blinkLast: 3, minDist: 
   edgeInset: 60, cageInset: 40, holdTime: 0.4, holdDecayPerSec: 2, holdRadiusPad: 6,
   affinityChance: 0.5, eliteChance: 0.35, bossPodOffset: 60 } as const
 ```
+
+Resolved in P8:
+- **Timer slots.** Slots come at `first`, then every `interval`. A slot passes while the last timer pod is still on the field.
+- **Loot draws.** A timer pod draws the angle, the distance, the affinity roll and the pick. An elite pod draws the 0.35 roll, the affinity roll and the pick. A boss pod draws an angle (it sits 60 u from the corpse) and the pick, and it may be the held weapon.
+- **Clamps.** The 60 u arena inset clamps every pod. While the cage is up, every pod (timer, elite, boss) also clamps inside `cage.r - cageInset`.
+- **Hold to take.** "On the pod" means the ship's body is within `holdRadiusPad` of touching the pod. The fill runs from 0 to 1 over the hold time and decays at `holdDecayPerSec`. A pass through the center at 285 u/s fills 0.71.
+- **Ammo.** The HUD shows the magazine rounded up. SMG: 260 rounds at 13/s = 20 s.
 
 ### A5.2 Cores
 
@@ -2515,7 +2548,7 @@ Glyph atlas: `BitmapFont.install({ name: 'numMono', style: { fontFamily: 'JetBra
 
 Damage number timing (real clock): life 600 ms (crit 700 ms), fading over the last 180 ms; each number starts 14 px above the hit. Values over 99,999 show as thousands with `K`. Merging is keyed on the enemy uid the Hit event carries in `b`.
 
-Mode `big` shows crits, heals and any number whose total reaches 10. Every pilot's base weapon hit clears 10 (Sidearm 16, Stiletto 11, Scorcher 26); chip hits (4.5 to 8.5) and armor-blunted hits (a Sidearm shot into a beetle's front deals 6.4) do not. A smaller hit opens a hidden number on that enemy that collects every hit on it for up to 450 ms, and it shows at the latest hit once the total reaches 10. After it shows, the 150 ms merge rule applies. When the pool is full, a number that shows takes a hidden one's slot.
+Mode `big` shows crits, heals and any number whose total reaches 10. Every pilot's base weapon hit clears 10 (Sidearm 16, Stiletto 12, Scorcher 26); chip hits (4.5 to 8.5) and armor-blunted hits (a Sidearm shot into a beetle's front deals 6.4) do not. A smaller hit opens a hidden number on that enemy that collects every hit on it for up to 450 ms, and it shows at the latest hit once the total reaches 10. After it shows, the 150 ms merge rule applies. When the pool is full, a number that shows takes a hidden one's slot.
 
 FX (section 6.4): directional gibs throw `round(0.6 x count)` gibs within ±0.6 rad of the killing shot's velocity and the rest radially (fx stream, one draw per angle as before). The muzzle is 2 sparks plus one additive flash quad: a 22 x 10 soft diamond along the aim, centered 11 px ahead of the muzzle, muzzle tint, 60 ms life, shrinking at 6/s. Rail and beam carry `WeaponDef.tracer`; their shots stretch along travel by `1 + speed / 1800`.
 

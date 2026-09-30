@@ -1,6 +1,9 @@
-import { ARC_ROUNDS, BITE, BOSS_SLOW_CAP, CLOSE_CALL, GRACE, HEALTH_DROP_CHANCE, HEALTH_HEAL, HEALTH_HEAL_ELITE } from '../config.ts'
+import {
+  ARC_ROUNDS, BITE, BLAST_CRIT, BOSS_SLOW_CAP, BURN_SEC, CLOSE_CALL, EVO, FUSION, GRACE, HEALTH_DROP_CHANCE,
+  HEALTH_HEAL, HEALTH_HEAL_ELITE, PODS, SEEK,
+} from '../config.ts'
 import { distSq } from '../core/vec.ts'
-import { PICKUP_WEAPON_IDS } from '../content/weapons.ts'
+import { powi } from '../content/perks.ts'
 import {
   spawnChainArc,
   spawnExplosion,
@@ -11,28 +14,34 @@ import {
 } from '../effects/fx.ts'
 import { FF_AOE, FF_BOSS, FF_CRIT, FF_ELITE, FF_RAM, FeelKind } from '../effects/feelQueue.ts'
 import { spawnAcidPool } from './acid.ts'
-import { hurtPlayer } from './damage.ts'
+import { queueBlast, drainBlasts } from './blasts.ts'
+import { hurtPlayer, killHeal, refillKillHeal } from './damage.ts'
 import { closeCall, closeCallArmed } from './dash.ts'
-import { dropGem, dropHealth, spawnWeaponDrop } from './pickups.ts'
+import { dropBossPod, dropGem, dropHealth, dropPod } from './pickups.ts'
 import { directorBossKilled } from './director.ts'
 import { spawnEnemy } from './spawn.ts'
 import { KillSource, scoreKill } from '../game/scoring.ts'
 import type { Enemy } from '../game/enemy.ts'
+import { tickDown } from '../game/player.ts'
 import type { Projectile } from '../game/projectile.ts'
 import type { World } from '../game/world.ts'
 
 const ENEMY_MAX_RADIUS = 58 // broad-phase padding: the largest body (EMBER TYRANT PRIME)
+/** XP multiplier of the kill being resolved (GUILLOTINE culls drop double). */
+let killXpMul = 1
 
 /**
  * All circle-overlap resolution for the tick: player projectiles vs enemies
- * (crit, armor, slow, chain, explosion, pierce), enemy contact bites + rams +
- * thorns, enemy projectiles vs player, Close Calls, and player death (with
- * revives) -> game over. Submerged burrowers are intangible.
+ * (crit, armor, slow, burn, stagger, chain, explosion, pierce, seek bounce,
+ * evolved behaviors), burn ticks, RAM, enemy contact bites + rams + thorns,
+ * enemy projectiles vs player, Close Calls, the blast queue, and player death
+ * (with revives) -> game over. Submerged burrowers are intangible.
  */
 export function collisionSystem(world: World, dt: number): void {
   const buf = world.queryBuf
   const m = world.mods
   const pl = world.player
+  refillKillHeal(world, dt)
 
   // Player projectiles vs enemies.
   const projs = world.projectiles.active
@@ -52,8 +61,14 @@ export function collisionSystem(world: World, dt: number): void {
         spawnImpact(world, p.x, p.y)
         if (p.pierce > 0) {
           p.pierce--
+        } else if (p.bounces > 0 && seekBounce(world, p)) {
+          break
         } else {
-          if (p.explodeRadius > 0) explode(world, p.x, p.y, p.explodeRadius, crit ? p.explodeDamage * m.critMul : p.explodeDamage)
+          if (p.explodeRadius > 0) {
+            const dmg = crit ? p.explodeDamage * m.critMul : p.explodeDamage
+            explode(world, p.x, p.y, p.explodeRadius, dmg)
+            if (p.evo === 'bomblets') queueBomblets(world, p, dmg)
+          }
           p.alive = false
           break
         }
@@ -70,15 +85,28 @@ export function collisionSystem(world: World, dt: number): void {
   let bx = 0
   let by = 0
   let bIdx = -1
+  const ramming = m.ram > 0 && m.thorns > 0 && pl.dashTicks > 0
   const enemies = world.enemies.active
   for (let i = 0; i < enemies.length; i++) {
     const e = enemies[i]!
     // Skip enemies already killed by the projectile pass above (the pool isn't
     // swept until end of tick). Matters most for the charger's FLAT ram: you
     // shouldn't eat a 26-burst from a charger you killed on the same tick.
-    if (!e.alive || e.submerged) continue
+    if (!e.alive) continue
+    if (e.burnT > 0) {
+      burnTick(world, e, dt)
+      if (!e.alive) continue
+    }
+    if (e.submerged) continue
     const d2 = distSq(e.x, e.y, pl.x, pl.y)
     const rr = e.radius + pl.radius
+    if (ramming && e.ramStamp !== world.dashSeq) {
+      const rp = rr + FUSION.ramPad
+      if (d2 < rp * rp) {
+        ramHit(world, e)
+        if (!e.alive) continue
+      }
+    }
     // Authored boss damage never takes the time ramp (docs/NEXT-LEVEL.md 4.1).
     const mul = e.def.boss ? 1 : world.dmgMul
     if (d2 >= rr * rr) {
@@ -148,6 +176,7 @@ export function collisionSystem(world: World, dt: number): void {
     }
   }
 
+  drainBlasts(world)
   handleDeath(world)
 }
 
@@ -172,9 +201,13 @@ function rankFlags(e: Enemy): number {
   return e.def.boss ? FF_BOSS : e.def.elite ? FF_ELITE : 0
 }
 
-/** Giant Slayer's multiplier applies to every damage source on elites and bosses. */
+/** Giant Slayer's multiplier applies to every damage source on elites and
+ *  bosses, and COLD BLOOD adds its bonus while they are slowed. */
 function vsTarget(world: World, e: Enemy, dmg: number): number {
-  return e.def.elite || e.def.boss ? dmg * world.mods.eliteDamageMul : dmg
+  if (!e.def.elite && !e.def.boss) return dmg
+  const m = world.mods
+  const d = dmg * m.eliteDamageMul
+  return m.coldBlood > 0 && e.slow > 0 ? d * FUSION.coldBloodMul : d
 }
 
 /** Resolve one bullet hit. Returns whether it crit, so the bullet's AoE and
@@ -182,12 +215,31 @@ function vsTarget(world: World, e: Enemy, dmg: number): number {
 function applyHit(world: World, e: Enemy, p: Projectile): boolean {
   const m = world.mods
   let dmg = p.damage
-  const crit = m.critChance > 0 && world.rngs.combat.float() < m.critChance
+  const crit = p.evo === 'firstHitCrit' && p.hitN === 1 ? true : m.critChance > 0 && world.rngs.combat.float() < m.critChance
   if (crit) dmg *= m.critMul
+  const sp = Math.hypot(p.vx, p.vy) || 1
 
-  // Beetle-style frontal armor.
-  if (e.def.frontArmor) {
-    const sp = Math.hypot(p.vx, p.vy) || 1
+  switch (p.evo) {
+    case 'pointBlank':
+      if (p.age < EVO.pointBlankSec) dmg *= EVO.pointBlankMul
+      break
+    case 'pierceRamp': {
+      const r = powi(EVO.pierceRampMul, p.hitN - 1)
+      dmg *= r < EVO.pierceRampMax ? r : EVO.pierceRampMax
+      break
+    }
+    case 'rangeRamp': {
+      const r = (EVO.rangeRampPer100 * p.age * sp) / 100
+      dmg *= 1 + (r < EVO.rangeRampMax ? r : EVO.rangeRampMax)
+      break
+    }
+    case 'lockOn':
+      dmg *= lockOnMul(world, e.uid)
+      break
+  }
+
+  // Beetle-style frontal armor; HEADHUNTER crits ignore it.
+  if (e.def.frontArmor && !(crit && m.headhunter > 0)) {
     const dot = (p.vx / sp) * Math.cos(e.facing) + (p.vy / sp) * Math.sin(e.facing)
     if (dot < -0.25) dmg *= 1 - e.def.frontArmor
   }
@@ -195,15 +247,9 @@ function applyHit(world: World, e: Enemy, p: Projectile): boolean {
   dmg = vsTarget(world, e, dmg)
 
   // Knockback nudge (heavier enemies shrug it off).
-  const sp = Math.hypot(p.vx, p.vy) || 1
   const k = (p.knockback * 0.02) / (e.radius / 14)
   e.x += (p.vx / sp) * k
   e.y += (p.vy / sp) * k
-
-  if (m.slowOnHit > 0) {
-    e.slow = 1.2
-    e.slowFactor = e.def.boss && m.slowOnHit > BOSS_SLOW_CAP ? BOSS_SLOW_CAP : m.slowOnHit
-  }
 
   spawnHitSpark(world, p.x, p.y, p.vx, p.vy)
   // Damage-number jitter comes from the fx stream here, drawn on every hit,
@@ -215,23 +261,143 @@ function applyHit(world: World, e: Enemy, p: Projectile): boolean {
 
   dealDamage(world, e, dmg)
 
-  // Executioner: cull badly-wounded non-boss enemies outright.
-  if (m.executeFrac > 0 && e.alive && !e.def.boss && e.hp <= e.maxHp * m.executeFrac) {
-    dealDamage(world, e, e.hp)
+  // Executioner culls badly hurt non-elites; GUILLOTINE adds elites at half
+  // the threshold, and its culls drop double XP.
+  if (m.executeFrac > 0 && e.alive && !e.def.boss) {
+    const frac = !e.def.elite ? m.executeFrac : m.guillotine > 0 ? m.executeFrac * FUSION.guillotineEliteFrac : 0
+    if (e.hp <= e.maxHp * frac) {
+      killXpMul = m.guillotine > 0 ? FUSION.guillotineXpMul : 1
+      dealDamage(world, e, e.hp)
+      killXpMul = 1
+    }
+  }
+
+  // On-hit effects land after the damage, so a kill resolves against the
+  // state before this hit (SHATTER needs an enemy slowed before it dies).
+  if (!e.alive) {
+    if (p.evo === 'pierceOnKill') p.pierce++
+    if (crit && m.headhunter > 0) queueBlast(world, e.x, e.y, FUSION.headhunterR, dmg * FUSION.headhunterFrac, 0, BLAST_CRIT)
+  } else {
+    if (m.slowOnHit > 0) {
+      e.slow = 1.2
+      e.slowFactor = e.def.boss && m.slowOnHit > BOSS_SLOW_CAP ? BOSS_SLOW_CAP : m.slowOnHit
+    }
+    if (m.staggerT > e.staggerT && !e.def.elite && !e.def.boss) e.staggerT = m.staggerT
+    if (m.burnDps > 0) ignite(e, m.burnDps * m.damageMul)
+    if (p.evo === 'ignite') ignite(e, EVO.igniteDps * m.damageMul)
   }
 
   const hit = crit ? p.damage * m.critMul : p.damage
-  if (p.chain > 0) chainLightning(world, e, p.chain, p.chainRange, hit * 0.6)
-  else if (m.arcChance > 0 && world.rngs.combat.float() < m.arcChance) chainLightning(world, e, m.arcHops, ARC_ROUNDS.range, hit * ARC_ROUNDS.dmgFrac)
+  if (p.chain > 0) {
+    const storm = p.evo === 'stormChain'
+    chainLightning(world, e, p.chain, p.chainRange, hit * (storm ? EVO.stormChainFrac : 0.6), storm ? hit * EVO.stormBlastFrac : 0)
+  } else if (m.arcChance > 0 && world.rngs.combat.float() < m.arcChance) {
+    chainLightning(world, e, m.arcHops, ARC_ROUNDS.range, hit * ARC_ROUNDS.dmgFrac, 0)
+  }
   return crit
 }
 
-/** Apply raw damage and resolve death. Safe to call on the same enemy twice. */
+/** HIVE REAPER: +lockStep per consecutive hit on the same enemy, up to
+ *  lockMax; a gap over lockResetSec starts over. */
+function lockOnMul(world: World, uid: number): number {
+  if (uid === world.lockUid && world.time - world.lockAt <= EVO.lockResetSec + 1e-9) world.lockN++
+  else world.lockN = 0
+  world.lockUid = uid
+  world.lockAt = world.time
+  const b = EVO.lockStep * world.lockN
+  return 1 + (b < EVO.lockMax ? b : EVO.lockMax)
+}
+
+/** Set a burn; it refreshes and does not stack (the stronger dps wins). */
+function ignite(e: Enemy, dps: number): void {
+  if (e.burnT <= 0 || dps > e.burnDps) e.burnDps = dps
+  e.burnT = BURN_SEC
+}
+
+function burnTick(world: World, e: Enemy, dt: number): void {
+  e.burnT = tickDown(e.burnT, dt)
+  if (e.submerged) return
+  world.lastHitVx = 0
+  world.lastHitVy = 0
+  damageEnemy(world, e, vsTarget(world, e, e.burnDps * dt))
+}
+
+/** RAM: once per dash, an enemy the dash passes takes thorns x ramThornsMul,
+ *  and a non-elite is thrown sideways off the dash line. */
+function ramHit(world: World, e: Enemy): void {
+  const m = world.mods
+  const pl = world.player
+  e.ramStamp = world.dashSeq
+  const dmg = vsTarget(world, e, FUSION.ramThornsMul * m.thorns * m.damageMul)
+  world.feel.emit(FeelKind.Hit, rankFlags(e), e.x, e.y, dmg, e.uid, e)
+  thornsDamage(world, e, dmg)
+  if (!e.alive || e.def.elite || e.def.boss) return
+  const nx = -pl.dashDirY
+  const ny = pl.dashDirX
+  const side = (e.x - pl.x) * nx + (e.y - pl.y) * ny >= 0 ? FUSION.ramPush : -FUSION.ramPush
+  e.x += nx * side
+  e.y += ny * side
+}
+
+/** Ricochet: a spent bullet turns toward the nearest enemy it has not hit
+ *  within SEEK.radius. PINBALL restores 1 pierce and raises its damage. */
+function seekBounce(world: World, p: Projectile): boolean {
+  const buf2 = world.queryBuf2
+  const n = world.hash.query(p.x, p.y, SEEK.radius, buf2)
+  let best: Enemy | null = null
+  let bd = SEEK.radius * SEEK.radius
+  for (let k = 0; k < n; k++) {
+    const o = buf2[k]!
+    if (!o.alive || o.submerged || hasHit(p, o.uid)) continue
+    const dd = distSq(p.x, p.y, o.x, o.y)
+    if (dd < bd) {
+      bd = dd
+      best = o
+    }
+  }
+  if (!best) return false
+  const sp = Math.hypot(p.vx, p.vy)
+  const d = Math.sqrt(bd) || 1
+  p.vx = ((best.x - p.x) / d) * sp
+  p.vy = ((best.y - p.y) / d) * sp
+  p.facing = Math.atan2(p.vy, p.vx)
+  p.bounces--
+  if (p.life < SEEK.minLife) p.life = SEEK.minLife
+  if (world.mods.pinball > 0) {
+    p.pierce++
+    p.damage *= FUSION.pinballDmgMul
+  }
+  return true
+}
+
+/** PLAGUE BARRAGE: bombletCount blasts around the impact, bombletDelay later. */
+function queueBomblets(world: World, p: Projectile, dmg: number): void {
+  const a0 = Math.atan2(p.vy, p.vx)
+  for (let k = 0; k < EVO.bombletCount; k++) {
+    const a = a0 + (k / EVO.bombletCount) * Math.PI * 2
+    queueBlast(world, p.x + Math.cos(a) * EVO.bombletDist, p.y + Math.sin(a) * EVO.bombletDist,
+      EVO.bombletR, dmg * EVO.bombletFrac, EVO.bombletDelay, 0)
+  }
+}
+
+/** Apply raw damage with a hit flash and resolve death. Safe to call on the
+ *  same enemy twice. */
 function dealDamage(world: World, e: Enemy, dmg: number): void {
   if (!e.alive) return
-  e.hp -= dmg
   e.flash = 0.07
+  damageEnemy(world, e, dmg)
+}
+
+/** Remove HP and resolve death; burning enemies take more while INFERNO is held. */
+function damageEnemy(world: World, e: Enemy, dmg: number): void {
+  if (!e.alive) return
+  e.hp -= e.burnT > 0 && world.weapon.evo === 'ignite' ? dmg * EVO.infernoBurnMul : dmg
   if (e.hp <= 0) killEnemy(world, e)
+}
+
+/** A queued blast hits `e` (blasts.ts); AoE takes the elite and boss multipliers. */
+export function blastHit(world: World, e: Enemy, dmg: number): void {
+  dealDamage(world, e, vsTarget(world, e, dmg))
 }
 
 /** Thorns has no shot, so a thorns kill must not carry the last bullet's
@@ -244,8 +410,11 @@ function thornsDamage(world: World, e: Enemy, dmg: number): void {
 
 /** Chain lightning (and Arc Rounds) hops to nearby enemies (separate scratch
  *  buffer so it can run inside the projectile loop without clobbering its
- *  query). Each enemy is struck at most once per chain. */
-function chainLightning(world: World, from: Enemy, chain: number, range: number, dmg: number): void {
+ *  query). Each enemy is struck at most once per chain. FIRESTORM hops hit
+ *  burning targets harder and ignite them; `lastBlast` > 0 queues a blast of
+ *  that damage on the last target (STORM LASH). */
+function chainLightning(world: World, from: Enemy, chain: number, range: number, dmg: number, lastBlast: number): void {
+  const m = world.mods
   const buf2 = world.queryBuf2
   const seen = world.chainSeen
   seen[0] = from.uid
@@ -279,8 +448,12 @@ function chainLightning(world: World, from: Enemy, chain: number, range: number,
     spawnChainArc(world, cx, cy, best.x, best.y)
     cx = best.x
     cy = best.y
-    dealDamage(world, best, vsTarget(world, best, dmg))
+    let hd = vsTarget(world, best, dmg)
+    if (m.firestorm > 0 && best.burnT > 0) hd *= FUSION.firestormArcMul
+    dealDamage(world, best, hd)
+    if (m.firestorm > 0 && best.alive) ignite(best, m.burnDps * m.damageMul)
   }
+  if (lastBlast > 0 && seenN > 1) queueBlast(world, cx, cy, EVO.stormBlastR, lastBlast, 0, 0)
 }
 
 /** AoE explosion (rockets / explosive rounds). */
@@ -314,11 +487,13 @@ function killEnemy(world: World, e: Enemy): void {
   else if (def.elite) spawnRing(world, e.x, e.y, e.gibTint, 3)
   else if (def.xp >= 2) spawnRing(world, e.x, e.y, e.gibTint, 1.4)
 
-  if (world.mods.lifestealPerKill > 0) {
-    world.player.hp = Math.min(world.player.maxHp, world.player.hp + world.mods.lifestealPerKill)
+  const m = world.mods
+  if (m.lifestealPerKill > 0) killHeal(world, m.lifestealPerKill)
+  if (m.shatter > 0 && e.slow > 0 && !def.boss) {
+    queueBlast(world, e.x, e.y, FUSION.shatterR, (FUSION.shatterBase + FUSION.shatterFrac * e.maxHp) * m.damageMul, 0, 0)
   }
 
-  dropGem(world, e.x, e.y, def.elite || def.boss ? def.xp : def.xp * world.xpScale)
+  dropGem(world, e.x, e.y, (def.elite || def.boss ? def.xp : def.xp * world.xpScale) * killXpMul)
 
   // Perk-free sustain: kills can drop a medkit, biased toward HARD MOMENTS. The
   // lower your HP, the likelier a kill coughs one up, so a horde that's chipping
@@ -355,10 +530,10 @@ function killEnemy(world: World, e: Enemy): void {
   if (def.boss) {
     directorBossKilled(world, e)
     explode(world, e.x, e.y, 140, 0)
-    spawnWeaponDrop(world, e.x, e.y, loot.pick(PICKUP_WEAPON_IDS))
+    dropBossPod(world, e.x, e.y)
     world.feel.emit(FeelKind.BossKill, FF_BOSS, e.x, e.y, 0, 0, def)
-  } else if (def.elite && loot.bool(0.5)) {
-    spawnWeaponDrop(world, e.x, e.y, loot.pick(PICKUP_WEAPON_IDS))
+  } else if (def.elite && loot.bool(PODS.eliteChance)) {
+    dropPod(world, e.x, e.y)
   }
 }
 

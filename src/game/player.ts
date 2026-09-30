@@ -52,6 +52,8 @@ export class Player {
   dashDirY = 0
   /** Slowed recovery after a dash (seconds). */
   endLagT = 0
+  /** A dash ended on the last update; dashSystem consumes it (Shock Step). */
+  dashEnded = false
 
   private g = new Graphics()
 
@@ -126,6 +128,7 @@ export class Player {
     this.biteCd = 0
     this.dashTicks = 0
     this.endLagT = 0
+    this.dashEnded = false
   }
 
   /** Grant `sec` of i-frames. The source is recorded only when this grant is
@@ -149,7 +152,10 @@ export class Player {
     if (this.dashTicks > 0) {
       this.x += this.dashDirX * DASH_STEP
       this.y += this.dashDirY * DASH_STEP
-      if (--this.dashTicks === 0) this.endLagT = DASH.endLag
+      if (--this.dashTicks === 0) {
+        this.endLagT = DASH.endLag
+        this.dashEnded = true
+      }
     } else {
       let sp = this.speed * speedMul
       if (this.endLagT > 0) {

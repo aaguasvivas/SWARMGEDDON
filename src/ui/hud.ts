@@ -210,7 +210,7 @@ export class Hud {
     }
 
     // Weapon + ammo on a subtle pill so it reads as one tidy badge.
-    const ammo = world.ammo < 0 ? '∞' : String(world.ammo)
+    const ammo = world.ammo < 0 ? '∞' : String(Math.ceil(world.ammo))
     this.weaponLabel.text = `${world.weapon.name}   ${ammo}`
     const tw = this.weaponLabel.width
     const th = this.weaponLabel.height

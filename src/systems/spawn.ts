@@ -91,6 +91,10 @@ export function spawnEnemy(world: World, defId: string, x: number, y: number): E
   e.buffed = 0
   e.slow = 0
   e.slowFactor = 0
+  e.burnT = 0
+  e.burnDps = 0
+  e.staggerT = 0
+  e.ramStamp = 0
   e.submerged = false
   e.brood = 0
   e.stateTimer = 0

@@ -1,16 +1,10 @@
-import {
-  BERSERK_MEDKIT,
-  COLORS,
-  MAX_PICKUPS,
-  PICKUP_RESERVE,
-  WEAPON_DROP_INTERVAL,
-  WEAPON_DROP_LIFETIME,
-  XP,
-} from '../config.ts'
+import { BERSERK_MEDKIT, COLORS, MAX_PICKUPS, PICKUP_RESERVE, PODS, XP } from '../config.ts'
+import { clamp } from '../core/vec.ts'
 import { PICKUP_WEAPON_IDS, WEAPONS, weaponIndex } from '../content/weapons.ts'
 import { FeelKind } from '../effects/feelQueue.ts'
 import { PICKUP_SLOT, PICKUP_SLOTS, type Pickup, type PickupKind } from '../game/pickup.ts'
 import type { World } from '../game/world.ts'
+import { healPlayer } from './damage.ts'
 
 const R = PICKUP_RESERVE
 /** Guaranteed slots per PICKUP_SLOT index. */
@@ -18,27 +12,31 @@ const RESERVE_BY_SLOT = new Int16Array([R.xp, R.bank, R.health, R.weapon, R.core
 const SHARED_SLOTS = MAX_PICKUPS - (R.xp + R.bank + R.health + R.weapon + R.core + R.bonus)
 const BANK_TINT = 0xff4a6a
 
-/**
- * Take a pickup from the pool if `kind` has room: its own reserved slots
- * first, then the shared remainder. So a gem flood can never starve pods or
- * medkits, and the pool never exceeds MAX_PICKUPS.
- */
-function acquirePickup(world: World, kind: PickupKind): Pickup | null {
+/** Whether a pickup of `kind` fits: its own reserved slots first, then the
+ *  shared remainder. So a gem flood can never starve pods or medkits, and the
+ *  pool never exceeds MAX_PICKUPS. */
+function hasRoom(world: World, kind: PickupKind): boolean {
   const n = world.pickupN
   const slot = PICKUP_SLOT[kind]
-  if (n[slot]! >= RESERVE_BY_SLOT[slot]!) {
-    let sharedUsed = 0
-    for (let i = 0; i < PICKUP_SLOTS; i++) {
-      const over = n[i]! - RESERVE_BY_SLOT[i]!
-      if (over > 0) sharedUsed += over
-    }
-    if (sharedUsed >= SHARED_SLOTS) return null
+  if (n[slot]! < RESERVE_BY_SLOT[slot]!) return true
+  let sharedUsed = 0
+  for (let i = 0; i < PICKUP_SLOTS; i++) {
+    const over = n[i]! - RESERVE_BY_SLOT[i]!
+    if (over > 0) sharedUsed += over
   }
+  return sharedUsed < SHARED_SLOTS
+}
+
+/** Take a pickup of `kind` from the pool, or null when it has no room. */
+function acquirePickup(world: World, kind: PickupKind): Pickup | null {
+  if (!hasRoom(world, kind)) return null
   const p = world.pickups.acquire()
   p.kind = kind
   p.captured = false
   p.homeT = 0
-  n[slot]!++
+  p.hold = 0
+  p.timer = false
+  world.pickupN[PICKUP_SLOT[kind]]!++
   return p
 }
 
@@ -177,10 +175,118 @@ export function dropHealth(world: World, x: number, y: number, heal: number): vo
   s.scale.set(1)
 }
 
-/** Drop a weapon pod (color-coded to the weapon). */
-export function spawnWeaponDrop(world: World, x: number, y: number, weaponId: string): void {
+// --- weapon pods (docs/NEXT-LEVEL.md 4.5, A5.1) -------------------------------
+
+/** Pod type candidates (scratch, reused). */
+const podCand: string[] = []
+
+/** The held pickup weapon's id, or '' on the base weapon. */
+function heldPickupId(world: World): string {
+  return world.weapon.id === world.baseWeaponId ? '' : world.weapon.id
+}
+
+function pairStacks(world: World, id: string): number {
+  const pair = WEAPONS[id]!.pair
+  return pair ? (world.perkStacks.get(pair) ?? 0) : 0
+}
+
+/** Timer and elite pods: with PODS.affinityChance a weapon whose paired perk
+ *  is owned, else any weapon; never the held one. */
+function pickPodType(world: World): string {
+  const loot = world.rngs.loot
+  const pool = PICKUP_WEAPON_IDS
+  const held = heldPickupId(world)
+  podCand.length = 0
+  if (loot.float() < PODS.affinityChance) {
+    for (let i = 0; i < pool.length; i++) if (pool[i] !== held && pairStacks(world, pool[i]!) > 0) podCand.push(pool[i]!)
+    if (podCand.length > 0) return loot.pick(podCand)
+  }
+  for (let i = 0; i < pool.length; i++) if (pool[i] !== held) podCand.push(pool[i]!)
+  return loot.pick(podCand)
+}
+
+/** Boss pods: a weapon whose paired perk has 2+ stacks, else 1+, else any. */
+function pickBossPodType(world: World): string {
+  const loot = world.rngs.loot
+  const pool = PICKUP_WEAPON_IDS
+  for (let min = 2; min >= 1; min--) {
+    podCand.length = 0
+    for (let i = 0; i < pool.length; i++) if (pairStacks(world, pool[i]!) >= min) podCand.push(pool[i]!)
+    if (podCand.length > 0) return loot.pick(podCand)
+  }
+  return loot.pick(pool)
+}
+
+/** A live timer pod is on the field. */
+function timerPodAlive(world: World): boolean {
+  const a = world.pickups.active
+  for (let i = 0; i < a.length; i++) {
+    const p = a[i]!
+    if (p.alive && p.kind === 'weapon' && p.timer) return true
+  }
+  return false
+}
+
+/** One timer pod at a time: at PODS.first, then every PODS.interval seconds,
+ *  PODS.minDist to maxDist from the player, turned +90 degrees up to 3 times
+ *  to land inside the arena inset. */
+function podTimer(world: World, dt: number): void {
+  world.weaponDropTimer -= dt
+  if (world.weaponDropTimer > 1e-6) return
+  world.weaponDropTimer += PODS.interval
+  if (timerPodAlive(world) || !hasRoom(world, 'weapon')) return
+  const loot = world.rngs.loot
+  const pl = world.player
+  const b = world.arena.bounds
+  const inset = PODS.edgeInset
+  let a = loot.angle()
+  const r = loot.range(PODS.minDist, PODS.maxDist)
+  let x = pl.x
+  let y = pl.y
+  for (let k = 0; k < 4; k++) {
+    x = pl.x + Math.cos(a) * r
+    y = pl.y + Math.sin(a) * r
+    if (x >= b.x + inset && x <= b.x + b.w - inset && y >= b.y + inset && y <= b.y + b.h - inset) break
+    a += Math.PI / 2
+  }
+  spawnPod(world, x, y, pickPodType(world), true)
+}
+
+/** An elite's pod, at its corpse. */
+export function dropPod(world: World, x: number, y: number): void {
+  if (!hasRoom(world, 'weapon')) return
+  spawnPod(world, x, y, pickPodType(world), false)
+}
+
+/** A boss's pod, PODS.bossPodOffset from its Hive Core (the corpse). */
+export function dropBossPod(world: World, x: number, y: number): void {
+  if (!hasRoom(world, 'weapon')) return
+  const a = world.rngs.loot.angle()
+  spawnPod(world, x + Math.cos(a) * PODS.bossPodOffset, y + Math.sin(a) * PODS.bossPodOffset, pickBossPodType(world), false)
+}
+
+/** Place a pod (color-coded to the weapon) inside the arena inset and, while
+ *  the cage is up, inside cage.r - PODS.cageInset. */
+function spawnPod(world: World, x: number, y: number, weaponId: string, timer: boolean): void {
   const p = acquirePickup(world, 'weapon')
   if (!p) return
+  const b = world.arena.bounds
+  const inset = PODS.edgeInset
+  x = clamp(x, b.x + inset, b.x + b.w - inset)
+  y = clamp(y, b.y + inset, b.y + b.h - inset)
+  const c = world.director.cage
+  if (c.active) {
+    const max = c.r - PODS.cageInset
+    const dx = x - c.x
+    const dy = y - c.y
+    const d2 = dx * dx + dy * dy
+    if (d2 > max * max) {
+      const k = max / Math.sqrt(d2)
+      x = c.x + dx * k
+      y = c.y + dy * k
+    }
+  }
+  p.timer = timer
   p.weaponId = weaponId
   p.xp = 0
   p.x = p.prevX = x
@@ -188,7 +294,7 @@ export function spawnWeaponDrop(world: World, x: number, y: number, weaponId: st
   p.vx = 0
   p.vy = 0
   p.radius = 15
-  p.life = WEAPON_DROP_LIFETIME
+  p.life = PODS.life + world.mods.podLifeBonus
   p.phase = 0
 
   world.texReg.applySprite(p.sprite, 'crate')
@@ -213,33 +319,46 @@ export function vacuumPickups(world: World): void {
 }
 
 /**
- * Periodically drop a weapon pod; collect on contact. Gems and medkits that
- * enter the capture radius (scaled by Magnetic) are captured and home in at
- * XP.homeStart to XP.homeMax u/s, never letting go. Gems never expire;
- * medkits last XP.medkitLife until captured. The uncaptured bank gem trails
- * the player at XP.bankLeash at most. Pods drift in inside 0.7 x the capture
- * radius.
+ * The pod timer, then every pickup. Pods are taken by standing on them for
+ * PODS.holdTime (less Quartermaster's cut); the fill decays off the pod. Gems
+ * and medkits that enter the capture radius (scaled by Magnetic) are captured
+ * and home in at XP.homeStart to XP.homeMax u/s, never letting go. Gems never
+ * expire; medkits last XP.medkitLife until captured. The uncaptured bank gem
+ * trails the player at XP.bankLeash at most.
  */
 export function pickupSystem(world: World, dt: number): void {
-  world.weaponDropTimer -= dt
-  if (world.weaponDropTimer <= 0) {
-    world.weaponDropTimer = WEAPON_DROP_INTERVAL
-    const b = world.arena.bounds
-    const rng = world.rngs.loot
-    const id = rng.pick(PICKUP_WEAPON_IDS)
-    spawnWeaponDrop(world, b.x + rng.range(0.15, 0.85) * b.w, b.y + rng.range(0.15, 0.85) * b.h, id)
-  }
+  podTimer(world, dt)
 
   const a = world.pickups.active
   const pl = world.player
   const capture = XP.captureRadius * world.mods.magnetMul
   const capture2 = capture * capture
-  const podReach2 = capture2 * 0.49
+  const holdTime = Math.max(0, PODS.holdTime - world.mods.podHoldCut)
 
   for (let i = 0; i < a.length; i++) {
     const p = a[i]!
     p.prevX = p.x
     p.prevY = p.y
+    if (p.kind === 'weapon') {
+      p.life -= dt
+      if (p.life <= 0) {
+        p.alive = false
+        continue
+      }
+      const dx = pl.x - p.x
+      const dy = pl.y - p.y
+      const rr = p.radius + pl.radius + PODS.holdRadiusPad
+      if (dx * dx + dy * dy < rr * rr) {
+        p.hold = holdTime > 0 ? p.hold + dt / holdTime : 1
+        if (p.hold >= 1 - 1e-9) {
+          collect(world, p)
+          p.alive = false
+        }
+      } else if (p.hold > 0) {
+        p.hold = Math.max(0, p.hold - PODS.holdDecayPerSec * dt)
+      }
+      continue
+    }
     if (!p.captured) {
       p.life -= dt
       if (p.life <= 0) {
@@ -253,7 +372,7 @@ export function pickupSystem(world: World, dt: number): void {
     const dy = pl.y - p.y
     const d2 = dx * dx + dy * dy
 
-    if (p.kind !== 'weapon' && !p.captured && d2 < capture2) {
+    if (!p.captured && d2 < capture2) {
       p.captured = true
       p.homeT = 0
     }
@@ -274,12 +393,7 @@ export function pickupSystem(world: World, dt: number): void {
         p.y += p.vy * dt
       }
     } else {
-      if (p.kind === 'weapon' && d2 < podReach2) {
-        const d = Math.sqrt(d2) || 1
-        p.vx += (dx / d) * 320 * dt
-        p.vy += (dy / d) * 320 * dt
-      }
-      // Friction so scatter and pod drift settle rather than orbit.
+      // Friction so the drop scatter settles rather than orbits.
       const fric = 1 - 3 * dt
       p.vx *= fric
       p.vy *= fric
@@ -307,10 +421,9 @@ function collect(world: World, p: Pickup): void {
     world.addXp(p.xp * world.mods.xpMul * surge)
     world.feel.emit(FeelKind.GemCollect, 0, p.x, p.y, p.xp)
   } else if (p.kind === 'health') {
-    const before = pl.hp
-    pl.hp = Math.min(pl.maxHp, pl.hp + p.heal)
+    const gained = healPlayer(world, p.heal)
     if (world.mods.berserker > 0) world.berserkT = BERSERK_MEDKIT.sec
-    world.feel.emit(FeelKind.HealCollect, 0, pl.x, pl.y, pl.hp - before)
+    world.feel.emit(FeelKind.HealCollect, 0, pl.x, pl.y, gained)
   } else {
     const wi = weaponIndex(p.weaponId)
     world.equipWeapon(p.weaponId)

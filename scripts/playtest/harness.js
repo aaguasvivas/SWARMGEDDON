@@ -24,6 +24,7 @@
   const TAG_COMPLETES_FUSION = 8
   const TAG_EVOLVES_HELD = 32
   const BOSS_FOCUS = 700
+  const POD_LIFE = 20
   const BROOD_GUARD = 140
 
   function xpTotal(w) {
@@ -106,6 +107,8 @@
 
     let mx = 0
     let my = 0
+    // A pod is taken by standing on it (hold-to-take), so the bot stops on one it wants.
+    let holdPod = false
     if (mode === 'turret') {
       // stationary
     } else if (mode === 'crude') {
@@ -228,6 +231,7 @@
           }
         }
         const k = 1 - threat / 0.6
+        if (tgt && tgt.kind === 'weapon' && Math.hypot(tgt.x - pl.x, tgt.y - pl.y) < tgt.radius + pl.radius) holdPod = true
         if (tgt) {
           const dx = tgt.x - pl.x
           const dy = tgt.y - pl.y
@@ -255,8 +259,8 @@
       mx /= ml
       my /= ml
     }
-    inp.move.x = mx
-    inp.move.y = my
+    inp.move.x = holdPod ? 0 : mx
+    inp.move.y = holdPod ? 0 : my
     if (st.cfg.dash && w.dashCharges > 0 && pl.dashTicks === 0 && inDanger(w, pl)) inp.pressDash()
   }
 
@@ -604,20 +608,21 @@
         st.events.push({ t: +w.time.toFixed(2), type: 'bossKill', stage: w.bossFight.stage })
       }
       st.lastBossAlive = w.bossAlive
-      let timerPodSeen = false
+      let timerPodAlive = false
+      const podLife = POD_LIFE + w.mods.podLifeBonus
       for (let i = 0; i < pk.length; i++) {
         const p = pk[i]
-        if (p.alive && p.kind === 'weapon' && p.life > 24 - 1.5 * DT && !(p.__ptRun === st.runId && w.time - p.__ptT < 0.1)) {
+        if (p.alive && p.kind === 'weapon' && p.timer) timerPodAlive = true
+        if (p.alive && p.kind === 'weapon' && p.life > podLife - 1.5 * DT && !(p.__ptRun === st.runId && w.time - p.__ptT < 0.1)) {
           p.__ptT = w.time
           p.__ptRun = st.runId
-          const src = p.life >= 24 - 1e-9 ? 'kill' : 'timer'
-          if (src === 'timer') timerPodSeen = true
           st.podsSeen++
           st.podsSeenChunk++
-          st.events.push({ t: +w.time.toFixed(2), type: 'pod', id: p.weaponId, src, dist: Math.round(Math.hypot(p.x - w.player.x, p.y - w.player.y)) })
+          st.events.push({ t: +w.time.toFixed(2), type: 'pod', id: p.weaponId, src: p.timer ? 'timer' : 'kill', dist: Math.round(Math.hypot(p.x - w.player.x, p.y - w.player.y)) })
         }
       }
-      if (w.weaponDropTimer > dropTimer0 + 1 && !timerPodSeen) {
+      // The timer fired and no timer pod is on the field: the pool had no room.
+      if (w.weaponDropTimer > dropTimer0 + 1 && !timerPodAlive) {
         st.podFails++
         st.events.push({ t: +w.time.toFixed(2), type: 'podDropFailed', pickups: w.pickups.size })
       }

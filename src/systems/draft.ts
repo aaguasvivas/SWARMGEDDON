@@ -16,6 +16,7 @@ import {
 } from '../content/perks.ts'
 import { PICKUP_WEAPON_IDS, WEAPONS, type WeaponDef } from '../content/weapons.ts'
 import type { World } from '../game/world.ts'
+import { healPlayer } from './damage.ts'
 
 /**
  * The level-up draft (section 4.4): Keystone draft, BUILD / FAMILY / WILD
@@ -190,8 +191,7 @@ export function pickPerkId(w: World, id: string): void {
 /** Take no card: heal DRAFT.skipHealFrac of max HP instead. */
 export function skipDraft(w: World): void {
   if (!w.draft.open) return
-  const pl = w.player
-  pl.hp = Math.min(pl.maxHp, pl.hp + pl.maxHp * DRAFT.skipHealFrac)
+  healPlayer(w, w.player.maxHp * DRAFT.skipHealFrac)
   w.pendingLevelUps--
   closeDraft(w)
 }
@@ -208,8 +208,7 @@ function applyFallback(w: World, id: string): void {
   if (id === 'sharpen') {
     w.choosePerk('sharpen')
   } else if (id === 'field_repair') {
-    const pl = w.player
-    pl.hp = Math.min(pl.maxHp, pl.hp + pl.maxHp * FALLBACK.repairFrac)
+    healPlayer(w, w.player.maxHp * FALLBACK.repairFrac)
   } else {
     w.draft.rerolls = Math.min(DRAFT.maxRerolls, w.draft.rerolls + 1)
   }
