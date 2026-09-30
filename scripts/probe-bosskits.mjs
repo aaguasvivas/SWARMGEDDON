@@ -139,6 +139,9 @@ async function kitChecks() {
     const h = hz[0]
     const shape = h && { n: hz.length, shape: h.shape, r: h.r, dx: h.x - cx, dy: h.y - cy, dmg: h.damage, tele: h.teleMax, live: h.liveMax, onEnd: h.onEnd, boss: h.boss, attack: f.attack }
     let lost = 0
+    let detTick = -1
+    let landTick = -1
+    let hitTick = -1
     pl.biteCd = 10
     for (let t = 0; t < 120 && h.alive; t++) {
       const hp = pl.hp
@@ -146,6 +149,9 @@ async function kitChecks() {
       pl.biteCd = 10
       S.step(1)
       lost += hp - pl.hp
+      if (detTick < 0 && h.tele <= 0) detTick = t
+      if (hitTick < 0 && pl.hp < hp) hitTick = t
+      if (landTick < 0 && w.boss && Math.hypot(w.boss.x - cx, w.boss.y - cy) < 1) landTick = t
     }
     const landed = w.boss ? Math.hypot(w.boss.x - cx, w.boss.y - cy) : -1
     for (let t = 0; t < 300 && f.state !== H.BS_IDLE; t++) S.step(1)
@@ -161,15 +167,20 @@ async function kitChecks() {
       S.step(1)
       lostOut += hp - pl.hp
     }
+    // She lands as the slam lands: the circle detonates and hits at the end of
+    // one tick, and she arrives at the start of the next (her cast tick).
     out.riftBlink = {
       shape,
       lostInside: lost,
       lostOutside: lostOut,
       bossToCircle: +landed.toFixed(2),
+      detTick,
+      hitTick,
+      landTick,
       pass:
         shape.n === 1 && shape.shape === 0 && shape.r === 140 && near(shape.dx, 0, 1e-6) && near(shape.dy, 0, 1e-6) &&
-        shape.dmg === 26 && near(shape.tele, 0.9, 1e-9) && near(shape.live, 0.15, 1e-9) && shape.onEnd === 2 && shape.boss &&
-        lost === 26 && lostOut === 0 && landed < 1,
+        shape.dmg === 26 && near(shape.tele, 0.9, 1e-9) && near(shape.live, 0.15, 1e-9) && shape.onEnd === 0 && shape.boss &&
+        lost === 26 && lostOut === 0 && landed < 1 && hitTick === detTick && landTick === detTick + 1,
     }
 
     // B psiLance: three lanes at -24, 0 and +24 degrees on the player, bolts down
@@ -240,16 +251,35 @@ async function kitChecks() {
         S.step(1)
         activeTicks++
       }
+      const markerGone = !m.alive
+      // The pull stops once the bodies touch (centers e.radius + pl.radius apart).
+      H.fight('depths', 'mid2')
+      H.clearField()
+      const e2 = w.boss
+      H.force(2)
+      S.step(1)
+      while (f.state === H.BS_TELE) S.step(1)
+      for (const o of w.enemies.active) if (o.alive && o.def.id === 'wraith') o.alive = false
+      const pullAt = (gap) => {
+        H.pin(e2.x + e2.radius + pl.radius + gap, e2.y)
+        S.step(1)
+        return +Math.hypot(w.pullX, w.pullY).toFixed(2)
+      }
+      const touching = pullAt(-0.5)
+      const apart = pullAt(5)
       out.undertow = {
         marker,
         wraiths: wraiths.length,
         ringR,
         pullSpeed: +pullSpeed.toFixed(2),
         activeTicks,
-        markerGone: !m.alive,
+        markerGone,
+        pullTouching: touching,
+        pullApart: apart,
         pass:
           marker.n === 1 && marker.r === 104 && marker.onBoss < 1e-6 && marker.dmg === 0 && near(marker.tele, 0.7, 1e-9) && near(marker.live, 3, 1e-9) &&
-          wraiths.length === 6 && ringR.every((r) => near(r, 90, 4)) && near(pullSpeed, 140, 0.5) && activeTicks === 180 && !m.alive,
+          wraiths.length === 6 && ringR.every((r) => near(r, 90, 4)) && near(pullSpeed, 140, 0.5) && activeTicks === 180 && markerGone &&
+          touching === 0 && near(apart, 140, 0.01),
       }
     }
 

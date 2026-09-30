@@ -199,7 +199,7 @@ export const WORLD_SCRIPTS: Readonly<Record<string, WorldScript>> = {
     eliteId: 'abyssalWarden',
     affixPool: ['hasted', 'volatile', 'shielded', 'brood'],
     fodderId: 'biter',
-    boss: { midId: 'voidMatron', primeId: 'voidMatronPrime', worldMul: 0.9 },
+    boss: { midId: 'voidMatron', primeId: 'voidMatronPrime', worldMul: 1.0 },
     text: {
       mid1: { title: 'THE VOID MATRON', sub: 'STIRS' },
       mid2: { title: 'THE VOID MATRON', sub: 'RETURNS' },

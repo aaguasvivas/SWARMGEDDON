@@ -51,7 +51,7 @@ import type { Enemy } from '../game/enemy.ts'
 import { scoreClear } from '../game/scoring.ts'
 import { HZ_CIRCLE, type Hazard } from '../game/hazard.ts'
 import type { World } from '../game/world.ts'
-import { stopBossFight } from './bossAI.ts'
+import { cancelBossTelegraph } from './bossAI.ts'
 import { clearHazards, clearHazardsNear, spawnHazard } from './hazards.ts'
 import { ringPointAt, ringSpawnPoint, ringOut, spawnEnemy } from './spawn.ts'
 
@@ -324,7 +324,7 @@ function tickDeferred(world: World): void {
 export function directorBossKilled(world: World, e: Enemy): void {
   const d = world.director
   const t = world.time
-  stopBossFight(world)
+  cancelBossTelegraph(world)
   world.bossAlive = false
   world.boss = null
   d.bossesKilled++
@@ -396,7 +396,7 @@ function tickFight(world: World): void {
   if (!world.bossAlive || !boss) return
   const t = world.time
   if (world.bossFight.stage === 'final' && t >= d.fightStart + STALEMATE_AFTER) {
-    stopBossFight(world)
+    cancelBossTelegraph(world)
     boss.alive = false
     spawnPoof(world, boss.x, boss.y, boss.gibTint, 16)
     world.bossAlive = false
@@ -553,7 +553,7 @@ function ascend(world: World): boolean {
   if (!old) return false
   const boss = spawnEnemy(world, world.script.boss.primeId, old.x, old.y)
   if (!boss) return false
-  stopBossFight(world)
+  cancelBossTelegraph(world)
   old.alive = false
   spawnPoof(world, old.x, old.y, old.gibTint, 16)
   beginFight(world, boss, 'final')

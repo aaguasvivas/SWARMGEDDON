@@ -7,7 +7,7 @@
 //   only the probe's hazards touch the player: detonation tick, circle / lane /
 //   sweep tests with a hit and a miss each, one hit per cast, markers never
 //   hurt, a live boss hazard pays a Close Call under dash i-frames (a plain one
-//   does not), the 48 cap, and the three onEnd actions.
+//   does not), the 48 cap, and the two onEnd actions.
 // Prints one JSON line per check and exits 1 if any check fails.
 import puppeteer from 'puppeteer-core'
 import { acquireChromeLock } from './lib/chromeLock.mjs'
@@ -153,18 +153,7 @@ async function checks() {
   h.unit = 'swarmer'
   run(20)
   const spawned = w.enemies.active.filter((e) => e.alive && e.def.id === 'swarmer' && Math.abs(e.x - far) < 80).length
-  fresh()
-  S.spawn('queen', 1)
-  const q = w.enemies.active[w.enemies.active.length - 1]
-  q.x = q.prevX = pl.x - 400
-  q.y = q.prevY = pl.y
-  w.boss = q
-  w.bossAlive = true
-  h = spawnHazard(w, HZ.HZ_CIRCLE, far, pl.y + 100, 50, 0.1, 0, 0)
-  h.onEnd = HZ.HZ_END_BLINK
-  run(20)
-  const blinked = Math.hypot(q.x - far, q.y - (pl.y + 100)) < 60
-  out.onEnd = { acid, spawned, blinked, pass: acid === 1 && spawned === 1 && blinked }
+  out.onEnd = { acid, spawned, pass: acid === 1 && spawned === 1 }
   return out
 }
 

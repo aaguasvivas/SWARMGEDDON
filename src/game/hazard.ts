@@ -6,7 +6,6 @@ export const HZ_SWEEP = 2
 
 export const HZ_END_NONE = 0
 export const HZ_END_MAGMA = 1
-export const HZ_END_BLINK = 2
 export const HZ_END_SPAWN = 3
 
 /**

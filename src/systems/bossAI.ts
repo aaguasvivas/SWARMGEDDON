@@ -36,7 +36,7 @@ import type { BossStage } from '../content/runScripts.ts'
 import { spawnPoof } from '../effects/fx.ts'
 import { FF_BOSS, FF_RAM, FeelKind } from '../effects/feelQueue.ts'
 import type { Enemy } from '../game/enemy.ts'
-import { HZ_CIRCLE, HZ_END_BLINK, HZ_END_MAGMA, HZ_END_SPAWN, HZ_LANE, HZ_SWEEP, type Hazard } from '../game/hazard.ts'
+import { HZ_CIRCLE, HZ_END_MAGMA, HZ_END_SPAWN, HZ_LANE, HZ_SWEEP, type Hazard } from '../game/hazard.ts'
 import { tickDown } from '../game/player.ts'
 import type { World } from '../game/world.ts'
 import { MAX_WELL_PULL } from './ai.ts'
@@ -102,6 +102,11 @@ export class BossFight {
   partAng = 0
   /** Scorch sweep turn direction (+1 or -1); it flips every cast. */
   sweepSign = 1
+  /** Where the rift blink lands: the player's spot at its telegraph start.
+   *  `blinkOk` is false when no circle was drawn (the hazard pool was full). */
+  blinkX = 0
+  blinkY = 0
+  blinkOk = false
 
   begin(stage: BossStage): void {
     this.stage = stage
@@ -142,7 +147,7 @@ export function bossStep(w: World, e: Enemy, dt: number): void {
     f.phase < st.phases.length &&
     e.hp <= e.maxHp * st.phases[f.phase]!
   ) {
-    cancelBossTelegraph(w)
+    cancelBossWarnings(w)
     f.phase++
     f.rot = 0
     f.state = BS_ROAR
@@ -200,7 +205,7 @@ export function bossStep(w: World, e: Enemy, dt: number): void {
 
 /** The fight is over (kill, stalemate, ascend): its hazards and pending parts
  *  end, and its flak turrets collapse with no credit. */
-export function stopBossFight(w: World): void {
+export function cancelBossTelegraph(w: World): void {
   const f = w.bossFight
   f.echoT = 0
   f.partsLeft = 0
@@ -221,7 +226,7 @@ export function stopBossFight(w: World): void {
 /** A phase change or the end of a lunge: every boss telegraph still warning,
  *  and every boss marker, goes, and so do the attack's parts still to come.
  *  Damage already live finishes. */
-function cancelBossTelegraph(w: World): void {
+function cancelBossWarnings(w: World): void {
   w.bossFight.partsLeft = 0
   const hz = w.hazards.active
   for (let i = 0; i < hz.length; i++) {
@@ -381,9 +386,11 @@ function cast(w: World, e: Enemy, cad: number): void {
       active(w, UNDERTOW.active)
       return
     case ATK_RIFT_BLINK:
+      riftLand(w, e)
       active(w, RIFT_BLINK.active)
       return
     case ATK_RIFT_STORM:
+      riftLand(w, e)
       active(w, RIFT_STORM.active)
       return
     case ATK_MAGMA_MORTAR:
@@ -519,12 +526,28 @@ function aimAtPlayer(w: World, e: Enemy): void {
   f.dirY = (pl.y - e.y) / d
 }
 
-/** A rift blink: a slam circle on the player's spot; the boss lands in it
- *  when its damage window ends (hazard onEnd). */
+/** A rift blink: a slam circle on the player's spot. The boss lands in it on
+ *  its cast tick, the tick after the circle detonates (riftLand). */
 function riftCircle(w: World, r: number, tele: number, live: number, damage: number): void {
+  const f = w.bossFight
   const pl = w.player
-  const h = bossHazard(w, HZ_CIRCLE, pl.x, pl.y, r, tele, live, damage)
-  if (h) h.onEnd = HZ_END_BLINK
+  f.blinkX = pl.x
+  f.blinkY = pl.y
+  f.blinkOk = bossHazard(w, HZ_CIRCLE, pl.x, pl.y, r, tele, live, damage) !== null
+}
+
+/** The boss teleports into its rift circle as it slams. */
+function riftLand(w: World, e: Enemy): void {
+  const f = w.bossFight
+  if (!f.blinkOk) return
+  spawnPoof(w, e.x, e.y, e.gibTint, 12)
+  spot.x = f.blinkX
+  spot.y = f.blinkY
+  clampSpot(w, e.radius, e.radius)
+  e.x = e.prevX = spot.x
+  e.y = e.prevY = spot.y
+  spawnPoof(w, e.x, e.y, e.gibTint, 12)
+  w.feel.emit(FeelKind.Teleport, FF_BOSS, e.x, e.y, 0, 0, e.def)
 }
 
 /** The next cinderfall circle on the spiral. A circle that lies wholly outside
@@ -548,13 +571,13 @@ function cinderCircle(w: World): void {
 }
 
 /** Undertow: drag the player toward the boss, on top of any gravity well,
- *  within the shared MAX_WELL_PULL clamp. No pull once the bodies meet. */
+ *  within the shared MAX_WELL_PULL clamp. No pull once the bodies touch. */
 function undertowPull(w: World, e: Enemy): void {
   const pl = w.player
   const dx = e.x - pl.x
   const dy = e.y - pl.y
   const d = Math.hypot(dx, dy)
-  if (d <= e.radius) return
+  if (d <= e.radius + pl.radius) return
   let px = w.pullX + (dx / d) * UNDERTOW.pull
   let py = w.pullY + (dy / d) * UNDERTOW.pull
   const m = Math.hypot(px, py)
@@ -596,7 +619,7 @@ function lungeStep(w: World, e: Enemy, dt: number, cad: number): void {
   }
   f.stateT = tickDown(f.stateT, dt)
   if (stop || f.stateT === 0) {
-    cancelBossTelegraph(w)
+    cancelBossWarnings(w)
     recover(w, ROYAL_LUNGE.recover / cad)
   }
 }
