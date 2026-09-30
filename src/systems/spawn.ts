@@ -83,7 +83,7 @@ export function spawnEnemy(world: World, defId: string, x: number, y: number): E
   e.vx = 0
   e.vy = 0
   e.facing = e.prevFacing = 0
-  e.hp = e.maxHp = Math.round(def.hp + Math.min(world.time, HP_RAMP_T_CAP) * def.hpRamp)
+  e.hp = e.maxHp = Math.round((def.hp + Math.min(world.time, HP_RAMP_T_CAP) * def.hpRamp) * world.hpMul)
   e.speed = def.speed * (1 + SPEED_RAMP * Math.min(world.time, SPEED_RAMP_CAP_T))
   e.radius = def.radius
   e.damage = def.damage

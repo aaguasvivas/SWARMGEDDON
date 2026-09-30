@@ -5,6 +5,7 @@ import {
 import { distSq } from '../core/vec.ts'
 import { AF_BROOD, AF_VOLATILE, BROOD, VOLATILE } from '../content/affixes.ts'
 import { powi } from '../content/perks.ts'
+import { SCARCITY } from '../content/threat.ts'
 import {
   spawnChainArc,
   spawnExplosion,
@@ -111,7 +112,7 @@ export function collisionSystem(world: World, dt: number): void {
       }
     }
     // Authored boss damage never takes the time ramp (docs/NEXT-LEVEL.md 4.1).
-    const mul = e.def.boss ? 1 : world.dmgMul
+    const mul = e.def.boss ? world.runDmgMul : world.dmgMul
     if (d2 >= rr * rr) {
       if (armed && e.def.burrow && surfacedNear(e, d2)) {
         closeCall(world)
@@ -526,16 +527,20 @@ function killEnemy(world: World, e: Enemy): void {
   // you down also feeds you the medkits to survive it, while a healthy player
   // gets almost none (the difficulty stays intact). Roll the RNG always (keeps
   // the daily stream deterministic), then gate on a danger-scaled threshold.
+  // THREAT 4 SCARCITY: only elites and bosses drop medkits, fewer and weaker.
   const loot = world.rngs.loot
   const roll = loot.float()
+  const scarce = world.threatDef.scarcity
+  const bigHeal = scarce ? HEALTH_HEAL_ELITE * SCARCITY.healMul : HEALTH_HEAL_ELITE
   if (def.boss) {
-    for (let i = 0; i < 5; i++) {
+    const n = scarce ? SCARCITY.bossMedkits : 5
+    for (let i = 0; i < n; i++) {
       const a = loot.angle()
-      dropHealth(world, e.x + Math.cos(a) * 26, e.y + Math.sin(a) * 26, HEALTH_HEAL_ELITE)
+      dropHealth(world, e.x + Math.cos(a) * 26, e.y + Math.sin(a) * 26, bigHeal)
     }
   } else if (def.elite) {
-    dropHealth(world, e.x, e.y, HEALTH_HEAL_ELITE)
-  } else {
+    dropHealth(world, e.x, e.y, bigHeal)
+  } else if (!scarce) {
     const hpFrac = world.player.hp / world.player.maxHp
     if (hpFrac < 0.985) {
       // ~1x base at full HP up to ~4x near death.

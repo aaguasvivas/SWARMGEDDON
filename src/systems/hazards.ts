@@ -57,7 +57,7 @@ export function hazardsTick(w: World, dt: number): void {
     }
     if (h.damage > 0 && !h.hit && overlapsPlayer(w, h)) {
       if (h.boss && closeCallArmed(w)) closeCall(w)
-      if (hurtPlayer(w, h.damage, 'discrete', SRC_HAZARD, h.x, h.y) > 0) h.hit = true
+      if (hurtPlayer(w, h.damage * w.runDmgMul, 'discrete', SRC_HAZARD, h.x, h.y) > 0) h.hit = true
     }
     if (h.live > 0) {
       h.live = tickDown(h.live, dt)

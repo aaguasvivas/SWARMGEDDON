@@ -48,6 +48,7 @@ import { buildRunResult, type RunEnd, type RunResult } from './state/runResult.t
 import { updateLifetime } from './state/stats.ts'
 import { evaluateFeats } from './state/feats.ts'
 import { migrateSave } from './state/migrate.ts'
+import { recordThreatClear, selectThreat, selectedThreat, unlockedThreat } from './state/threatLadder.ts'
 import { shareRunCard } from './share/shareCard.ts'
 import { flushUpdatePrompt, setupUpdatePrompt } from './pwa/updatePrompt.ts'
 import { CHARACTERS, DEFAULT_CHARACTER_ID, characterById, type CharacterDef } from './content/characters.ts'
@@ -293,7 +294,8 @@ async function boot(): Promise<void> {
   function startRun(mode: RunMode): void {
     const { char, theme } = resolveLoadout(mode)
     runDate = todayStr()
-    world.beginRun(runSeed(mode), mode, char, theme)
+    // THREAT is run identity, read once here. The Daily runs at 0 until its date-derived level (P13).
+    world.beginRun(runSeed(mode), mode, char, theme, mode === 'daily' ? 0 : selectedThreat(theme.id))
     // Pools and paint resolve once here; a grant mid-run never changes this run.
     const pools = resolvePools(mode)
     world.perkPool = pools.perks
@@ -335,6 +337,7 @@ async function boot(): Promise<void> {
     lastResult = result
     feel.time.reset()
     const lifetime = updateLifetime(result)
+    recordThreatClear(result)
     const gains = recordWorldBest(result)
     const done = evaluateFeats(result, lifetime)
     if (done.length > 0) refreshLoadoutUI()
@@ -471,7 +474,7 @@ async function boot(): Promise<void> {
     winPanel.show(world.script.text.win, world.director.clearTime, input.lastType === 'kbm')
   }
   winPanel.onExtract = () => endRun('clear')
-  winPanel.onOvertime = () => {
+  function startOvertime(): void {
     winPanel.hide()
     pauseReason = 'none'
     world.startOvertime()
@@ -480,6 +483,7 @@ async function boot(): Promise<void> {
     input.cancelDashPress()
     feel.time.play(TimePreset.Resume)
   }
+  winPanel.onOvertime = startOvertime
 
   // --- layout (screen-dependent only; the arena/ichor are fixed-size) ---
   function layout(): void {
@@ -869,6 +873,18 @@ async function boot(): Promise<void> {
       setGlow: (v: number) => postFX.setIntensity(v),
       get screen() {
         return screen
+      },
+      get pauseReason() {
+        return pauseReason
+      },
+      /** The win panel's OVERTIME button (harness `ot` flag). */
+      overtime: () => {
+        if (pauseReason === 'win') startOvertime()
+      },
+      /** Unlock THREAT up to `t` in `arenaId` and select it for the next Standard run. */
+      setThreat: (arenaId: string, t: number) => {
+        if (unlockedThreat(arenaId) < t) saveJSON('threat', { ...loadJSON<Record<string, number>>('threat', {}), [arenaId]: t })
+        selectThreat(arenaId, t)
       },
       startRun: (mode: RunMode) => startRun(mode),
       endRun: (end: RunEnd = 'death', after: AfterRun = 'recap') => endRun(end, after),

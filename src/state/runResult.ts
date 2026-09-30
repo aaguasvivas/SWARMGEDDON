@@ -43,7 +43,7 @@ export function buildRunResult(w: World, end: RunEnd, meta: RunMeta): RunResult 
     end,
     cleared: w.clearMs > 0,
     clearMs: w.clearMs,
-    overtimeSec: 0,
+    overtimeSec: w.director.runState === 'overtime' ? w.time - w.director.clearTime : 0,
     nextBeat: nextBeatLabel(w.script, w.time),
     date: meta.date,
     dailyNumber: meta.dailyNumber,

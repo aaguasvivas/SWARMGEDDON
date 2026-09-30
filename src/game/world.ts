@@ -10,8 +10,9 @@ import { PERKS, applyBuild, baseModifiers, fusionIndex, resetModifiers, type Mod
 import { CHARACTERS, type CharacterDef } from '../content/characters.ts'
 import { ARENAS, type ArenaTheme } from '../content/arenas.ts'
 import { ENEMY_IDS } from '../content/enemies.ts'
+import { THREAT_LEVELS, threatLevel, type ThreatLevel } from '../content/threat.ts'
 import { FeelKind, FeelQueue, RunAlertRing } from '../effects/feelQueue.ts'
-import { Director } from '../systems/director.ts'
+import { Director, applyRunMuls, startOvertime } from '../systems/director.ts'
 import { DraftState } from '../systems/draft.ts'
 import { BossFight } from '../systems/bossAI.ts'
 import { BlastQueue } from '../systems/blasts.ts'
@@ -226,6 +227,16 @@ export class World {
   /** Projectile tint of the pilot's start weapon; the paint sets it. Presentation only. */
   baseBulletTint = WEAPONS[DEFAULT_WEAPON_ID]!.tint
 
+  // P11: THREAT and OVERTIME
+  /** The run's THREAT level (world.threat), read once in beginRun. */
+  threatDef: ThreatLevel = THREAT_LEVELS[0]!
+  /** Enemy HP, the threat x OVERTIME damage multiplier (authored boss and
+   *  hazard damage takes only this; dmgMul adds the time ramp), and the min
+   *  and max alive multiplier. The director sets them per OVERTIME cycle. */
+  hpMul = 1
+  runDmgMul = 1
+  aliveMul = 1
+
   constructor(
     readonly arena: Arena,
     readonly player: Player,
@@ -272,8 +283,9 @@ export class World {
 
   // --- run lifecycle ---------------------------------------------------------
 
-  /** Reseed + reset for a fresh run of `mode` as `character` in `theme`. Leak-free. */
-  beginRun(seed: number, mode: RunMode, character?: CharacterDef, theme?: ArenaTheme): void {
+  /** Reseed + reset for a fresh run of `mode` as `character` in `theme` at
+   *  THREAT `threat`. Leak-free. */
+  beginRun(seed: number, mode: RunMode, character?: CharacterDef, theme?: ArenaTheme, threat = 0): void {
     this.clearAll()
     this.rngs.begin(seed)
     this.seed = seed
@@ -281,8 +293,11 @@ export class World {
     if (character) this.character = character
     if (theme) this.arenaTheme = theme
     this.tintCache.clear()
-    this.script = resolveScript(this.arenaTheme.id)
+    this.threatDef = threatLevel(threat)
+    this.threat = this.threatDef.level
+    this.script = resolveScript(this.arenaTheme.id, this.threat)
     this.director.reset()
+    applyRunMuls(this)
     this.dmgMul = 1
     this.xpScale = this.script.minutes[0]!.xpScale
     this.arena.setTheme(this.arenaTheme)
@@ -316,7 +331,6 @@ export class World {
     this.alerts.reset()
     this.lastHitVx = 0
     this.lastHitVy = 0
-    this.threat = 0
     this.score = 0
     this.killPts = 0
     this.xpSum = 0
@@ -397,8 +411,8 @@ export class World {
 
   /** The win panel's OVERTIME: the run goes on past the win. */
   startOvertime(): void {
-    this.director.runState = 'overtime'
     this.pendingWin = false
+    startOvertime(this)
   }
 
   // --- weapons ---------------------------------------------------------------

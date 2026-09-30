@@ -282,10 +282,27 @@ export const EVO = {
 } as const
 
 // P7: swarm events and affixes (docs/NEXT-LEVEL.md 4.7, A8, A9)
-/** Concurrent event parts in emission (a FINAL SWARM fills all three). */
-export const EVENT_SLOTS = 3
+/** Concurrent event parts in emission: a FINAL SWARM's three, plus a held
+ *  event and its THREAT 2 mirror copy (P11). */
+export const EVENT_SLOTS = 5
 /** A stream unit this far past the arena wall it heads through despawns with no credit. */
 export const STREAM_EXIT_PAD = 40
 /** Events and brood ignore maxAlive; they spawn only while the field is under
  *  MAX_ENEMIES minus this. */
 export const SPAWN_ROOM = 20
+
+// P11: THREAT and OVERTIME (docs/NEXT-LEVEL.md 4.1, 4.8, A11)
+/** OVERTIME (Standard only): cycle c = 1, 2, ... lasts `cycle` s from the
+ *  start; its three minutes use world rows `row0` to `row0 + 2`. The start
+ *  opens a `lull` s lull at `lullMinMul` of the row's minAlive. Per cycle:
+ *  enemy HP x hpMul^c, damage x dmgMul^c, min and max alive x aliveMul^c,
+ *  gem XP x xpMul^c. Beats at cycle offsets: EVENT 1 at `event1` (a mirror
+ *  copy MIRROR_DELAY later from cycle `mirrorFrom` on), `eliteBase + c`
+ *  elites with `eliteAffixes` affixes at `elites` (at most `eliteMax`),
+ *  EVENT 3 at `event3`, the OT boss (mid2 kit, hpBase x bossHpMul^c) at `boss`. */
+export const OVERTIME = {
+  cycle: 180, row0: 8, lull: 10, lullMinMul: 0.5,
+  hpMul: 1.5, dmgMul: 1.2, aliveMul: 1.1, xpMul: 0.8, bossHpMul: 1.35,
+  event1: 20, elites: 70, event3: 105, boss: 160,
+  mirrorFrom: 2, eliteBase: 2, eliteMax: 8, eliteAffixes: 2,
+} as const

@@ -1,10 +1,13 @@
+import { ELITE_WARN_LEAD, OVERTIME, WARN_LEAD } from '../config.ts'
 import type { AffixId } from './affixes.ts'
 import { ENEMIES } from './enemies.ts'
+import { ELITE_PACK_FROM, MIRROR_DELAY, threatLevel } from './threat.ts'
 
 /**
  * The three world scripts (docs/NEXT-LEVEL.md A7). Every world shares one beat
  * skeleton; the minute rows, events, elite and bosses make each world differ.
- * Pure data plus `resolveScript`, which runs once per run in beginRun.
+ * Pure data plus `resolveScript`, which applies the run's THREAT and builds
+ * the OVERTIME cycle once per run in beginRun.
  */
 
 export type SwarmEventId =
@@ -106,7 +109,8 @@ export interface MinuteRow {
   debut?: string
 }
 
-export type BossStage = 'mid1' | 'mid2' | 'final'
+/** `overtime`: the OT boss of each OVERTIME cycle (the mid boss, mid2 kit). */
+export type BossStage = 'mid1' | 'mid2' | 'final' | 'overtime'
 
 export interface AlertText {
   title: string
@@ -114,12 +118,16 @@ export interface AlertText {
 }
 
 /** `arc` is in degrees: 360 places units evenly on a circle with one radius
- *  draw each; a smaller arc spreads them around one drawn center angle. */
+ *  draw each; a smaller arc spreads them around one drawn center angle.
+ *  An elite beat with `perCycle` brings `count + c` elites in OVERTIME cycle c
+ *  (at most OVERTIME.eliteMax). An event beat with `mirror` is the mirror copy
+ *  of that beat (its S or G turned 180 degrees, no draws of its own); from
+ *  OVERTIME cycle `fromCycle` on when set. */
 export type Beat =
   | { at: number; kind: 'pack'; unit: string; count: number; rMin: number; rMax: number; arc: number }
   | { at: number; kind: 'lull'; dur: number; minAliveMul: number; alert?: AlertText }
-  | { at: number; kind: 'elite'; count: number; affixes: number; hpMul: number }
-  | { at: number; kind: 'event'; id: SwarmEventId }
+  | { at: number; kind: 'elite'; count: number; affixes: number; hpMul: number; perCycle?: boolean }
+  | { at: number; kind: 'event'; id: SwarmEventId; mirror?: number; fromCycle?: number }
   | { at: number; kind: 'boss'; stage: BossStage }
 
 export interface WorldScript {
@@ -140,18 +148,28 @@ export interface WorldScript {
 export const MARKER_EVENT = 0, MARKER_ELITE = 1, MARKER_BOSS = 2, MARKER_FINAL = 3
 
 export interface ResolvedScript extends WorldScript {
-  /** Per beat: first slot in Director.beatAng / beatAffix for its script draws. */
+  /** The THREAT level applied. `beats` are the run's beats at that level. */
+  threat: number
+  /** One OVERTIME cycle, `at` from the cycle start. Beat index
+   *  `beats.length + k` is otBeats[k] (beatOf). */
+  otBeats: readonly Beat[]
+  /** Per beat index (main, then OVERTIME): first slot in Director.beatAng /
+   *  beatAffix for its script draws. */
   drawOff: Int16Array
   /** HUD timeline and the "next was" line. */
   markers: { at: Float32Array; kind: Uint8Array; label: readonly string[] }
 }
 
-/** Director.beatAng / beatAffix capacity (the T0 Wastes script takes 64). */
-export const BEAT_DRAW_SLOTS = 96
-/** Director.firedAt capacity: beats per script. */
+/** Director.beatAng / beatAffix capacity: the T4 Wastes script takes 70 and
+ *  its OVERTIME cycle 49. */
+export const BEAT_DRAW_SLOTS = 160
+/** Director.firedAt capacity: main beats plus one OVERTIME cycle. */
 export const MAX_BEATS = 32
-/** Director.deferred capacity: every event and elite beat of a script fits. */
-export const DEFER_SLOTS = 12
+/** Director.deferred capacity: every event and elite beat of a script fits
+ *  (T2 and up add three mirror events to the T0 ten). */
+export const DEFER_SLOTS = 16
+/** The teaching elite's beat time (A7.1); THREAT sets its affixes and HP. */
+export const TEACH_AT = 90
 
 export const EVENT_TITLE: Readonly<Record<SwarmEventId, string>> = {
   stampede: 'STAMPEDE',
@@ -188,7 +206,7 @@ function skeleton(
   return [
     { at: 0.3, kind: 'pack', unit: packA, count: 8, rMin: 250, rMax: 300, arc: 360 },
     { at: 6, kind: 'pack', unit: packB, count: packBCount, rMin: 420, rMax: 460, arc: 100 },
-    { at: 90, kind: 'elite', count: 1, affixes: 0, hpMul: 0.6 },
+    { at: TEACH_AT, kind: 'elite', count: 1, affixes: 0, hpMul: 0.6 },
     { at: 150, kind: 'event', id: events[0] },
     { at: 180, kind: 'lull', dur: 15, minAliveMul: 0.5 },
     { at: 195, kind: 'elite', count: 1, affixes: 1, hpMul: 1 },
@@ -337,17 +355,28 @@ export function eventDef(s: WorldScript, id: SwarmEventId): SwarmEventDef {
   return id === 'finalSwarm' ? s.finalSwarm : SWARM_EVENTS[id]
 }
 
+/** Beat `i` of the run: a main beat, or OVERTIME beat `i - beats.length`. */
+export function beatOf(s: ResolvedScript, i: number): Beat {
+  return i < s.beats.length ? s.beats[i]! : s.otBeats[i - s.beats.length]!
+}
+
+/** Alert text of a boss stage: the OT boss returns with mid2's lines. */
+export function stageText(s: WorldScript, stage: BossStage): AlertText {
+  return stage === 'overtime' ? s.text.mid2 : s.text[stage]
+}
+
 /** Script-stream slots a beat fills at warn time: one per pack unit on a full
- *  circle (radius), one pack center angle otherwise, one side per elite, the
- *  event's draws (eventDraws), one spawn angle per boss. */
+ *  circle (radius), one pack center angle otherwise, one side per elite (the
+ *  OVERTIME maximum for a per-cycle beat), the event's draws (eventDraws; a
+ *  mirror copy keeps only its own S), one spawn angle per boss. */
 function drawSlots(s: WorldScript, b: Beat): number {
   switch (b.kind) {
     case 'pack':
       return b.arc >= 360 ? b.count : 1
     case 'elite':
-      return b.count
+      return b.perCycle ? OVERTIME.eliteMax : b.count
     case 'event':
-      return eventDraws(eventDef(s, b.id))
+      return b.mirror !== undefined ? 1 : eventDraws(eventDef(s, b.id))
     case 'boss':
       return 1
     case 'lull':
@@ -355,21 +384,96 @@ function drawSlots(s: WorldScript, b: Beat): number {
   }
 }
 
-/** Resolve an arena's script for one run. Allocates; beginRun only. */
-export function resolveScript(arenaId: string): ResolvedScript {
+/** How long before its time a beat warns (rolls its draws, plays its alert). */
+export function leadOf(b: Beat): number {
+  if (b.kind === 'event' || b.kind === 'boss') return WARN_LEAD
+  if (b.kind === 'elite') return ELITE_WARN_LEAD
+  return 0
+}
+
+/**
+ * The run's beats at `threat` (A11): the teaching elite takes the level's
+ * affixes and HP, later elites its affix count and, from ELITE_PACK_FROM,
+ * its extra elites; with `mirror`, events 1 to 3 get a mirror copy
+ * MIRROR_DELAY later. Sorted by time (a mirror copy follows its event).
+ */
+function threatBeats(s: WorldScript, threat: number): Beat[] {
+  const T = threatLevel(threat)
+  const out: Beat[] = []
+  const src: (Beat | null)[] = []
+  for (const b of s.beats) {
+    if (b.kind === 'elite') {
+      out.push(
+        b.at === TEACH_AT
+          ? { ...b, affixes: T.teachAffixes, hpMul: T.teachHpMul }
+          : { ...b, affixes: T.eliteAffixes, count: b.count + (b.at >= ELITE_PACK_FROM ? T.elitePlus : 0) },
+      )
+    } else {
+      out.push(b)
+    }
+    src.push(null)
+    if (T.mirror && b.kind === 'event' && b.id !== 'finalSwarm') {
+      out.push({ at: b.at + MIRROR_DELAY, kind: 'event', id: b.id, mirror: -1 })
+      src.push(out[out.length - 2]!)
+    }
+  }
+  const order = out.map((_, i) => i).sort((a, b) => out[a]!.at - out[b]!.at || a - b)
+  const sorted = order.map((i) => out[i]!)
+  for (let k = 0; k < order.length; k++) {
+    const from = src[order[k]!]
+    const b = sorted[k]!
+    if (from && b.kind === 'event') sorted[k] = { ...b, mirror: sorted.indexOf(from) }
+  }
+  return sorted
+}
+
+/** One OVERTIME cycle (section 4.1), `at` from the cycle start. EVENT 1's
+ *  mirror copy plays from cycle OVERTIME.mirrorFrom on (every cycle with the
+ *  THREAT mirror rule), EVENT 3's only with the rule. `base` is the global
+ *  index of the first OVERTIME beat. */
+function overtimeBeats(s: WorldScript, threat: number, base: number): Beat[] {
+  const T = threatLevel(threat)
+  const ev: SwarmEventId[] = []
+  for (const b of s.beats) if (b.kind === 'event' && b.id !== 'finalSwarm') ev.push(b.id)
+  const out: Beat[] = [
+    { at: OVERTIME.event1, kind: 'event', id: ev[0]! },
+    { at: OVERTIME.event1 + MIRROR_DELAY, kind: 'event', id: ev[0]!, mirror: base, fromCycle: T.mirror ? 1 : OVERTIME.mirrorFrom },
+    { at: OVERTIME.elites, kind: 'elite', count: OVERTIME.eliteBase + T.elitePlus, affixes: OVERTIME.eliteAffixes, hpMul: 1, perCycle: true },
+    { at: OVERTIME.event3, kind: 'event', id: ev[2]! },
+  ]
+  if (T.mirror) out.push({ at: OVERTIME.event3 + MIRROR_DELAY, kind: 'event', id: ev[2]!, mirror: base + 3 })
+  out.push({ at: OVERTIME.boss, kind: 'boss', stage: 'overtime' })
+  return out
+}
+
+/** Resolve an arena's script for one run at `threat`. Allocates; beginRun only. */
+export function resolveScript(arenaId: string, threat = 0): ResolvedScript {
   const s = WORLD_SCRIPTS[arenaId]
   if (!s) throw new Error(`no run script for arena '${arenaId}'`)
-  const drawOff = new Int16Array(s.beats.length)
+  const beats = threatBeats(s, threat)
+  const otBeats = overtimeBeats(s, threat, beats.length)
+  const total = beats.length + otBeats.length
+  const drawOff = new Int16Array(total)
   let off = 0
   let held = 0
+  let otHeld = 0
   const at: number[] = []
   const kind: number[] = []
   const label: string[] = []
-  for (let i = 0; i < s.beats.length; i++) {
-    const b = s.beats[i]!
+  for (let i = 0; i < total; i++) {
+    const main = i < beats.length
+    const b = main ? beats[i]! : otBeats[i - beats.length]!
     drawOff[i] = off
     off += drawSlots(s, b)
-    if (b.kind === 'event' || b.kind === 'elite') held++
+    if (b.kind === 'event' || b.kind === 'elite') {
+      if (main) held++
+      else otHeld++
+    }
+    if (i > 0 && i !== beats.length) {
+      const p = main ? beats[i - 1]! : otBeats[i - beats.length - 1]!
+      if (b.at < p.at || b.at - leadOf(b) < p.at - leadOf(p)) throw new Error(`run script '${arenaId}' beat ${i} is out of order`)
+    }
+    if (!main) continue
     if (b.kind === 'event') {
       at.push(b.at)
       kind.push(b.id === 'finalSwarm' ? MARKER_FINAL : MARKER_EVENT)
@@ -381,13 +485,13 @@ export function resolveScript(arenaId: string): ResolvedScript {
     } else if (b.kind === 'boss') {
       at.push(b.at)
       kind.push(b.stage === 'final' ? MARKER_FINAL : MARKER_BOSS)
-      label.push(s.text[b.stage].title)
+      label.push(stageText(s, b.stage).title)
     }
   }
-  if (s.beats.length > MAX_BEATS) throw new Error(`run script '${arenaId}' has ${s.beats.length} beats (max ${MAX_BEATS})`)
+  if (total > MAX_BEATS) throw new Error(`run script '${arenaId}' has ${total} beats with OVERTIME (max ${MAX_BEATS})`)
   if (off > BEAT_DRAW_SLOTS) throw new Error(`run script '${arenaId}' needs ${off} draw slots (max ${BEAT_DRAW_SLOTS})`)
-  if (held > DEFER_SLOTS) throw new Error(`run script '${arenaId}' has ${held} event and elite beats (max ${DEFER_SLOTS})`)
-  return { ...s, drawOff, markers: { at: Float32Array.from(at), kind: Uint8Array.from(kind), label } }
+  if (Math.max(held, otHeld) > DEFER_SLOTS) throw new Error(`run script '${arenaId}' has ${Math.max(held, otHeld)} event and elite beats (max ${DEFER_SLOTS})`)
+  return { ...s, threat, beats, otBeats, drawOff, markers: { at: Float32Array.from(at), kind: Uint8Array.from(kind), label } }
 }
 
 /** Label of the first marker still ahead at time `t`, or null past the last. */

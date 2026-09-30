@@ -74,6 +74,8 @@
 //                                  cannot show a pool difference; det-long and det-death can.
 //   --perks=a,b,...                perf modes take these perks and fusions at run start
 //                                  (P8: --perks=cryo_rounds,explosive_rounds,f_shatter).
+//   --threat=N                     det modes start Standard runs at THREAT N (unlocked and
+//                                  selected through the game's own ladder keys first).
 //   --paint=<id>                   det modes fly this paint (granted first). Paints are
 //                                  cosmetic, so the hash must not change.
 //                                  Every det pass restores the owned set it started from,
@@ -98,7 +100,7 @@ const MODE = pos[2] || 'perf'
 const DPR = flags.dpr ? parseFloat(flags.dpr) : 1
 const SETTINGS = flags.settings ? JSON.parse(flags.settings) : null
 const RUN_MODE = flags.mode === 'daily' ? 'daily' : 'endless'
-const SAVE_PREP = { unlocked: flags.save === 'unlocked', paint: flags.paint || null }
+const SAVE_PREP = { unlocked: flags.save === 'unlocked', paint: flags.paint || null, threat: flags.threat ? parseInt(flags.threat) : 0 }
 const PERF_PERKS = flags.perks ? flags.perks.split(',') : []
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
@@ -182,6 +184,7 @@ const DET_HELPER = `(() => {
       }
       if (runMode !== 'daily') S.setLoadout(c, a)
       else S.setLoadout(c, 'hive')
+      if (PREP.threat > 0 && runMode !== 'daily') S.setThreat(a, PREP.threat)
       S.startRun(runMode)
       st = { drafts: 0, bosses: 0, realUpdate: inp.update, wasBoss: false, tick: 0, realHp: !!realHp, rerolls, rerollsUsed: 0 }
       if (!realHp) {
@@ -293,7 +296,7 @@ const DET_HELPER = `(() => {
         streams[k] = s.toString(16)
       }
       return {
-        hash: (h >>> 0).toString(16), arena: w.arenaTheme.id, enemies: w.enemies.active.length, kills: w.kills,
+        hash: (h >>> 0).toString(16), arena: w.arenaTheme.id, threat: w.threat, enemies: w.enemies.active.length, kills: w.kills,
         level: w.level, drafts: st.drafts, pickups: w.pickups.active.length, time: +w.time.toFixed(2),
         bosses: st.bosses, director, byType, streams,
         dashes: w.dashes, closeCalls: w.closeCalls, damageTaken: Math.round(w.damageTaken),
@@ -415,7 +418,7 @@ if (MODE === 'shot') {
     }
     const r = runs[0]
     console.log(JSON.stringify({
-      mode: MODE, runMode: RUN_MODE, W, H, dpr: DPR, settings: SETTINGS ? applied : null, charId, arenaId: r.arena, steps,
+      mode: MODE, runMode: RUN_MODE, W, H, dpr: DPR, settings: SETTINGS ? applied : null, charId, arenaId: r.arena, threat: r.threat, steps,
       hash: r.hash, rerunMatch: r.hash === runs[1].hash, save: flags.save || 'fresh', paint: flags.paint || 'factory', enemies: r.enemies, kills: r.kills, level: r.level,
       drafts: r.drafts, dashes: r.dashes, closeCalls: r.closeCalls, damageTaken: r.damageTaken,
       score: r.score, chain: r.chain, peakTier: r.peakTier, hits: r.hits, pickups: r.pickups, time: r.time, bosses: r.bosses, director: r.director, streams: r.streams, byType: r.byType,
