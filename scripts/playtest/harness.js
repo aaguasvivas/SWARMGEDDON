@@ -7,7 +7,9 @@
 // (so the pick also applies world.resumeFromDraft() grace). Draft policies
 // (cfg.perkPolicy): first (card 1), priority (fusions, then fusion parents,
 // then PRIORITY), random (seeded: rerolls, banishes, skips, random cards),
-// evolve (the held weapon's pair perk first, then priority). Never calls
+// evolve (the held weapon's pair perk first, then priority). A Hive Core
+// reveal is answered through S.takeCore: the evolution when one is offered
+// (the random policy flips a seeded coin). Never calls
 // endRun itself; a stalemate ends the run through the game's own path. With
 // cfg.dash the bot also dashes out of danger; with cfg.focus it shoots the
 // boss during a fight. The smart and roam bots sidestep swarm-event streams
@@ -434,8 +436,25 @@
       streamDmg: 0,
       /** Steps the stream dodge steered the bot. */
       dodgeSteps: 0,
+      medkitDrops: 0,
+      bonusDrops: 0,
+      shardDrops: 0,
+      coreDrops: 0,
+      coresTaken: 0,
     }
     window.__PT = st
+    // Spawn detector for bonuses, shards, cores and medkits: every pickup the
+    // pool hands out is flagged, and __PT_run logs and clears the flag.
+    if (!w.pickups.__ptWrapped) {
+      const acq = w.pickups.acquire.bind(w.pickups)
+      w.pickups.acquire = () => {
+        const o = acq()
+        o.__ptNew = true
+        return o
+      }
+      w.pickups.__ptWrapped = true
+    }
+    for (const p of w.pickups.active) p.__ptNew = false
     S.input.update = function () {
       bot(w, S.input, st)
     }
@@ -519,6 +538,17 @@
         st.events.push({ t: +w.time.toFixed(2), type: 'levelup', level: w.level - w.pendingLevelUps, perk: id, offered, after })
       }
       st.levelUpsChunk++
+    }
+  }
+
+  function handleCore(S, w, st) {
+    while (w.paused && w.core.pending) {
+      const c = w.core
+      const offered = c.evolveTo || null
+      const evolve = !!offered && (st.cfg.perkPolicy === 'random' ? st.rand() < 0.5 : true)
+      st.events.push({ t: +w.time.toFixed(2), type: 'coreTaken', prime: c.prime, levels: c.levels, ids: c.ids.slice(0, c.levels), offered, evolve })
+      st.coresTaken++
+      S.takeCore(evolve)
     }
   }
 
@@ -623,6 +653,7 @@
         st.lastHalfHpT = w.time
       }
 
+      if (w.paused && w.core.pending) handleCore(S, w, st)
       if (w.paused && w.draft.open) {
         handleDraft(S, w, st)
         if (inv) {
@@ -711,6 +742,24 @@
         st.events.push({ t: +w.time.toFixed(2), type: 'bossKill', stage: w.bossFight.stage })
       }
       st.lastBossAlive = w.bossAlive
+      for (let i = 0; i < pk.length; i++) {
+        const p = pk[i]
+        if (!p.__ptNew) continue
+        p.__ptNew = false
+        if (!p.alive) continue
+        const t = +w.time.toFixed(2)
+        if (p.kind === 'health') st.medkitDrops++
+        else if (p.kind === 'bonus') {
+          st.bonusDrops++
+          st.events.push({ t, type: 'bonus', id: p.sub })
+        } else if (p.kind === 'shard') {
+          st.shardDrops++
+          st.events.push({ t, type: 'shard' })
+        } else if (p.kind === 'core') {
+          st.coreDrops++
+          st.events.push({ t, type: 'core', row: p.sub })
+        }
+      }
       let timerPodAlive = false
       const podLife = POD_LIFE + w.mods.podLifeBonus
       for (let i = 0; i < pk.length; i++) {
@@ -859,6 +908,12 @@
       xpCollectFrac30,
       firstDraftAt: st.firstDraftAt,
       firstFusionAt: st.firstFusionAt,
+      medkitDrops: st.medkitDrops,
+      bonusDrops: st.bonusDrops,
+      shardDrops: st.shardDrops,
+      coreDrops: st.coreDrops,
+      coresTaken: st.coresTaken,
+      evolutions: [...w.evolutions],
       rerollsUsed: st.rerollsUsed,
       banishesUsed: st.banishesUsed,
       skips: st.skips,

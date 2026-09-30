@@ -294,3 +294,23 @@ export const SPAWN_ROOM = 20
 /** A new enemy fades in over this long (render: the emerge effect) and cannot
  *  bite until it has (sim). */
 export const ENEMY_EMERGE = 0.45
+// P9: Hive Cores, shards, bonuses, pilot rules (docs/NEXT-LEVEL.md 4.6, 4.10, A5.2, A5.3)
+/** Core shards and Hive Cores (A5.2). table: P(1, 3, 5 levels) per stage. */
+export const CORES = {
+  shardCooldown: 60, shardLife: 30,
+  table: { mid1: [0.60, 0.35, 0.05], mid2: [0.30, 0.50, 0.20], overtime: [0.20, 0.50, 0.30] },
+  primeLevels: 5,
+  rerollPerCore: 1, banishPerCore: 1,
+  revealSec: { 1: 1.2, 3: 1.8, 5: 2.4 }, skipAfterSec: 0.3,
+  shardRadius: 16, coreRadius: 26, shardTint: 0x57e0ff, coreTint: 0xffc24a,
+} as const
+/** Timed bonus pickups (A5.3). */
+export const BONUS = { perXpChance: 0.0015, pityAfter: 40, minGap: 8, maxOnField: 2, life: 9, blinkLast: 3, radius: 16 } as const
+/** Bonus effects (A5.3 table). */
+export const BONUS_FX = {
+  nukeR: 380, nukeEliteFrac: 0.3, nukeBossFrac: 0.06,
+  freezeDmgMul: 1.2, freezeBossMoveMul: 0.5,
+  overdriveFireMul: 1.6, overdriveMoveMul: 1.15,
+  fireblastShots: 24, fireblastDmgMul: 1.5, fireblastPierce: 3,
+  vacuumMinGems: 25,
+} as const

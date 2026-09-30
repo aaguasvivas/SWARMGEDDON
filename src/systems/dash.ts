@@ -19,8 +19,8 @@ export interface DashInput {
  * player's damage timers also tick here, before any system that can grant or
  * test them this tick, so a grant lasts exactly its length in ticks (0.20 s of
  * dash i-frames covers ticks 0 to 11). Player.update does the motion. The
- * start hooks are Adrenal Wake and SALVO STEP; a dash that ended on the last
- * update sets off Shock Step.
+ * start hooks are Adrenal Wake, SALVO STEP and EMBER's Afterburner; a dash
+ * that ended on the last update sets off Shock Step.
  */
 export function dashSystem(w: World, input: DashInput, dt: number): void {
   const pl = w.player
@@ -68,13 +68,19 @@ export function dashSystem(w: World, input: DashInput, dt: number): void {
   w.dashes++
   if (m.adrenalWake > 0) w.adrenalT = ADRENAL_WAKE.sec
   if (m.salvo > 0) fireRing(w, FUSION.salvoShots, FUSION.salvoDmgFrac, 0, Math.atan2(pl.dashDirY, pl.dashDirX))
+  const r = w.character.rules
+  if (r.dashReload) {
+    w.fireCooldown = 0
+    w.afterburnT = r.dashDmgSec
+  }
   w.feel.emit(FeelKind.Dash, 0, pl.x, pl.y, pl.dashDirX, pl.dashDirY)
 }
 
-/** Whether a dangerous overlap now would pay this dash's Close Call. */
+/** Whether a dangerous overlap now would pay this dash's Close Call. Never
+ *  under the SHIELD bonus: nothing can hurt the player then. */
 export function closeCallArmed(w: World): boolean {
   const pl = w.player
-  return pl.invuln > 0 && pl.invulnSrc === 1 && w.closeCallSeq !== w.dashSeq
+  return pl.invuln > 0 && pl.invulnSrc === 1 && w.closeCallSeq !== w.dashSeq && w.shieldT <= 0
 }
 
 /** Pay the Close Call reward. Callers check closeCallArmed first. */

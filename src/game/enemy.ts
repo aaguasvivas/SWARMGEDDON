@@ -55,6 +55,8 @@ export class Enemy implements Poolable {
    *  elite/boss multipliers. */
   burnT = 0
   burnDps = 0
+  /** The burn came from a FIREBLAST shot: its kill drops no bonus (set by every ignite). */
+  burnNoBonus = false
   /** Overpressure stagger remaining (seconds): no movement while > 0. */
   staggerT = 0
   /** World.dashSeq of the dash that last rammed this enemy (RAM, once per dash). */

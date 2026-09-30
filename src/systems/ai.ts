@@ -89,6 +89,12 @@ export function aiSystem(world: World, dt: number): void {
     const inFight = cage.active && e.brood === fight
     const caged = cage.active && !inFight
     if (inFight) brood++
+    // FREEZE: every non-boss enemy stands still and holds fire.
+    if (world.freezeT > 0) {
+      e.vx = 0
+      e.vy = 0
+      continue
+    }
     if (e.stream) {
       if (streamStep(world, e, dt) && caged) fence(e, cage)
       continue

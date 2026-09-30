@@ -42,6 +42,8 @@ export class Projectile implements Poolable {
   hitN = 0
   /** EnemyDef.idx of the enemy that fired this shot (-1 for the player's own). */
   ownerIdx = -1
+  /** FIREBLAST shot: its kills (and the blasts they set off) drop no bonus. */
+  noBonus = false
 
   constructor(readonly sprite: Sprite) {}
 }

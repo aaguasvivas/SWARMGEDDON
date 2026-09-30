@@ -167,6 +167,43 @@ function drawCrate(g: Graphics): void {
   }
 }
 
+/** Core shard (A5.2, r 16): a small faceted crystal, tinted cyan at spawn. */
+function drawShard(g: Graphics): void {
+  g.poly([0, -15, 9, -5, 7, 10, -7, 10, -9, -5]).fill(W)
+  g.poly([0, -15, 0, 10, -7, 10, -9, -5]).fill({ color: SHADE, alpha: 1 })
+  g.poly([0, -15, 9, -5, 0, -2]).fill(LIGHT)
+  g.poly([0, -15, 9, -5, 7, 10, -7, 10, -9, -5]).stroke({ width: 2, color: DARK })
+}
+
+/** Hive Core (A5.2, r 26): a ringed, faceted core, tinted gold at spawn. */
+function drawCore(g: Graphics): void {
+  g.circle(0, 0, 25).stroke({ width: 3, color: W, alpha: 0.9 })
+  g.circle(0, 0, 25).stroke({ width: 9, color: W, alpha: 0.18 })
+  const pts: number[] = []
+  for (let i = 0; i < 6; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI) / 3
+    pts.push(Math.cos(a) * 17, Math.sin(a) * 17)
+  }
+  g.poly(pts).fill(W)
+  g.poly([0, -17, 14.7, -8.5, 0, 0]).fill(LIGHT)
+  g.poly([0, 0, 14.7, 8.5, 0, 17, -14.7, 8.5]).fill({ color: SHADE, alpha: 1 })
+  g.poly(pts).stroke({ width: 2.5, color: DARK })
+  g.circle(0, 0, 5).fill(DARK)
+}
+
+/** Bonus token (A5.3, r 16): a ringed disc with a star, tinted per bonus. */
+function drawBonus(g: Graphics): void {
+  g.circle(0, 0, 15).fill({ color: W, alpha: 0.25 })
+  g.circle(0, 0, 15).stroke({ width: 3, color: W })
+  const pts: number[] = []
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI) / 5
+    const r = i % 2 === 0 ? 10 : 4.5
+    pts.push(Math.cos(a) * r, Math.sin(a) * r)
+  }
+  g.poly(pts).fill(W)
+}
+
 /** Acid ground pool (tinted green, semi-transparent; scaled per pool). */
 function drawAcidPool(g: Graphics): void {
   for (let i = 0; i < 7; i++) {
@@ -379,4 +416,7 @@ export const PLACEHOLDER_SPRITES: Record<string, SpriteBuilder> = {
   health: drawHealth,
   crate: drawCrate,
   acidPool: drawAcidPool,
+  shard: drawShard,
+  core: drawCore,
+  bonus: drawBonus,
 }

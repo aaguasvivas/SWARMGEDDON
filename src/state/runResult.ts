@@ -72,7 +72,7 @@ export function buildRunResult(w: World, end: RunEnd, meta: RunMeta): RunResult 
     dashes: w.dashes,
     closeCalls: w.closeCalls,
     fusions: FUSIONS.filter((f) => w.perkStacks.has(f.id)).map((f) => f.id),
-    evolutions: [],
+    evolutions: [...w.evolutions],
     perks: [...w.perkStacks],
     killsByEnemy,
     killer: end === 'death' ? killerId(w.lastHitBy) : null,

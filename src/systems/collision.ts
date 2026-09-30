@@ -1,6 +1,6 @@
 import {
-  ARC_ROUNDS, BITE, BLAST_CRIT, BOSS_SLOW_CAP, BURN_SEC, CLOSE_CALL, ENEMY_EMERGE, EVO, FUSION, GRACE, HEALTH_DROP_CHANCE,
-  HEALTH_HEAL, HEALTH_HEAL_ELITE, MAX_ENEMIES, PODS, SEEK, SPAWN_ROOM,
+  ARC_ROUNDS, BITE, BLAST_CRIT, BLAST_NO_BONUS, BONUS_FX, BOSS_SLOW_CAP, BURN_SEC, CLOSE_CALL, CORES, ENEMY_EMERGE, EVO,
+  FUSION, GRACE, HEALTH_DROP_CHANCE, HEALTH_HEAL, HEALTH_HEAL_ELITE, MAX_ENEMIES, PODS, SEEK, SPAWN_ROOM,
 } from '../config.ts'
 import { distSq } from '../core/vec.ts'
 import { AF_BROOD, AF_VOLATILE, BROOD, VOLATILE } from '../content/affixes.ts'
@@ -16,9 +16,11 @@ import {
 import { FF_AOE, FF_BOSS, FF_CRIT, FF_ELITE, FF_RAM, FeelKind } from '../effects/feelQueue.ts'
 import { spawnAcidPool } from './acid.ts'
 import { queueBlast, drainBlasts } from './blasts.ts'
+import { bonusOnKill } from './bonuses.ts'
+import { coreRow } from './cores.ts'
 import { hurtPlayer, killHeal, refillKillHeal } from './damage.ts'
 import { closeCall, closeCallArmed } from './dash.ts'
-import { dropBossPod, dropGem, dropHealth, dropPod } from './pickups.ts'
+import { dropBossPod, dropGem, dropHealth, dropHiveCore, dropPod, dropShard } from './pickups.ts'
 import { directorBossKilled } from './director.ts'
 import { spawnHazard } from './hazards.ts'
 import { spawnEnemy } from './spawn.ts'
@@ -36,6 +38,17 @@ const BOSS_KILL_GIBS = 40
 const EMERGE_EPS = 1e-6
 /** XP multiplier of the kill being resolved (GUILLOTINE culls drop double). */
 let killXpMul = 1
+/** The damage being resolved: a NUKE's outright kill (scores nothing), a NUKE
+ *  hit (flat: no FREEZE or INFERNO multiplier), or damage from a NUKE or a
+ *  FIREBLAST shot (its kills, and the blasts and burns they set off, drop no bonus). */
+let killSrc = KillSource.Weapon
+let flatHit = false
+let killNoBonus = false
+
+/** BLAST_NO_BONUS while the damage being resolved may drop no bonus. */
+function noBonusFlag(): number {
+  return killNoBonus ? BLAST_NO_BONUS : 0
+}
 
 /**
  * All circle-overlap resolution for the tick: player projectiles vs enemies
@@ -64,6 +77,7 @@ export function collisionSystem(world: World, dt: number): void {
         if (hasHit(p, e.uid)) continue
         p.hitUids[p.hitN & 7] = e.uid
         p.hitN++
+        killNoBonus = p.noBonus
         const crit = applyHit(world, e, p)
         spawnImpact(world, p.x, p.y)
         if (p.pierce > 0) {
@@ -82,6 +96,7 @@ export function collisionSystem(world: World, dt: number): void {
       }
     }
   }
+  killNoBonus = false
 
   // Enemy contact: one bite per BITE.window from the top 3 overlapping
   // enemies, charger rams as discrete hits, thorns back on every toucher.
@@ -113,6 +128,11 @@ export function collisionSystem(world: World, dt: number): void {
         ramHit(world, e)
         if (!e.alive) continue
       }
+    }
+    // FREEZE: frozen enemies neither bite nor ram (thorns still hurt them).
+    if (world.freezeT > 0 && !e.def.boss) {
+      if (d2 < rr * rr && m.thorns > 0) thornsDamage(world, e, m.thorns * dt)
+      continue
     }
     // Authored boss damage never takes the time ramp (docs/NEXT-LEVEL.md 4.1).
     const mul = e.def.boss ? 1 : world.dmgMul
@@ -286,7 +306,7 @@ function applyHit(world: World, e: Enemy, p: Projectile): boolean {
   // state before this hit (SHATTER needs an enemy slowed before it dies).
   if (!e.alive) {
     if (p.evo === 'pierceOnKill') p.pierce++
-    if (crit && m.headhunter > 0) queueBlast(world, e.x, e.y, FUSION.headhunterR, blastBase * FUSION.headhunterFrac, 0, BLAST_CRIT)
+    if (crit && m.headhunter > 0) queueBlast(world, e.x, e.y, FUSION.headhunterR, blastBase * FUSION.headhunterFrac, 0, BLAST_CRIT | noBonusFlag())
   } else {
     if (m.slowOnHit > 0) {
       e.slow = 1.2
@@ -318,10 +338,12 @@ function lockOnMul(world: World, uid: number): number {
   return 1 + (b < EVO.lockMax ? b : EVO.lockMax)
 }
 
-/** Set a burn; it refreshes and does not stack (the stronger dps wins). */
+/** Set a burn; it refreshes and does not stack (the stronger dps wins). The
+ *  latest ignite decides whether its kill may drop a bonus. */
 function ignite(e: Enemy, dps: number): void {
   if (e.burnT <= 0 || dps > e.burnDps) e.burnDps = dps
   e.burnT = BURN_SEC
+  e.burnNoBonus = killNoBonus
 }
 
 function burnTick(world: World, e: Enemy, dt: number): void {
@@ -329,7 +351,9 @@ function burnTick(world: World, e: Enemy, dt: number): void {
   if (e.submerged) return
   world.lastHitVx = 0
   world.lastHitVy = 0
+  killNoBonus = e.burnNoBonus
   damageEnemy(world, e, vsTarget(world, e, e.burnDps * dt))
+  killNoBonus = false
 }
 
 /** RAM: once per dash, an enemy the dash passes takes thorns x ramThornsMul,
@@ -386,7 +410,7 @@ function queueBomblets(world: World, p: Projectile, dmg: number): void {
   for (let k = 0; k < EVO.bombletCount; k++) {
     const a = a0 + (k / EVO.bombletCount) * Math.PI * 2
     queueBlast(world, p.x + Math.cos(a) * EVO.bombletDist, p.y + Math.sin(a) * EVO.bombletDist,
-      EVO.bombletR, dmg * EVO.bombletFrac, EVO.bombletDelay, 0)
+      EVO.bombletR, dmg * EVO.bombletFrac, EVO.bombletDelay, noBonusFlag())
   }
 }
 
@@ -399,10 +423,15 @@ function dealDamage(world: World, e: Enemy, dmg: number): void {
 }
 
 /** Remove HP and resolve death; burning enemies take more while INFERNO is
- *  held, and a BROOD elite bursts once when it drops to half HP. */
+ *  held and frozen ones while FREEZE runs (neither from the NUKE, whose hits
+ *  are exact), and a BROOD elite bursts once when it drops to half HP. */
 function damageEnemy(world: World, e: Enemy, dmg: number): void {
   if (!e.alive) return
-  e.hp -= e.burnT > 0 && world.weapon.evo === 'ignite' ? dmg * EVO.infernoBurnMul : dmg
+  if (!flatHit) {
+    if (world.freezeT > 0 && !e.def.boss) dmg *= BONUS_FX.freezeDmgMul
+    if (e.burnT > 0 && world.weapon.evo === 'ignite') dmg *= EVO.infernoBurnMul
+  }
+  e.hp -= dmg
   if ((e.affix & AF_BROOD) !== 0 && !e.halfBurst && e.hp <= e.maxHp * BROOD.atHpFrac) {
     e.halfBurst = true
     broodBurst(world, e)
@@ -410,9 +439,27 @@ function damageEnemy(world: World, e: Enemy, dmg: number): void {
   if (e.hp <= 0) killEnemy(world, e)
 }
 
-/** A queued blast hits `e` (blasts.ts); AoE takes the elite and boss multipliers. */
-export function blastHit(world: World, e: Enemy, dmg: number): void {
+/** A queued blast hits `e` (blasts.ts); AoE takes the elite and boss
+ *  multipliers. A BLAST_NO_BONUS blast's kills drop no bonus. */
+export function blastHit(world: World, e: Enemy, dmg: number, noBonus: boolean): void {
+  killNoBonus = noBonus
   dealDamage(world, e, vsTarget(world, e, dmg))
+  killNoBonus = false
+}
+
+/** A NUKE hit: flat damage, no multipliers, and its kills drop no bonus. The
+ *  enemies it kills outright give kills and XP but no score; an elite or boss
+ *  its fraction finishes scores like any kill. */
+export function nukeHit(world: World, e: Enemy, dmg: number): void {
+  if (!e.def.elite && !e.def.boss) killSrc = KillSource.NoScore
+  flatHit = true
+  killNoBonus = true
+  world.lastHitVx = 0
+  world.lastHitVy = 0
+  dealDamage(world, e, dmg)
+  killSrc = KillSource.Weapon
+  flatHit = false
+  killNoBonus = false
 }
 
 /** BROOD: world fodder around the elite, one spawn draw for the ring's turn. */
@@ -484,7 +531,7 @@ function chainLightning(world: World, from: Enemy, chain: number, range: number,
     dealDamage(world, best, hd)
     if (m.firestorm > 0 && best.alive) ignite(best, m.burnDps * m.damageMul)
   }
-  if (lastBlast > 0 && seenN > 1) queueBlast(world, cx, cy, EVO.stormBlastR, lastBlast, 0, 0)
+  if (lastBlast > 0 && seenN > 1) queueBlast(world, cx, cy, EVO.stormBlastR, lastBlast, 0, noBonusFlag())
 }
 
 /** AoE explosion (rockets / explosive rounds). */
@@ -506,7 +553,7 @@ function killEnemy(world: World, e: Enemy): void {
   if (!e.alive) return
   e.alive = false
   const def = e.def
-  scoreKill(world, def, KillSource.Weapon)
+  scoreKill(world, def, killSrc)
 
   world.ichor.queueStamp(e.x, e.y, world.rngs.fx)
   spawnGibs(world, e.x, e.y, def.boss ? BOSS_KILL_GIBS : def.gibCount, e.gibTint, world.lastHitVx, world.lastHitVy)
@@ -524,7 +571,7 @@ function killEnemy(world: World, e: Enemy): void {
   const m = world.mods
   if (m.lifestealPerKill > 0) killHeal(world, m.lifestealPerKill)
   if (m.shatter > 0 && e.slow > 0 && !def.boss) {
-    queueBlast(world, e.x, e.y, FUSION.shatterR, (FUSION.shatterBase + FUSION.shatterFrac * e.maxHp) * m.damageMul, 0, 0)
+    queueBlast(world, e.x, e.y, FUSION.shatterR, (FUSION.shatterBase + FUSION.shatterFrac * e.maxHp) * m.damageMul, 0, noBonusFlag())
   }
 
   dropGem(world, e.x, e.y, (def.elite || def.boss ? def.xp : def.xp * world.xpScale) * killXpMul)
@@ -534,23 +581,27 @@ function killEnemy(world: World, e: Enemy): void {
   // you down also feeds you the medkits to survive it, while a healthy player
   // gets almost none (the difficulty stays intact). Roll the RNG always (keeps
   // the daily stream deterministic), then gate on a danger-scaled threshold.
+  // VESPER's rolls happen too; only her drops are skipped.
   const loot = world.rngs.loot
   const roll = loot.float()
+  const rules = world.character.rules
   if (def.boss) {
     for (let i = 0; i < 5; i++) {
       const a = loot.angle()
-      dropHealth(world, e.x + Math.cos(a) * 26, e.y + Math.sin(a) * 26, HEALTH_HEAL_ELITE)
+      if (rules.medkits) dropHealth(world, e.x + Math.cos(a) * 26, e.y + Math.sin(a) * 26, HEALTH_HEAL_ELITE)
     }
   } else if (def.elite) {
-    dropHealth(world, e.x, e.y, HEALTH_HEAL_ELITE)
+    if (rules.medkits) dropHealth(world, e.x, e.y, HEALTH_HEAL_ELITE)
   } else {
     const hpFrac = world.player.hp / world.player.maxHp
     if (hpFrac < 0.985) {
       // ~1x base at full HP up to ~4x near death.
       const chance = HEALTH_DROP_CHANCE * (1 + (1 - hpFrac) * 3)
-      if (roll < chance) dropHealth(world, e.x, e.y, HEALTH_HEAL)
+      if (roll < chance && rules.medkits) dropHealth(world, e.x, e.y, HEALTH_HEAL)
     }
   }
+  if (def.boss) reaperGrow(world, rules.bossMaxHp)
+  else if (def.elite) reaperGrow(world, rules.eliteMaxHp)
 
   if (e.affix !== 0) affixDeath(world, e)
 
@@ -564,13 +615,27 @@ function killEnemy(world: World, e: Enemy): void {
   }
 
   if (def.boss) {
+    const stage = world.bossFight.stage
     directorBossKilled(world, e)
     explode(world, e.x, e.y, 140, 0)
+    // The PRIME's core comes with OVERTIME (grantPrimeCore), not at the corpse.
+    if (stage !== 'final') dropHiveCore(world, e.x, e.y, coreRow(stage))
     dropBossPod(world, e.x, e.y)
     world.feel.emit(FeelKind.BossKill, FF_BOSS, e.x, e.y, 0, 0, def)
-  } else if (def.elite && loot.bool(PODS.eliteChance)) {
-    dropPod(world, e.x, e.y)
+  } else if (def.elite) {
+    if (loot.bool(PODS.eliteChance)) dropPod(world, e.x, e.y)
+    if (world.time >= world.eliteCoreReadyAt && dropShard(world, e.x, e.y)) world.eliteCoreReadyAt = world.time + CORES.shardCooldown
   }
+  bonusOnKill(world, def, e.x, e.y, killNoBonus)
+}
+
+/** VESPER: an elite or boss kill adds max HP and heals the same. */
+function reaperGrow(world: World, hp: number): void {
+  if (hp <= 0) return
+  const pl = world.player
+  world.reaperHp += hp
+  pl.maxHp += hp
+  pl.hp = Math.min(pl.maxHp, pl.hp + hp)
 }
 
 /** Player death -> revive if available, else trigger the deferred game over. */

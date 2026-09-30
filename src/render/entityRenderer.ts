@@ -1,5 +1,5 @@
 import { Container, type Texture } from 'pixi.js'
-import { BOSS_EMERGE, ENEMY_EMERGE, FIXED_DT, PICKUP_RESERVE, PODS } from '../config.ts'
+import { BONUS, BOSS_EMERGE, ENEMY_EMERGE, FIXED_DT, PICKUP_RESERVE, PODS } from '../config.ts'
 import { lerpHex } from '../core/color.ts'
 import { lerp, lerpAngle } from '../core/vec.ts'
 import { WEAPONS } from '../content/weapons.ts'
@@ -25,6 +25,7 @@ const whiteTex: (Texture | undefined)[] = []
  */
 export function renderEntities(world: World, alpha: number): void {
   const t = world.time + alpha * FIXED_DT
+  const frozen = world.freezeT > 0
 
   const enemies = world.enemies.active
   for (let i = 0; i < enemies.length; i++) {
@@ -72,7 +73,7 @@ export function renderEntities(world: World, alpha: number): void {
       s.tint = e.tint
     } else {
       s.scale.set(base * (1 + wob * 0.1), base * (1 - wob * 0.1))
-      s.tint = e.slow > 0 ? 0x7fd8ff : e.def.boss && world.director.frenzy > 0 ? lerpHex(e.tint, FRENZY_TINT, 0.3 + 0.25 * Math.sin(t * 8)) : e.tint
+      s.tint = e.slow > 0 || (frozen && !e.def.boss) ? 0x7fd8ff : e.def.boss && world.director.frenzy > 0 ? lerpHex(e.tint, FRENZY_TINT, 0.3 + 0.25 * Math.sin(t * 8)) : e.tint
     }
   }
 
@@ -121,6 +122,18 @@ export function renderEntities(world: World, alpha: number): void {
       s.rotation = Math.sin(t * 3 + p.phase) * 0.12
       s.scale.set(1 + Math.sin(t * 5 + p.phase) * 0.16)
       s.y += Math.sin(t * 4 + p.phase) * 3
+    } else if (p.kind === 'shard') {
+      s.rotation = Math.sin(t * 2.5) * 0.25
+      s.scale.set(1 + Math.sin(t * 6) * 0.1)
+      s.y += Math.sin(t * 3) * 3
+    } else if (p.kind === 'core') {
+      s.rotation = t * 0.8
+      s.scale.set(1 + Math.sin(t * 3.5) * 0.08)
+    } else if (p.kind === 'bonus') {
+      s.rotation = t * 1.5
+      s.scale.set(1 + Math.sin(t * 7) * 0.12)
+      s.alpha = p.life < BONUS.blinkLast && Math.sin(t * 25) < 0 ? 0.3 : 1
+      continue
     } else {
       // A pod swells while the player holds it (hold-to-take fill) and blinks
       // through its last PODS.blinkLast seconds.

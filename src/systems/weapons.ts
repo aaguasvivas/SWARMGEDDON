@@ -1,4 +1,4 @@
-import { BERSERK_MEDKIT } from '../config.ts'
+import { BERSERK_MEDKIT, BONUS_FX } from '../config.ts'
 import { weaponIndex } from '../content/weapons.ts'
 import { TRACER_STRETCH_SPEED, spawnMuzzle } from '../effects/fx.ts'
 import { FeelKind } from '../effects/feelQueue.ts'
@@ -14,14 +14,16 @@ const AMMO_EPS = 1e-6
  * Player firing. Effective stats = weapon base * perk modifiers. Ammo is
  * time based: a trigger pull costs weapon.fireRate / effective fire rate, so a
  * magazine lasts ammo / fireRate seconds whatever the fire-rate perks. An
- * empty magazine reverts to the base weapon. Berserker scales fire rate by
- * missing HP and bursts after a medkit; Adrenal Wake speeds it up after a
- * dash. Crit, explosion and chain resolve at hit time.
+ * empty magazine reverts to the base weapon (NOVA salvages it). Berserker
+ * scales fire rate by missing HP and bursts after a medkit; Adrenal Wake
+ * speeds it up after a dash; OVERDRIVE speeds it up and costs no ammo. Crit,
+ * explosion and chain resolve at hit time.
  */
 export function weaponSystem(world: World, dt: number, input: InputManager): void {
   world.fireCooldown -= dt
   world.adrenalT = tickDown(world.adrenalT, dt)
   world.berserkT = tickDown(world.berserkT, dt)
+  world.afterburnT = tickDown(world.afterburnT, dt)
 
   if (!input.firing) {
     if (world.fireCooldown < 0) world.fireCooldown = 0
@@ -36,19 +38,21 @@ export function weaponSystem(world: World, dt: number, input: InputManager): voi
   if (m.berserker > 0) fireRate *= 1 + (1 - world.player.hp / world.player.maxHp) * m.berserker
   if (world.berserkT > 0) fireRate *= 1 + BERSERK_MEDKIT.fireRate
   if (world.adrenalT > 0) fireRate *= 1 + m.adrenalWake
+  if (world.overdriveT > 0) fireRate *= BONUS_FX.overdriveFireMul
   const interval = 1 / fireRate
   const cost = world.weapon.fireRate * interval
   let guard = 0
   while (world.fireCooldown <= 0 && guard++ < 14) {
     world.fireCooldown += interval
     fire(world, ax, ay)
-    if (world.ammo < 0) continue
+    if (world.ammo < 0 || world.overdriveT > 0) continue
     const before = world.ammo
     world.ammo -= cost
     const pl = world.player
     if (world.ammo <= AMMO_EPS) {
       world.feel.emit(FeelKind.WeaponEmpty, 0, pl.x, pl.y, 0, weaponIndex(world.weapon.id))
       world.equipWeapon(world.baseWeaponId)
+      world.salvage++
       break
     }
     const low = world.ammoMax * 0.2
@@ -67,7 +71,7 @@ function fire(world: World, ax: number, ay: number): void {
   const count = w.projectilesPerShot + m.extraProjectiles
   const spread = w.spread * m.spreadMul
   const rng = world.rngs.combat
-  for (let i = 0; i < count; i++) launch(world, mx, my, baseAng + rng.range(-spread, spread), 1, 0)
+  for (let i = 0; i < count; i++) launch(world, mx, my, baseAng + rng.range(-spread, spread), 1, 0, false)
 
   spawnMuzzle(world, mx, my, baseAng)
   world.feel.emit(FeelKind.Shot, 0, mx, my, baseAng, weaponIndex(w.id))
@@ -75,23 +79,38 @@ function fire(world: World, ax: number, ay: number): void {
 
 /** A ring of `n` evenly spaced shots of the current weapon around the player,
  *  starting at `ang0`, at `dmgFrac` of its damage (its explosion included)
- *  with `extraPierce` more pierce. No ammo cost and no draws. */
-export function fireRing(world: World, n: number, dmgFrac: number, extraPierce: number, ang0: number): void {
+ *  with `extraPierce` more pierce. No ammo cost and no draws. `noBonus`: the
+ *  shots' kills drop no bonus (FIREBLAST). */
+export function fireRing(world: World, n: number, dmgFrac: number, extraPierce: number, ang0: number, noBonus = false): void {
   const w = world.weapon
   const pl = world.player
   const off = pl.radius + 8
   for (let i = 0; i < n; i++) {
     const a = ang0 + (i / n) * TAU
-    launch(world, pl.x + Math.cos(a) * off, pl.y + Math.sin(a) * off, a, dmgFrac, extraPierce)
+    launch(world, pl.x + Math.cos(a) * off, pl.y + Math.sin(a) * off, a, dmgFrac, extraPierce, noBonus)
   }
   world.feel.emit(FeelKind.Shot, 0, pl.x, pl.y, ang0, weaponIndex(w.id))
 }
 
+/** The pilot rule's damage multiplier: NOVA's salvage on the base weapon,
+ *  EMBER's afterburner after a dash. */
+function pilotDamageMul(world: World): number {
+  const r = world.character.rules
+  let k = 1
+  if (world.salvage > 0 && world.weapon.id === world.baseWeaponId) {
+    const s = world.salvage * r.salvageDmg
+    k *= 1 + (s < r.salvageMax ? s : r.salvageMax)
+  }
+  if (world.afterburnT > 0) k *= r.dashDmgMul
+  return k
+}
+
 /** One bullet of the current weapon with the build's modifiers. `dmgMul`
  *  scales both its hit and the weapon's own explosion. */
-function launch(world: World, x: number, y: number, ang: number, dmgMul: number, extraPierce: number): void {
+function launch(world: World, x: number, y: number, ang: number, dmgMul: number, extraPierce: number, noBonus: boolean): void {
   const w = world.weapon
   const m = world.mods
+  dmgMul *= pilotDamageMul(world)
   const damage = w.damage * m.damageMul * dmgMul
   const speed = w.projectileSpeed * m.projectileSpeedMul
   const scale = w.projectileRadius / 4
@@ -117,6 +136,7 @@ function launch(world: World, x: number, y: number, ang: number, dmgMul: number,
   p.chain = w.chain ? w.chain + (m.arcHops > 0 ? m.arcHops - 1 : 0) : 0
   p.chainRange = w.chainRange ?? 0
   p.hitN = 0
+  p.noBonus = noBonus
   const s = p.sprite
   s.visible = true
   s.alpha = 1

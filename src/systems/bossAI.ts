@@ -1,4 +1,4 @@
-import { BOSS_EMERGE, BOSS_ROAR, BOSS_TELE_MIN, FRENZY_CADENCE, FRENZY_CADENCE_MAX, MAX_BROOD, MAX_ENEMIES, MAX_ENEMY_PROJECTILES } from '../config.ts'
+import { BONUS_FX, BOSS_EMERGE, BOSS_ROAR, BOSS_TELE_MIN, FRENZY_CADENCE, FRENZY_CADENCE_MAX, MAX_BROOD, MAX_ENEMIES, MAX_ENEMY_PROJECTILES } from '../config.ts'
 import { lerpHex } from '../core/color.ts'
 import { clamp } from '../core/vec.ts'
 import {
@@ -803,6 +803,7 @@ function idleMove(w: World, e: Enemy, kit: BossKit, dt: number): void {
   const uy = dy / d
   let spd = e.speed * kit.speedMul
   if (e.slow > 0) spd *= 1 - Math.min(e.slowFactor, BOSS_SLOW_MAX)
+  if (w.freezeT > 0) spd *= BONUS_FX.freezeBossMoveMul
   let mx = 0
   let my = 0
   if (d > kit.range + RANGE_BAND) {

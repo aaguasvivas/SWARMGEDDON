@@ -1,8 +1,9 @@
 import { Container, type Sprite } from 'pixi.js'
-import type { AudioEngine } from '../audio/audio.ts'
-import { TIER_COLOR } from '../config.ts'
+import type { AudioEngine, SfxName } from '../audio/audio.ts'
+import { CORES, TIER_COLOR } from '../config.ts'
+import { BONUSES, BONUS_NUKE } from '../content/bonuses.ts'
 import { type EnemyDef } from '../content/enemies.ts'
-import { FUSIONS, PERKS } from '../content/perks.ts'
+import { FUSIONS, PERKS, type PerkDef } from '../content/perks.ts'
 import { WEAPONS, WEAPON_LIST } from '../content/weapons.ts'
 import { CLOSE_CALL_CHAIN } from '../core/rules.ts'
 import type { World } from '../game/world.ts'
@@ -34,6 +35,15 @@ const HITSTOP_ELITE_MS = 50
 const HITSTOP_REVIVE_MS = 120
 /** A16.3: a dash kicks the view this far along its heading. */
 const DASH_KICK_PX = 4
+/** A16.2 recipe per BONUSES index. */
+const BONUS_SFX: readonly SfxName[] = ['bonus_nuke', 'bonus_freeze', 'bonus_overdrive', 'bonus_shield', 'bonus_fireblast', 'bonus_vacuum']
+/** A16.3 trauma per BONUSES index (NUKE 0.6, FIREBLAST 0.25). */
+const BONUS_TRAUMA = [0.6, 0, 0, 0, 0.25, 0] as const
+/** A timed bonus ends with its own recipe an octave down and a `SHIELD OFF` label. */
+const BONUS_END_SEMIS = -12
+const BONUS_END_LABEL: readonly string[] = BONUSES.map((d) => `${d.name} OFF`)
+/** A15 bonus callout sub: `8 SECONDS` for a timed bonus, none for an instant one. */
+const BONUS_SUB: readonly string[] = BONUSES.map((d) => (d.duration > 0 ? `${d.duration} SECONDS` : ''))
 
 /** A boss telegraph sounds the charger windup shifted per boss, so each
  *  boss has its own cue: the Queen a fifth down, the Matron a tone down, the
@@ -371,9 +381,29 @@ export class FeelDirector {
           this.audio.play(a >= 5 ? 'core5' : a >= 3 ? 'core3' : 'core1')
           this.heavyThenSuccess(nowMs)
           break
-        case FeelKind.Shard:
+        case FeelKind.Shard: {
           this.audio.play('shard')
+          const p = q.ref[i] as PerkDef | null
+          this.numbers.label(p ? `+1 ${p.name.toUpperCase()} (LV ${a})` : '+1 SHARPEN', x, y, 30, CORES.shardTint)
           break
+        }
+        case FeelKind.BonusPickup: {
+          const def = BONUSES[b]
+          if (!def) break
+          this.audio.play(BONUS_SFX[b]!)
+          const trauma = BONUS_TRAUMA[b]!
+          if (trauma > 0) this.shake.add(trauma, 1)
+          if (b === BONUS_NUKE) haptic('heavy')
+          this.callouts.show(CALLOUT.bonus, def.name, BONUS_SUB[b]!, def.tint)
+          break
+        }
+        case FeelKind.BonusEnd: {
+          const def = BONUSES[b]
+          if (!def) break
+          this.audio.play(BONUS_SFX[b]!, BONUS_END_SEMIS)
+          this.numbers.label(BONUS_END_LABEL[b]!, x, y, 34, def.tint)
+          break
+        }
         case FeelKind.Win:
           this.audio.play('win')
           haptic('success')
