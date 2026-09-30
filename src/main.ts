@@ -39,7 +39,8 @@ import { flushUpdatePrompt, setupUpdatePrompt } from './pwa/updatePrompt.ts'
 import { CHARACTERS, DEFAULT_CHARACTER_ID, characterById } from './content/characters.ts'
 import { ARENAS, DEFAULT_ARENA_ID, arenaById } from './content/arenas.ts'
 import { evaluateUnlocks, grant, isUnlocked } from './state/unlocks.ts'
-import { spawnSystem, spawnEnemy, debugFloodSwarmers } from './systems/spawn.ts'
+import { spawnEnemy, debugFloodSwarmers } from './systems/spawn.ts'
+import { directorJumpTo, directorTick } from './systems/director.ts'
 import { aiSystem, buildEnemyHash } from './systems/ai.ts'
 import { weaponSystem } from './systems/weapons.ts'
 import { projectileSystem, enemyProjectileSystem } from './systems/projectiles.ts'
@@ -477,7 +478,7 @@ async function boot(): Promise<void> {
     // from the last rendered frame (exactly what the player saw and aimed at).
     // The camera itself is recomputed each render from the interpolated position.
     input.update(player.x - cam.x, player.y - cam.y)
-    spawnSystem(world, dt)
+    directorTick(world, dt)
     buildEnemyHash(world)
     aiSystem(world, dt)
     dashSystem(world, input, dt)
@@ -720,6 +721,7 @@ async function boot(): Promise<void> {
         for (let i = 0; i < n; i++) stepSim(FIXED_DT)
       },
       flood: (n: number) => debugFloodSwarmers(world, n),
+      jumpTo: (t: number) => directorJumpTo(world, t),
       spawn: (id: string, n = 1) => {
         const b = world.arena.bounds
         const rng = world.rngs.spawn

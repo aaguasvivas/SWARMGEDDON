@@ -249,7 +249,7 @@ async function runSize(browser, size) {
         e.y = e.prevY = py + Math.sin(i * GOLD) * r * 1.2
         e.bornAt = w.time - 1
       })
-      w.bossTimer = 0
+      S.jumpTo(240)
       S.step(2)
       if (w.boss) { w.boss.x = w.player.x + 170; w.boss.y = w.player.y - 90; w.boss.prevX = w.boss.x; w.boss.prevY = w.boss.y; w.boss.hp = w.boss.maxHp * 0.64 }
       S.give('rocket')

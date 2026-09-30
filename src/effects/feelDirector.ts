@@ -1,6 +1,6 @@
 import type { AudioEngine } from '../audio/audio.ts'
 import { COLORS } from '../config.ts'
-import type { EnemyDef } from '../content/enemies.ts'
+import { ENEMIES, type EnemyDef } from '../content/enemies.ts'
 import { WEAPON_LIST } from '../content/weapons.ts'
 import type { World } from '../game/world.ts'
 import type { InputManager } from '../input/input.ts'
@@ -28,6 +28,9 @@ const HITSTOP_ELITE_MS = 50
 const HITSTOP_REVIVE_MS = 120
 /** A16.3: a dash kicks the view this far along its heading. */
 const DASH_KICK_PX = 4
+
+const ALERT_HOLD_LONG = 3.0
+const ALERT_HOLD_SHORT = 2.0
 
 /**
  * Turns the sim's FeelQueue into sound, shake, flashes, floating text and time
@@ -141,7 +144,7 @@ export class FeelDirector {
         case FeelKind.BossKill:
           this.shake.add(0.85, 1)
           this.time.play(TimePreset.BossKill)
-          announce(this.world, this.world.arenaTheme.slainText, x, y - 36, 0xffe066)
+          announce(this.world, this.world.script.text.slain, x, y - 36, 0xffe066)
           break
         case FeelKind.Dash:
           this.shake.kick(a * DASH_KICK_PX, b * DASH_KICK_PX)
@@ -207,9 +210,12 @@ export class FeelDirector {
   private onAlert(x: number, y: number, slot: number): void {
     const s = this.world.alerts.slots[slot]
     if (!s) return
-    const boss = this.world.boss
-    const color = s.kind === AlertKind.Boss && boss ? this.world.broodTint(boss.def.tint) : 0xff6aa8
-    announce(this.world, s.title, x, y - 40, color)
+    const bossy = s.kind === AlertKind.Boss || s.kind === AlertKind.Final
+    const color = bossy ? this.world.broodTint(ENEMIES[this.world.script.boss.midId]!.tint) : 0xff6aa8
+    // A15 holds: boss, final and event alerts last until the beat lands.
+    const life = bossy || s.kind === AlertKind.Event ? ALERT_HOLD_LONG : ALERT_HOLD_SHORT
+    announce(this.world, s.title, x, y - 52, color, life)
+    if (s.sub) announce(this.world, s.sub, x, y - 30, color, life)
   }
 
   /** Kick the view `px` along the line from (sx, sy) to the player. */

@@ -232,13 +232,13 @@ export function spawnDamageNumber(world: World, x: number, y: number, dmg: numbe
 }
 
 /** Floating announcement (e.g. weapon pickup name). */
-export function announce(world: World, text: string, x: number, y: number, color: number): void {
+export function announce(world: World, text: string, x: number, y: number, color: number, life = 1.1): void {
   if (world.floaters.size >= MAX_FLOATERS) return
   const f = world.floaters.acquire()
   f.x = x
   f.y = f.prevY = y
   f.vy = -34
-  f.life = f.maxLife = 1.1
+  f.life = f.maxLife = life
   f.text.text = text
   f.text.style.fontSize = 17
   f.text.style.fill = color

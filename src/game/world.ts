@@ -5,11 +5,12 @@ import { RunRngs, SALT, hash32 } from '../core/rng.ts'
 import { hueShiftHex } from '../core/color.ts'
 import { SpatialHash } from '../core/spatialHash.ts'
 import { DEFAULT_WEAPON_ID, WEAPONS, type WeaponDef } from '../content/weapons.ts'
-import { waveConfigFor, type WaveConfig } from '../content/waveDirector.ts'
+import { resolveScript, type ResolvedScript } from '../content/runScripts.ts'
 import { PERKS, baseModifiers, perkById, type Modifiers, type PerkDef } from '../content/perks.ts'
 import { CHARACTERS, type CharacterDef } from '../content/characters.ts'
 import { ARENAS, type ArenaTheme } from '../content/arenas.ts'
 import { FeelKind, FeelQueue, RunAlertRing } from '../effects/feelQueue.ts'
+import { Director } from '../systems/director.ts'
 import type { Layers } from '../render/app.ts'
 import type { IchorLayer } from '../render/ichorLayer.ts'
 import type { TextureRegistry } from '../render/textures.ts'
@@ -57,8 +58,6 @@ export class World {
   /** Run identity: pilot (feeds the sim) + arena theme (presentation + brood). */
   character: CharacterDef = CHARACTERS[0]!
   arenaTheme: ArenaTheme = ARENAS[0]!
-  /** The arena's wave config, resolved once per run. The sim reads only this. */
-  waveCfg: WaveConfig = waveConfigFor(ARENAS[0]!.id)
   private readonly tintCache = new Map<number, number>()
 
   mode: RunMode = 'endless'
@@ -71,11 +70,8 @@ export class World {
   pendingLevelUps = 0
   revivesUsed = 0
 
-  spawnTimer = 0
   fireCooldown = 0
   weaponDropTimer = 0
-  eliteTimer = 0
-  bossTimer = 0
 
   bossAlive = false
   boss: Enemy | null = null
@@ -119,9 +115,6 @@ export class World {
   lastHitVy = 0
 
   // P3: damage model and dash
-  /** Scales bites, enemy shots, rams and acid. The P4 director recomputes it
-   *  once per tick; until then it stays 1. */
-  dmgMul = 1
   dashCharges = 1
   /** Seconds until the next charge returns; 0 while every charge is ready. */
   dashRecharge = 0
@@ -137,6 +130,15 @@ export class World {
   damageTaken = 0
   /** Source of the last damage: -1 enemy (P10 adds the def index), -2 acid, -3 hazard. */
   lastHitBy = -1
+
+  // P4: director core
+  /** The arena's run script, resolved once per run. The sim reads only this. */
+  script: ResolvedScript = resolveScript(ARENAS[0]!.id)
+  readonly director = new Director()
+  /** Enemy damage ramp for this tick: non-boss bites, rams, enemy shots and acid. */
+  dmgMul = 1
+  /** Gem XP multiplier of the minute row in force (non-elite, non-boss kills). */
+  xpScale = 1
 
   constructor(
     readonly arena: Arena,
@@ -197,7 +199,10 @@ export class World {
     if (character) this.character = character
     if (theme) this.arenaTheme = theme
     this.tintCache.clear()
-    this.waveCfg = waveConfigFor(this.arenaTheme.id)
+    this.script = resolveScript(this.arenaTheme.id)
+    this.director.reset()
+    this.dmgMul = 1
+    this.xpScale = this.script.minutes[0]!.xpScale
     this.arena.setTheme(this.arenaTheme)
     this.ichor.stampTintA = this.arenaTheme.ichorA
     this.ichor.stampTintB = this.arenaTheme.ichorB
@@ -214,11 +219,8 @@ export class World {
     this.xpToNext = xpForLevel(1)
     this.pendingLevelUps = 0
     this.revivesUsed = 0
-    this.spawnTimer = 0
     this.fireCooldown = 0
     this.weaponDropTimer = 7 // first weapon pod comes early so a slow start isn't brutal
-    this.eliteTimer = 0
-    this.bossTimer = this.waveCfg.boss.first
     this.pullX = 0
     this.pullY = 0
     this.bossAlive = false
@@ -235,7 +237,6 @@ export class World {
     this.alerts.reset()
     this.lastHitVx = 0
     this.lastHitVy = 0
-    this.dmgMul = 1
     this.dashCharges = this.maxDashCharges
     this.dashRecharge = 0
     this.dashBufferT = 0

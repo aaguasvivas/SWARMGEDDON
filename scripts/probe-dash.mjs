@@ -420,7 +420,7 @@ async function runTouch(browser, size) {
   // Live combat frame with a boss bar and a pickup weapon, for the layout check.
   await page.evaluate(() => {
     const S = window.__SWARM
-    S.world.bossTimer = 0.01
+    S.jumpTo(240)
     S.give('minigun')
     S.world.player.hp = 1e9
   })

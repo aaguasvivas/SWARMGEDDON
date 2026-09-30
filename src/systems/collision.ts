@@ -14,6 +14,7 @@ import { spawnAcidPool } from './acid.ts'
 import { hurtPlayer } from './damage.ts'
 import { closeCall, closeCallArmed } from './dash.ts'
 import { dropGem, dropHealth, spawnWeaponDrop } from './pickups.ts'
+import { directorBossKilled } from './director.ts'
 import { spawnEnemy } from './spawn.ts'
 import type { Enemy } from '../game/enemy.ts'
 import type { Projectile } from '../game/projectile.ts'
@@ -76,6 +77,8 @@ export function collisionSystem(world: World, dt: number): void {
     if (!e.alive || e.submerged) continue
     const d2 = distSq(e.x, e.y, pl.x, pl.y)
     const rr = e.radius + pl.radius
+    // Authored boss damage never takes the time ramp (docs/NEXT-LEVEL.md 4.1).
+    const mul = e.def.boss ? 1 : world.dmgMul
     if (d2 >= rr * rr) {
       if (armed && e.def.burrow && surfacedNear(e, d2)) {
         closeCall(world)
@@ -92,7 +95,7 @@ export function collisionSystem(world: World, dt: number): void {
           closeCall(world)
           armed = false
         }
-        if (hurtPlayer(world, e.damage * world.dmgMul, 'discrete', -1, e.x, e.y, FF_RAM) > 0) {
+        if (hurtPlayer(world, e.damage * mul, 'discrete', -1, e.x, e.y, FF_RAM) > 0) {
           e.dashHit = true
           if (m.thorns > 0) thornsDamage(world, e, m.thorns)
         }
@@ -103,7 +106,7 @@ export function collisionSystem(world: World, dt: number): void {
       closeCall(world)
       armed = false
     }
-    const v = e.damage * BITE.scale
+    const v = e.damage * BITE.scale * mul
     if (v > b1) {
       b3 = b2
       b2 = b1
@@ -119,7 +122,7 @@ export function collisionSystem(world: World, dt: number): void {
     if (m.thorns > 0) thornsDamage(world, e, m.thorns * dt)
   }
   if (b1 > 0 && pl.biteCd <= 0 && pl.invuln <= 0) {
-    const bite = Math.min((b1 + BITE.w2 * b2 + BITE.w3 * b3) * world.dmgMul, BITE.capFracOfMaxHp * pl.maxHp)
+    const bite = Math.min(b1 + BITE.w2 * b2 + BITE.w3 * b3, BITE.capFracOfMaxHp * pl.maxHp)
     hurtPlayer(world, bite, 'bite', -1, bx, by)
     pl.biteCd = BITE.window
   }
@@ -135,7 +138,7 @@ export function collisionSystem(world: World, dt: number): void {
         closeCall(world)
         armed = false
       }
-      if (hurtPlayer(world, p.damage * world.dmgMul, 'discrete', -1, p.x, p.y) > 0) {
+      if (hurtPlayer(world, p.damage, 'discrete', -1, p.x, p.y) > 0) {
         if (p.leavesAcid) spawnAcidPool(world, p.x, p.y)
         p.alive = false
       }
@@ -312,7 +315,7 @@ function killEnemy(world: World, e: Enemy): void {
     world.player.hp = Math.min(world.player.maxHp, world.player.hp + world.mods.lifestealPerKill)
   }
 
-  dropGem(world, e.x, e.y, def.xp)
+  dropGem(world, e.x, e.y, def.elite || def.boss ? def.xp : def.xp * world.xpScale)
 
   // Perk-free sustain: kills can drop a medkit, biased toward HARD MOMENTS. The
   // lower your HP, the likelier a kill coughs one up, so a horde that's chipping
@@ -347,8 +350,7 @@ function killEnemy(world: World, e: Enemy): void {
   }
 
   if (def.boss) {
-    world.bossAlive = false
-    world.boss = null
+    directorBossKilled(world)
     explode(world, e.x, e.y, 140, 0)
     spawnWeaponDrop(world, e.x, e.y, loot.pick(PICKUP_WEAPON_IDS))
     for (let i = 0; i < 6; i++) {

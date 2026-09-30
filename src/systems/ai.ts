@@ -1,4 +1,4 @@
-import { MAX_ENEMY_PROJECTILES } from '../config.ts'
+import { ENEMY_SPEED_CEIL, MAX_ENEMY_PROJECTILES } from '../config.ts'
 import { clamp } from '../core/vec.ts'
 import { spawnPoof } from '../effects/fx.ts'
 import { FF_BOSS, FeelKind } from '../effects/feelQueue.ts'
@@ -226,6 +226,7 @@ export function aiSystem(world: World, dt: number): void {
     if (e.buffed > 0) spd *= e.buffedMul
     if (def.behavior === 'burrower' && e.submerged && def.burrow) spd *= def.burrow.underSpeedMul
     if (def.behavior === 'queen' && e.enraged) spd *= 1.4
+    if (spd > ENEMY_SPEED_CEIL && !(def.behavior === 'charger' && e.phase === 2)) spd = ENEMY_SPEED_CEIL
 
     if (separate) {
       const n = world.hash.query(e.x, e.y, e.radius * 2.2, buf)
@@ -312,7 +313,7 @@ function fireEnemyShot(world: World, e: Enemy, ux: number, uy: number): void {
   p.vx = ux * speed
   p.vy = uy * speed
   p.facing = Math.atan2(uy, ux)
-  p.damage = def.projectileDamage ?? 12
+  p.damage = (def.projectileDamage ?? 12) * (def.boss ? 1 : world.dmgMul)
   p.radius = 7
   p.life = 3.5
   p.pierce = 0

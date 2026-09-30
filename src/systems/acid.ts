@@ -13,7 +13,7 @@ export function spawnAcidPool(world: World, x: number, y: number): void {
   ap.x = x
   ap.y = y
   ap.radius = rng.range(24, 34)
-  ap.damage = 16
+  ap.damage = 16 * world.dmgMul
   ap.life = ap.maxLife = rng.range(3.5, 5)
 
   world.ichor.queueStamp(x, y, world.rngs.fx)
@@ -40,6 +40,6 @@ export function acidSystem(world: World, dt: number): void {
       continue
     }
     const rr = ap.radius + pl.radius * 0.4
-    if (distSq(ap.x, ap.y, pl.x, pl.y) < rr * rr) hurtPlayer(world, ap.damage * dt * world.dmgMul, 'zone', -2, ap.x, ap.y)
+    if (distSq(ap.x, ap.y, pl.x, pl.y) < rr * rr) hurtPlayer(world, ap.damage * dt, 'zone', -2, ap.x, ap.y)
   }
 }

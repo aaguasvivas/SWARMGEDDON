@@ -45,8 +45,6 @@ export interface ArenaTheme {
     color2: number
     alpha: number
   }
-  /** Boss kill callout for this world's boss. */
-  slainText: string
   /** Paired enemy family. */
   broodName: string
   /** Degrees of hue rotation applied to enemy tints/gibs (0 = native palette). */
@@ -73,7 +71,6 @@ export const ARENAS: readonly ArenaTheme[] = [
     vignette: { color: 0x03120c, strength: 0.6 },
     motes: { kind: 'spores', count: 60 },
     atmosphere: { kind: 'breathingBlooms', color: 0x3df0c0, color2: 0x6cff5a, alpha: 0.1 },
-    slainText: 'QUEEN SLAIN',
     broodName: 'Acid Hive',
     broodHueShift: 0,
     unlock: { how: 'default' },
@@ -109,7 +106,6 @@ export const ARENAS: readonly ArenaTheme[] = [
     vignette: { color: 0x1a0f2e, strength: 0.66 },
     motes: { kind: 'marineSnow', count: 110 },
     atmosphere: { kind: 'godRays', color: 0xd8e4ff, color2: 0xb06bff, alpha: 0.08 },
-    slainText: 'MATRON SLAIN',
     broodName: 'Psychic Brood',
     broodHueShift: -75,
     unlock: { how: 'earn', earnDesc: 'kill 150 in one run', earned: (r) => r.kills >= 150 },
@@ -144,7 +140,6 @@ export const ARENAS: readonly ArenaTheme[] = [
     vignette: { color: 0x140705, strength: 0.62 },
     motes: { kind: 'emberAsh', count: 96 },
     atmosphere: { kind: 'emberHaze', color: 0xff8a3d, color2: 0xffd27a, alpha: 0.09 },
-    slainText: 'TYRANT SLAIN',
     broodName: 'Ember Spawn',
     broodHueShift: -30,
     unlock: { how: 'earn', earnDesc: 'complete a Daily Challenge', earned: (r) => r.mode === 'daily' },

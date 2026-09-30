@@ -153,3 +153,32 @@ export const DASH_BTN = {
   landscape: { offX: 64, offY: 150 },
   aimExclusionPad: 8, fireLatch: 0.45, fireLatchWindow: 0.25,
 } as const
+
+// P4: director core (docs/NEXT-LEVEL.md 4.1 and A7.1)
+/** Pulses never fill past this; authored events and brood may. */
+export const PRACTICAL_CAP = 450
+/** Spawn rings around the player, device independent and off screen on every
+ *  phone view. NEAR serves the opening minute so the first arrivals are close. */
+export const RING_NEAR = { halfW: 640, halfH: 560 } as const
+export const RING_STD = { halfW: 900, halfH: 640 } as const
+export const RING_NEAR_UNTIL = 60
+/** Top-up spawns per second while the field is under the row's minAlive. */
+export const TOPUP_RATE = 30
+export const WARN_LEAD = 3.0
+export const ELITE_WARN_LEAD = 2.0
+export const DMG_RAMP_PER_MIN = 0.04
+export const SPEED_RAMP = 0.0012
+export const SPEED_RAMP_CAP_T = 360
+export const ENEMY_SPEED_CEIL = 240
+export const HP_RAMP_T_CAP = 720
+/** Boss scheduling: arrival is max(at, lastBossKillAt + BOSS_MIN_GAP); mid2
+ *  that cannot arrive by MID2_LATEST is skipped. */
+export const BOSS_MIN_GAP = 20
+export const MID2_LATEST = 570
+export const BOSS_SPAWN_DIST = 300
+export const BOSS_SPAWN_MIN_DIST = 160
+/** Event and elite beats due during a boss fight fire this long after the
+ *  kill, then DEFER_GAP apart; an event more than DEFER_DROP_LATE late is dropped. */
+export const DEFER_AFTER_KILL = 10
+export const DEFER_GAP = 12
+export const DEFER_DROP_LATE = 60

@@ -14,12 +14,22 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const OUT = join(HERE, 'playtest')
 mkdirSync(OUT, { recursive: true })
 
-// Usage: node playtest.mjs <arena> <mode:seed:minutes[:char]> [...more configs]
+// Usage: node playtest.mjs <arena> <mode[+dash]:seed[:minutes[:char[:perkPolicy[:threat[:ot]]]]]> [...more configs]
+//   minutes defaults to 14; threat 0..4; ot = 'ot' to push into OVERTIME after a win.
 const arena = process.argv[2] || 'hive'
 const configs = process.argv.slice(3).map((s) => {
-  const [modeTok, seed, min, char, perkPolicy] = s.split(':')
+  const [modeTok, seed, min, char, perkPolicy, threat, ot] = s.split(':')
   const [mode, ...opts] = modeTok.split('+')
-  return { mode, dash: opts.includes('dash'), seed: parseInt(seed), minutes: parseFloat(min), char: char || 'nova', perkPolicy: perkPolicy || 'first' }
+  return {
+    mode,
+    dash: opts.includes('dash'),
+    seed: parseInt(seed),
+    minutes: min ? parseFloat(min) : 14,
+    char: char || 'nova',
+    perkPolicy: perkPolicy || 'first',
+    threat: threat ? parseInt(threat) : 0,
+    ot: ot === 'ot',
+  }
 })
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const ORIGIN = (process.env.SWG_URL || 'http://localhost:5176').replace(/\/+$/, '')
@@ -53,23 +63,23 @@ async function launch() {
 await acquireChromeLock('playtest')
 const { browser, page } = await launch()
 await page.evaluate(readFileSync(join(HERE, 'harness.js'), 'utf8'))
-for (const { mode, dash, seed, minutes, char, perkPolicy } of configs) {
+for (const { mode, dash, seed, minutes, char, perkPolicy, threat, ot } of configs) {
   const invincible = mode === 'turret' || mode === 'roam'
-  const init = await page.evaluate((cfg) => window.__PT_init(cfg), { arena, mode, dash, seed, char, invincible, perkPolicy })
+  const init = await page.evaluate((cfg) => window.__PT_init(cfg), { arena, mode, dash, seed, char, invincible, perkPolicy, threat, ot })
   const t0 = Date.now()
   const end = minutes * 60
   for (let t = 30; t <= end + 1e-6; t += 30) {
     const r = await page.evaluate((u) => window.__PT_run(u, 1e7), t)
     const c = await page.evaluate(() => window.__PT_chunk())
     console.error(
-      `[${arena}/${mode}${dash ? '+dash' : ''}/${seed}] t=${c.t} L${c.level} kills=${c.kills} (+${c.killsDelta}) en=${c.enemies} max=${c.maxEnemiesChunk} wpn=${c.weapon} boss=${c.bossAlive}${c.bossHp != null ? '(' + c.bossHp + ')' : ''} hp=${c.hp} lv+${c.levelUps} xpExp=${c.xpExpired} dash=${c.dashes}/cc${c.closeCalls} wall=${((Date.now() - t0) / 1000).toFixed(0)}s`,
+      `[${arena}/${mode}${dash ? '+dash' : ''}/${seed}] t=${c.t} L${c.level} kills=${c.kills} (+${c.killsDelta}) en=${c.enemies} mean=${c.aliveMean} max=${c.maxEnemiesChunk} wpn=${c.weapon} boss=${c.bossAlive}${c.bossHp != null ? '(' + c.bossHp + ')' : ''} hp=${c.hp} lv+${c.levelUps} xpExp=${c.xpExpired} dash=${c.dashes}/cc${c.closeCalls} alerts=${c.alerts} wall=${((Date.now() - t0) / 1000).toFixed(0)}s`,
     )
     if (r.dead) break
   }
   const fin = await page.evaluate(() => window.__PT_final())
   fin.init = init
   fin.wallSeconds = (Date.now() - t0) / 1000
-  const file = join(OUT, `${arena}_${mode}${dash ? '_dash' : ''}_${seed}${char !== 'nova' ? '_' + char : ''}${perkPolicy !== 'first' ? '_' + perkPolicy : ''}.json`)
+  const file = join(OUT, `${arena}_${mode}${dash ? '_dash' : ''}_${seed}${char !== 'nova' ? '_' + char : ''}${perkPolicy !== 'first' ? '_' + perkPolicy : ''}${threat ? '_t' + threat : ''}${ot ? '_ot' : ''}.json`)
   writeFileSync(file, JSON.stringify(fin, null, 1))
   console.log(JSON.stringify({ file, arena, mode, dash, seed, endTime: fin.endTime, dead: fin.dead, fromHalfHp: fin.death?.fromHalfHp ?? null, level: fin.level, kills: fin.kills, dashes: fin.dashes, closeCalls: fin.closeCalls, maxEnemies: fin.maxEnemies, wall: fin.wallSeconds }))
 }
