@@ -16,6 +16,7 @@ export const enum FeelKind {
   MultUp /* a = tier */, MultDown /* a = tier */, ChainHit, Fusion /* b = fusion index */, Evolve /* b = weapon index */,
   CoreOpen /* a = levels */, Shard, BonusPickup /* b = bonus index */, BonusEnd, HazardDetonate /* a = radius */, Win, Stalemate,
   BossTele /* a = attack kind (content/bosses.ts ATK_*), b = telegraph seconds; ref = EnemyDef */,
+  ShieldHit /* the overshield took the whole hit: x, y = source, a = damage absorbed; flags as PlayerHurt */,
 }
 
 export const FF_CRIT = 1, FF_ELITE = 2, FF_BOSS = 4, FF_AOE = 8, FF_DISCRETE = 16, FF_CONTACT = 32, FF_ACID = 64, FF_RAM = 128

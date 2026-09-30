@@ -8,11 +8,15 @@ const STRIDE = 6
 
 /**
  * Queued area blasts (A3): SHATTER, HEADHUNTER, Shock Step, the PLAGUE BARRAGE
- * bomblets and the STORM LASH last hop. A preallocated ring of
- * x, y, r, dmg, readyAt, flags (BLAST_*); a full queue drops new blasts.
+ * bomblets and the STORM LASH last hop. A preallocated array of
+ * x, y, r, dmg, readyAt, flags (BLAST_*) holding at most BLAST_CAP waiting
+ * blasts; a full queue drops new blasts.
  */
 export class BlastQueue {
   readonly buf = new Float32Array(BLAST_CAP * STRIDE)
+  /** The blasts a drain detonates, moved out of `buf` so their slots are free
+   *  for the blasts they queue. */
+  readonly due = new Float32Array(BLAST_CAP * STRIDE)
   n = 0
 
   reset(): void {
@@ -39,24 +43,26 @@ export function queueBlast(w: World, x: number, y: number, r: number, dmg: numbe
 export function drainBlasts(w: World): void {
   const q = w.blasts
   const b = q.buf
-  const n0 = q.n
+  const due = q.due
   // readyAt is float32: the slack keeps a same-tick blast from slipping a tick.
   const now = w.time + 1e-3
   let wr = 0
-  for (let i = 0; i < n0; i++) {
+  let nd = 0
+  for (let i = 0; i < q.n; i++) {
     const o = i * STRIDE
     if (b[o + 4]! > now) {
       if (wr !== i) b.copyWithin(wr * STRIDE, o, o + STRIDE)
       wr++
       continue
     }
-    detonate(w, b[o]!, b[o + 1]!, b[o + 2]!, b[o + 3]!, b[o + 5]!)
-  }
-  for (let i = n0; i < q.n; i++) {
-    if (wr !== i) b.copyWithin(wr * STRIDE, i * STRIDE, i * STRIDE + STRIDE)
-    wr++
+    const d = nd++ * STRIDE
+    for (let k = 0; k < STRIDE; k++) due[d + k] = b[o + k]!
   }
   q.n = wr
+  for (let i = 0; i < nd; i++) {
+    const o = i * STRIDE
+    detonate(w, due[o]!, due[o + 1]!, due[o + 2]!, due[o + 3]!, due[o + 5]!)
+  }
 }
 
 function detonate(w: World, x: number, y: number, r: number, dmg: number, flags: number): void {

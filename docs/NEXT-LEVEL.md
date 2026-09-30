@@ -332,7 +332,7 @@ export function hurtPlayer(w: World, amount: number, kind: HurtKind, srcIdx: num
 // 2 w.shieldT > 0 (SHIELD bonus) → 0
 // 3 kind 'discrete' && hitCd > 0 → 0
 // 4 amount *= (1 - mods.damageReduction)
-// 5 overshield (LIVING ARMOR) absorbs first
+// 5 overshield (LIVING ARMOR) absorbs first; a hit it takes whole emits feel ShieldHit (no PlayerHurt, no registerHit) and returns
 // 6 hp -= rest; w.damageTaken += rest; w.lastHitBy = srcIdx (-2 = acid, -3 = hazard)
 // 7 discrete: hitCd = 0.5, registerHit(w), feel Hit event; bite/zone: addContinuousDamage(w, rest)
 ```
@@ -653,7 +653,7 @@ export const enum FeelKind {
   ChargerWindup, EnemyShot, Teleport, Dash, CloseCall, Alert /* b = RunAlert ring index */,
   MultUp /* a = tier */, MultDown, ChainHit, Fusion /* b = fusion index */, Evolve /* b = weapon index */,
   CoreOpen /* a = levels */, Shard, BonusPickup /* b = bonus index */, BonusEnd, HazardDetonate, Win, Stalemate,
-  BossTele /* a = attack kind, b = telegraph seconds */,
+  BossTele /* a = attack kind, b = telegraph seconds */, ShieldHit /* a = damage the overshield absorbed */,
 }
 export const FF_CRIT = 1, FF_ELITE = 2, FF_BOSS = 4, FF_AOE = 8, FF_DISCRETE = 16, FF_CONTACT = 32, FF_ACID = 64, FF_RAM = 128
 ```
@@ -1571,6 +1571,7 @@ Run each phase's acceptance plus this standard block:
 - Acceptance:
   - Standard block, screenshots with a boss alive, a pending chip and tier x5.
   - The DASH hit circle overlaps neither the pill, the boss plate nor the stick rest point.
+- P8 hand-off: the LIVING ARMOR overshield (`world.overshield`, up to 25% of max HP) has no HUD readout. P15 draws it on the HP bar. An absorbed hit already has its cue (FeelKind `ShieldHit`, A3).
 
 **P16: Draft UI, pause, win panel, recap** (about 900 lines)
 - Files: `src/ui/levelupModal.ts` (rewrite), `ui/pauseSheet.ts`, `ui/winPanel.ts`, `ui/recap.ts`, `platform/lifecycle.ts` (new); delete `ui/gameOver.ts`; `main.ts`.
@@ -1834,15 +1835,15 @@ Card desc (the draft card shows the two parents as its tag line):
 Blast queue: `BLAST_CAP 64`, `Float32Array(64 * 6)` holding x, y, r, dmg, readyAt and flags (`NO_BONUS 1`, `KNOCK 2`, `CRIT 4`). It drains at the end of `collisionSystem`, and entries pushed during a drain wait for the next tick.
 
 Resolved in P8:
-- **Blasts.** A full queue drops new blasts. A blast hits every enemy whose center lies inside r, and elite and boss targets take eliteDamageMul, as every AoE does (section 4.5). KNOCK shoves non-elite, non-boss enemies `BLAST_KNOCK_PX` (40 u) away from the center. CRIT marks the Explosion feel event. NO_BONUS rides along for the P9 bonus rule.
+- **Blasts.** The queue holds 64 waiting blasts, and a full queue drops new ones. A drain first moves its due blasts out of the queue, so their slots are free for the blasts they queue (a SHATTER cascade of 64 keeps going). A blast hits every enemy whose center lies inside r, and elite and boss targets take eliteDamageMul, as every AoE does (section 4.5). KNOCK shoves non-elite, non-boss enemies `BLAST_KNOCK_PX` (40 u) away from the center. CRIT marks the Explosion feel event. NO_BONUS rides along for the P9 bonus rule.
 - **On-hit order.** A bullet's slow, stagger and burn land after its damage. So SHATTER needs an enemy slowed before the killing hit, and COLD BLOOD's +30% starts with the second hit. A boss death queues no SHATTER blast.
 - **FIRESTORM.** Arc hops include the Arc Lash chain hops. The ignite is Incendiary's burn: 6 per stack x damageMul dps for 2 s.
-- **HEADHUNTER.** The blast is 40% of the killing hit after crit, armor and eliteDamageMul.
+- **HEADHUNTER.** The blast is 40% of the killing hit after crit and armor, before eliteDamageMul and COLD BLOOD. Each blast target takes those multipliers itself, so they apply once.
 - **GUILLOTINE.** Without it, Executioner culls non-elite, non-boss enemies only.
 - **BLOODRUSH and Vampiric.** The kill-heal bucket holds 1 s of the cap and refills every tick.
-- **LIVING ARMOR.** Every heal goes through `healPlayer`: regen, kill healing, medkits, SKIP and FIELD REPAIR.
+- **LIVING ARMOR.** Every heal goes through `healPlayer`: regen, kill healing, medkits, SKIP and FIELD REPAIR. A hit the overshield takes whole emits `ShieldHit`: the SHIELD chime 7 semitones up, a 3 px kick, a light haptic and a cyan ring on the ship (bites once per bite window; acid ticks stay silent). It removes no HP, so it does not halve the chain.
 - **RAM.** "radius + 30" is the contact distance (enemy radius + ship radius) + 30 u. The damage takes eliteDamageMul on elites and bosses. "Sideways" is perpendicular to the dash heading, away from its line.
-- **SALVO STEP.** One bullet per ring slot, starting at the dash heading. Each bullet keeps the weapon's and the build's pierce, speed, explosion and chain.
+- **SALVO STEP.** One bullet per ring slot, starting at the dash heading. Each bullet keeps the weapon's and the build's pierce, speed, explosion and chain. The 60% also scales the weapon's own explosion (BILE MORTAR, PLAGUE BARRAGE and its bomblets). Every `fireRing` works this way, so P9's FIREBLAST x1.5 scales explosions too.
 
 ## A4. Weapons
 

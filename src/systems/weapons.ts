@@ -66,33 +66,33 @@ function fire(world: World, ax: number, ay: number): void {
 
   const count = w.projectilesPerShot + m.extraProjectiles
   const spread = w.spread * m.spreadMul
-  const damage = w.damage * m.damageMul
   const rng = world.rngs.combat
-  for (let i = 0; i < count; i++) launch(world, mx, my, baseAng + rng.range(-spread, spread), damage, 0)
+  for (let i = 0; i < count; i++) launch(world, mx, my, baseAng + rng.range(-spread, spread), 1, 0)
 
   spawnMuzzle(world, mx, my, baseAng)
   world.feel.emit(FeelKind.Shot, 0, mx, my, baseAng, weaponIndex(w.id))
 }
 
 /** A ring of `n` evenly spaced shots of the current weapon around the player,
- *  starting at `ang0`, at `dmgFrac` of its damage with `extraPierce` more
- *  pierce. No ammo cost and no draws. */
+ *  starting at `ang0`, at `dmgFrac` of its damage (its explosion included)
+ *  with `extraPierce` more pierce. No ammo cost and no draws. */
 export function fireRing(world: World, n: number, dmgFrac: number, extraPierce: number, ang0: number): void {
   const w = world.weapon
   const pl = world.player
-  const damage = w.damage * world.mods.damageMul * dmgFrac
   const off = pl.radius + 8
   for (let i = 0; i < n; i++) {
     const a = ang0 + (i / n) * TAU
-    launch(world, pl.x + Math.cos(a) * off, pl.y + Math.sin(a) * off, a, damage, extraPierce)
+    launch(world, pl.x + Math.cos(a) * off, pl.y + Math.sin(a) * off, a, dmgFrac, extraPierce)
   }
   world.feel.emit(FeelKind.Shot, 0, pl.x, pl.y, ang0, weaponIndex(w.id))
 }
 
-/** One bullet of the current weapon with the build's modifiers. */
-function launch(world: World, x: number, y: number, ang: number, damage: number, extraPierce: number): void {
+/** One bullet of the current weapon with the build's modifiers. `dmgMul`
+ *  scales both its hit and the weapon's own explosion. */
+function launch(world: World, x: number, y: number, ang: number, dmgMul: number, extraPierce: number): void {
   const w = world.weapon
   const m = world.mods
+  const damage = w.damage * m.damageMul * dmgMul
   const speed = w.projectileSpeed * m.projectileSpeedMul
   const scale = w.projectileRadius / 4
   const p = world.projectiles.acquire()
@@ -112,7 +112,7 @@ function launch(world: World, x: number, y: number, ang: number, damage: number,
   // Explosion: from the weapon, or granted by Explosive Rounds. Both scale
   // with the damage perks.
   p.explodeRadius = w.explodeRadius ?? m.explodeRadius
-  p.explodeDamage = w.explodeDamage !== undefined ? w.explodeDamage * m.damageMul : damage * m.explodeFrac
+  p.explodeDamage = w.explodeDamage !== undefined ? w.explodeDamage * m.damageMul * dmgMul : damage * m.explodeFrac
   // Arc Rounds on a chain weapon adds hops instead of its proc.
   p.chain = w.chain ? w.chain + (m.arcHops > 0 ? m.arcHops - 1 : 0) : 0
   p.chainRange = w.chainRange ?? 0

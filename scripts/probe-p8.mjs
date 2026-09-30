@@ -18,7 +18,8 @@
 //   evolutions  one check per A4.2 behavior, asserting its numbers
 //   perks       the P8 hand-off perks: Shock Step, Incendiary, Overpressure,
 //               Ricochet, the Vampiric kill-heal cap, base Executioner, the blast
-//               queue (a blast queued during a drain waits a tick)
+//               queue (a blast queued during a drain waits a tick; a full queue of
+//               64 due blasts still queues the 64 blasts they set off)
 // Prints one JSON line per check and exits 1 if any check fails.
 import puppeteer from 'puppeteer-core'
 import { acquireChromeLock } from './lib/chromeLock.mjs'
@@ -526,6 +527,21 @@ function fusionChecks() {
     critThroughArmor: armored, want: r3(10 * cm), blast: r3(1000 - Nb.hp), wantBlast: r3(10 * cm * 0.4), outside55: r3(1000 - Nf.hp),
     pass: near(armored, 10 * cm, 1e-3) && near(1000 - Nb.hp, 10 * cm * 0.4, 1e-3) && Nf.hp === 1000,
   }
+  // A crit that kills an elite: the blast is 40% of the hit before eliteDamageMul,
+  // which each elite target then takes once.
+  fresh(['deadeye', 'hollow_point', 'f_headhunter', 'giant_slayer', 'giant_slayer', 'giant_slayer'])
+  w.mods.critChance = 1
+  const hcm = w.mods.critMul
+  const hgs = w.mods.eliteDamageMul
+  const KE = enemyAt('guardian', CX, CY, 3)
+  const NE = enemyAt('guardian', CX + 45, CY, 1000)
+  const NN = enemyAt('brute', CX - 45, CY, 1000)
+  shot(KE.x, KE.y, 0, 1, 10)
+  step(1)
+  out.headhunterElite = {
+    killed: !KE.alive, eliteNeighbor: r3(1000 - NE.hp), wantElite: r3(10 * hcm * 0.4 * hgs), plainNeighbor: r3(1000 - NN.hp), wantPlain: r3(10 * hcm * 0.4),
+    pass: !KE.alive && near(1000 - NE.hp, 10 * hcm * 0.4 * hgs, 1e-3) && near(1000 - NN.hp, 10 * hcm * 0.4, 1e-3),
+  }
 
   // GUILLOTINE: elites culled at half the threshold (6% at Executioner 1); culls drop double XP.
   const cull = (perks, id, hpFrac) => {
@@ -611,11 +627,20 @@ function fusionChecks() {
   sh.ownerIdx = -1
   sh.sprite.visible = true
   const hits0 = w.hits
-  step(1)
+  w.pendingLevelUps = 0
+  S.step(1)
+  // PlayerHurt is FeelKind 5; the absorbed hit carries a = damage absorbed and FF_DISCRETE (16).
+  const fq = w.feel
+  const ev = []
+  for (let i = 0; i < fq.n; i++) ev.push({ k: fq.kind[i], f: fq.flags[i], a: r3(fq.a[i]) })
+  w.feel.clear()
+  const shieldEv = ev.filter((e) => e.k !== 5 && (e.f & 16) && near(e.a, 10 * 0.85, 1e-3))
   const osHit = r3(w.overshield)
   out.livingArmor = {
     after10s: os10, after20s: os20, cap: 0.25 * pl.maxHp, afterHit10: osHit, hpAfterHit: r3(pl.hp - hp0), shotGone: !sh.alive, hitsCounted: w.hits - hits0,
-    pass: near(os10, 1.4 * 10, 0.05) && near(os20, 25, 1e-6) && near(osHit, 25 - 10 * 0.85 + 1.4 * DT, 1e-3) && pl.hp === hp0 && !sh.alive && w.hits === hits0,
+    shieldEvents: shieldEv, playerHurt: ev.filter((e) => e.k === 5).length,
+    pass: near(os10, 1.4 * 10, 0.05) && near(os20, 25, 1e-6) && near(osHit, 25 - 10 * 0.85 + 1.4 * DT, 1e-3) && pl.hp === hp0 && !sh.alive && w.hits === hits0
+      && shieldEv.length === 1 && !ev.some((e) => e.k === 5),
   }
 
   // RAM: each enemy the dash passes within radius + 30 takes 6x thorns x damageMul once; non-elites go 40 u sideways.
@@ -657,6 +682,26 @@ function fusionChecks() {
     shots: ring.length, damage: ring.length ? r3(ring[0].damage) : 0, want: r3(8.5 * w.mods.damageMul * 0.6), ammoSpent: ammo0 - w.ammo,
     pass: ring.length === 12 && even && ring.every((p) => near(p.damage, 8.5 * w.mods.damageMul * 0.6)) && ammo0 === w.ammo,
   }
+  const salvoWith = (id) => {
+    fresh(['adrenal_wake', 'twin_shot', 'f_salvo'])
+    w.equipWeapon(id)
+    const wd = w.weapon
+    ctl.mx = 1
+    inp.pressDash()
+    const k0 = w.projectiles.size
+    step(1)
+    ctl.mx = 0
+    const rp = w.projectiles.active.slice(k0)
+    const dm = w.mods.damageMul
+    return {
+      shots: rp.length, damage: rp.length ? r3(rp[0].damage) : 0, want: r3(wd.damage * dm * 0.6),
+      explode: rp.length ? r3(rp[0].explodeDamage) : 0, wantExplode: r3(wd.explodeDamage * dm * 0.6),
+      ok: rp.length === 12 && rp.every((p) => near(p.damage, wd.damage * dm * 0.6, 1e-4) && near(p.explodeDamage, wd.explodeDamage * dm * 0.6, 1e-4)),
+    }
+  }
+  const sm = salvoWith('rocket')
+  const sp = salvoWith('plague_barrage')
+  out.salvoExplosion = { rocket: sm, plague: sp, pass: sm.ok && sp.ok }
 
   // COLD BLOOD: slowed elites and bosses take +30%; hits apply the full Cryo slow (bosses 30% max).
   fresh(['cryo_rounds', 'cryo_rounds', 'cryo_rounds', 'giant_slayer', 'f_cold_blood'])
@@ -965,6 +1010,39 @@ function perkChecks() {
     deaths.push(ch.filter((e) => !e.alive).length)
   }
   out.blastChain = { deadPerTick: deaths, queued: w.blasts.n, pass: deaths.join() === '2,3,4,4,4,4' && w.blasts.n === 0 }
+
+  // A full queue of 64 due blasts each kills a slowed A; each A's SHATTER blast must
+  // queue (the detonated slots are free) and kill its B 60 u away on the next tick,
+  // where each B queues the next wave.
+  fresh(['cryo_rounds', 'explosive_rounds', 'f_shatter'])
+  const G = 64
+  const As = []
+  const Bs = []
+  const qb = w.blasts
+  for (let g = 0; g < G; g++) {
+    const gx = CX - 700 + (g % 8) * 200
+    const gy = CY - 700 + Math.floor(g / 8) * 200
+    const A = enemyAt('swarmer', gx, gy, 1)
+    const B = enemyAt('swarmer', gx + 60, gy, 1)
+    A.slow = B.slow = 10
+    As.push(A)
+    Bs.push(B)
+    const o = qb.n++ * 6
+    qb.buf[o] = gx - 60
+    qb.buf[o + 1] = gy
+    qb.buf[o + 2] = 70
+    qb.buf[o + 3] = 5
+    qb.buf[o + 4] = w.time
+    qb.buf[o + 5] = 0
+  }
+  step(1)
+  const aDead = As.filter((e) => !e.alive).length
+  const queued = qb.n
+  const bAfter1 = Bs.filter((e) => !e.alive).length
+  step(1)
+  const bDead = Bs.filter((e) => !e.alive).length
+  out.blastCap = { groups: G, aDead, queuedAfterTick1: queued, bDeadTick1: bAfter1, bDead, queuedAfterTick2: qb.n,
+    pass: aDead === G && queued === G && bAfter1 === 0 && bDead === G && qb.n === G }
   S.loop.start()
   return out
 }

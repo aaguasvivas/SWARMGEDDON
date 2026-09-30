@@ -1,16 +1,21 @@
 import { FF_ACID, FF_CONTACT, FF_DISCRETE, FeelKind } from '../effects/feelQueue.ts'
 import { FUSION, GRACE } from '../config.ts'
+import { spawnRing } from '../effects/fx.ts'
 import { addContinuousDamage, registerHit } from '../game/scoring.ts'
 import type { World } from '../game/world.ts'
 
 export type HurtKind = 'bite' | 'discrete' | 'zone'
 
+const SHIELD_RING_TINT = 0x9be7ff
+const SHIELD_RING_SCALE = 2
+
 /**
- * The only way the player loses HP. LIVING ARMOR's overshield absorbs first.
- * Returns the damage that landed (overshield included); callers consume an
- * enemy projectile only when the result is > 0. Only HP removed counts as a
- * scoring hit. `sx, sy` is the source point for presentation, `ff` adds feel
- * flags (FF_RAM).
+ * The only way the player loses HP. LIVING ARMOR's overshield absorbs first;
+ * a hit it takes whole emits ShieldHit instead of PlayerHurt. Returns the
+ * damage that landed (overshield included); callers consume an enemy
+ * projectile only when the result is > 0. Only HP removed counts as a scoring
+ * hit. `sx, sy` is the source point for presentation, `ff` adds feel flags
+ * (FF_RAM).
  */
 export function hurtPlayer(w: World, amount: number, kind: HurtKind, srcIdx: number, sx: number, sy: number, ff = 0): number {
   const pl = w.player
@@ -25,17 +30,18 @@ export function hurtPlayer(w: World, amount: number, kind: HurtKind, srcIdx: num
     rest -= s
   }
   if (kind === 'discrete') pl.hitCd = GRACE.hit
-  if (rest <= 0) return dmg
+  const kf = (kind === 'discrete' ? FF_DISCRETE : kind === 'bite' ? FF_CONTACT : FF_ACID) | ff
+  if (rest <= 0) {
+    w.feel.emit(FeelKind.ShieldHit, kf, sx, sy, dmg)
+    if (kind !== 'zone') spawnRing(w, pl.x, pl.y, SHIELD_RING_TINT, SHIELD_RING_SCALE)
+    return dmg
+  }
   pl.hp -= rest
   w.damageTaken += rest
   w.lastHitBy = srcIdx
-  if (kind === 'discrete') {
-    w.feel.emit(FeelKind.PlayerHurt, FF_DISCRETE | ff, sx, sy, rest)
-    registerHit(w)
-  } else {
-    w.feel.emit(FeelKind.PlayerHurt, (kind === 'bite' ? FF_CONTACT : FF_ACID) | ff, sx, sy, rest)
-    addContinuousDamage(w, rest)
-  }
+  w.feel.emit(FeelKind.PlayerHurt, kf, sx, sy, rest)
+  if (kind === 'discrete') registerHit(w)
+  else addContinuousDamage(w, rest)
   return dmg
 }
 

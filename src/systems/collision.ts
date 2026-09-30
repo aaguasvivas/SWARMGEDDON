@@ -244,6 +244,8 @@ function applyHit(world: World, e: Enemy, p: Projectile): boolean {
     if (dot < -0.25) dmg *= 1 - e.def.frontArmor
   }
 
+  // HEADHUNTER's blast takes the elite multipliers at each of its own targets.
+  const blastBase = dmg
   dmg = vsTarget(world, e, dmg)
 
   // Knockback nudge (heavier enemies shrug it off).
@@ -276,7 +278,7 @@ function applyHit(world: World, e: Enemy, p: Projectile): boolean {
   // state before this hit (SHATTER needs an enemy slowed before it dies).
   if (!e.alive) {
     if (p.evo === 'pierceOnKill') p.pierce++
-    if (crit && m.headhunter > 0) queueBlast(world, e.x, e.y, FUSION.headhunterR, dmg * FUSION.headhunterFrac, 0, BLAST_CRIT)
+    if (crit && m.headhunter > 0) queueBlast(world, e.x, e.y, FUSION.headhunterR, blastBase * FUSION.headhunterFrac, 0, BLAST_CRIT)
   } else {
     if (m.slowOnHit > 0) {
       e.slow = 1.2
