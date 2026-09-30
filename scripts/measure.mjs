@@ -28,6 +28,9 @@
 //                                  override it.
 //   perf                           6s live combat at flood(500) + auto-fire; reports
 //                                  fps / p95 / max / long(>20ms) / bad(>33.4ms) frames.
+//                                  Drafts are answered with card 1 and the field is kept
+//                                  at 500, so the sim runs for the whole window
+//                                  (simTimeEnd and picks in the output show it did).
 //   perf-final [charId] [arenaId]  S.jumpTo(600) (the FINAL SWARM beat fires at once),
 //                                  then 10 s of live combat; same stats plus peak alive.
 //   thrash                         perf variant re-injecting layout thrash (A/B baseline).
@@ -398,6 +401,26 @@ if (MODE === 'shot') {
     S.flood(500)
     S.step(90 * 60) // deep into the run: full roster, elites, projectile hail
   }, pChar, pArena, final)
+  // Keep the window live: a level-up draft would otherwise pause the sim about
+  // 0.5 s in and the stats would time a frozen scene. Drafts are answered with
+  // card 1 (as the det bot does), the ship stays invincible (a pick recomputes
+  // maxHp), and perf tops the field back up to 500.
+  await page.evaluate((fin) => {
+    const S = window.__SWARM
+    const w = S.world
+    window.__PERF_PICKS = 0
+    const keepLive = () => {
+      if (w.paused && w.pendingLevelUps > 0 && w.draftCards.length > 0) {
+        S.pickPerk(w.draftCards[0].id)
+        window.__PERF_PICKS++
+      }
+      w.player.maxHp = 1e9
+      w.player.hp = 1e9
+      if (!fin && w.enemies.size < 500) S.flood(500 - w.enemies.size)
+      requestAnimationFrame(keepLive)
+    }
+    requestAnimationFrame(keepLive)
+  }, final)
   if (MODE === 'thrash') {
     await page.evaluate(() => {
       const canvas = document.querySelector('canvas')
@@ -441,6 +464,8 @@ if (MODE === 'shot') {
       total: S.loop.totalFrames,
       enemies: S.world.enemies.active.length,
       particles: S.world.particles.active.length,
+      simTimeEnd: +S.world.time.toFixed(1),
+      picks: window.__PERF_PICKS,
     }
   })
   console.log(JSON.stringify({ mode: MODE, W, H, gl: String(glInfo).slice(0, 60), ...stats, ...(final ? { peakAlive, simTime: +(await page.evaluate(() => window.__SWARM.world.time)).toFixed(1) } : {}) }))
