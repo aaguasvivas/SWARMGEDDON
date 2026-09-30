@@ -418,7 +418,7 @@ async function boot(): Promise<void> {
     }
     pauseReason = 'win'
     world.paused = true
-    winPanel.show(world.script.text.win, world.director.clearTime)
+    winPanel.show(world.script.text.win, world.director.clearTime, input.lastType === 'kbm')
   }
   winPanel.onExtract = () => endRun('clear')
   winPanel.onOvertime = () => {
@@ -490,9 +490,17 @@ async function boot(): Promise<void> {
     return false // already at the menu -> let the OS exit the app
   })
 
-  /** The player leaves a live run: a quit, or the death already under way. */
+  /** The end of a run the player leaves. runState stays 'won' from the PRIME
+   *  kill until OVERTIME starts (purge, pending drafts, win panel), so any
+   *  exit in that span is a clear. */
+  function leaveEnd(left: 'quit' | 'interrupted'): RunEnd {
+    if (world.pendingGameOver) return 'death'
+    if (world.director.runState === 'won') return 'clear'
+    return left
+  }
+
   function quitRun(after: AfterRun): void {
-    endRun(world.pendingGameOver ? 'death' : 'quit', after)
+    endRun(leaveEnd('quit'), after)
   }
 
   window.addEventListener('keydown', (e) => {
@@ -510,7 +518,10 @@ async function boot(): Promise<void> {
       }
       return
     }
-    if (pauseReason === 'win') return
+    if (pauseReason === 'win') {
+      winPanel.pressKey(e.key)
+      return
+    }
     if (debug && e.key === '`') {
       debug.toggle()
     } else if (screen === 'playing') {
@@ -603,9 +614,9 @@ async function boot(): Promise<void> {
     if (screen === 'playing' && world.pendingGameOver) endRun('death')
     void flushStorage()
   })
-  // A page closed or reloaded mid-run still records the run; at the win panel it counts as EXTRACT.
+  // A page closed or reloaded mid-run still records the run; after the PRIME kill it counts as EXTRACT.
   window.addEventListener('pagehide', () => {
-    if (screen === 'playing') endRun(world.pendingGameOver ? 'death' : pauseReason === 'win' ? 'clear' : 'interrupted', 'menu')
+    if (screen === 'playing') endRun(leaveEnd('interrupted'), 'menu')
     void flushStorage()
   })
   onAppPause(() => void flushStorage())

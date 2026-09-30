@@ -276,6 +276,7 @@ export interface RunRngs { spawn: Rng; script: Rng; boss: Rng; loot: Rng; draft:
 5. **Standard:** the WIN panel opens (section 9.5):
    - EXTRACT gives `endRun('clear')`.
    - OVERTIME calls `world.startOvertime()` and grants the PRIME Hive Core.
+6. **Leaving after the kill.** `main.ts` derives the end reason from world state, never from `pauseReason`: a death under way ends as `'death'`, and while `runState === 'won'` (the purge, the pending drafts and the WIN panel, until OVERTIME starts) every other exit ends as `'clear'`. That covers Escape, R and Android back before the panel opens, and a page closed at any point. At the panel itself, Escape and back do nothing. (W2 integration fix: an Escape in the 2 s purge window recorded `'quit'` with `cleared: true`, and a page closed during a pending-win draft recorded `'interrupted'`.)
 
 **FRENZY and STALEMATE:**
 - **FRENZY** starts 90 s after any boss arrives and steps every 15 s: cadence x1.1 per step (compounding, max x1.6), cage radius -25 per step (min 340), and a `FRENZY` alert. A step past both caps changes nothing and is not announced.
@@ -1141,6 +1142,8 @@ Landscape:
   - `EXTRACT` primary 56 gives `endRun('clear')`.
   - `OVERTIME` secondary 48 calls `startOvertime()`, which opens the PRIME core reveal, then `levelResume`.
 - No timer. Input lock 450 ms.
+- Keys (W2): Enter is EXTRACT and O is OVERTIME, after the same 450 ms lock. When the last input was keyboard and mouse, the line `Press Enter to extract or O for Overtime` (13 px, text.muted) shows under the buttons.
+- Gamepad: no screen reads the pad yet (only gameplay polls it), so the draft's pad keys (section 4.4) are not built either. P16 adds pad input to the draft, the WIN panel and the recap.
 
 ### 9.6 Recap (`src/ui/recap.ts` replaces `gameOver.ts`, which is deleted)
 
@@ -1462,8 +1465,14 @@ Run each phase's acceptance plus this standard block:
   2. The blast queue.
   3. `healPlayer` with the kill-heal bucket and overshield.
   4. Pods per section 4.5. The evolution itself is triggered in P9.
+- W2 hand-off: the merged W2 build drafts these perks and fusions, but part or all of their effect waits for P8. The draft keeps offering them until P8 lands, and every W2 measurement (the P5 A18 numbers, the A6 note in section 11) ran with these picks inert.
+  - No effect at all: Shock Step (`shockRadius`, `shockDamage`), one of the 2 MOBILITY keystones, so EMBER's Keystone draft offers it half the time; and Incendiary (`burnDps`).
+  - Partial: Overpressure has its knockback but no stagger (`staggerT`). Quartermaster has its ammo but no pod life or hold cut (`podLifeBonus`, `podHoldCut`). Vampiric heals per kill with no cap, although its card shows `max N HP/s` (`killHealCap`, the kill-heal bucket of task 3). Ricochet still bounces off walls (v1), not toward the nearest enemy as its card says.
+  - All 10 fusions: offered, taken and recorded, but `applyBuild` has no effect code for them.
+  - Not P8: `world.perkPool = PERKS` also drafts the 10 locked perks until P12b adds `resolvePools`.
 - Acceptance:
   - Standard block.
+  - Every `Modifiers` field has a reader outside `content/perks.ts`, and every FUSIONS id has effect code (grep).
   - One harness test per fusion and per evolution behavior, asserting the A3 and A4 numbers.
   - SMG magazine lasts 20.0 ±0.1 s with and without Adrenaline 5.
   - Crossing a pod at full speed does not take it.
@@ -1633,7 +1642,12 @@ node scripts/measure.mjs 390 844 perf ; node scripts/measure.mjs 390 844 perf-fi
 **A6 note (P6a review).**
 - A6 medians are measured on the boss-focus bot, `smart+focus:SEED:14:nova:priority`, because a player aims at the boss during a fight. The default bot shoots the nearest enemy, which in a fight is often the swarm held outside the cage, so it only has to finish every fight under 150 s.
 - At the old mid1 `hpBase` of 1600 the focus bot's mid1 median was 18.4 s. P6a raised it to 2400 (A10.2).
-- Measured on Hive with 2400: focus bot, seeds 1001 to 10010: mid1 27.7 s, mid2 38.1 s, final 40.6 s (2 kills); 30 seeds (1001 x 1 to 30): mid1 23.6 s, mid2 27.2 s, final 44.1 s (7 kills). Default bot, 30 seeds: longest fight 136.3 s, 7 wins. Kill-to-next-arrival at least 103 s. P19 retunes `hpBase` from here.
+- Measured on Hive with 2400: focus bot, seeds 1001 to 10010: mid1 27.7 s, mid2 38.1 s, final 40.6 s (2 kills); 30 seeds (1001 x 1 to 30): mid1 23.6 s, mid2 27.2 s, final 44.1 s (7 kills). Default bot, 30 seeds: longest fight 136.3 s, 7 wins. Kill-to-next-arrival at least 103 s. These are P6a branch numbers, before the W2 merge.
+- **Merged W2 build (P5 + P6a + P10 on main), Hive, seeds 1001 x 1 to 10, `nova:priority`.** P19 retunes `hpBase` from these numbers, not the P6a ones above.
+  - Focus bot: mid1 median 31.2 s (10 kills, 17.1 to 45.25 s), mid2 median 21.11 s (5 kills), final median 41.75 s (3 kills: 19.23, 41.75 and 69.11 s), 3 wins. Kill-to-next-arrival at least 147.3 s.
+  - Default bot: mid1 median 77.9 s (8 kills, longest 108.1 s), mid2 median 52.7 s (5 kills, longest 134.6 s), final 50.66 s and 158.83 s, 2 wins. Kill-to-next-arrival at least 45.4 s.
+  - **A6 FAIL on the default bot:** the seed 9009 PRIME fight took 158.83 s, over the 150 s cap. The build was survival (Vampiric, Regrowth 2, Bulwark 2, Vitality 3, and LIVING ARMOR, which has no effect until P8) with one damage perk, Heavy Rounds 1. So buildScale was about 1.22 (PRIME HP 4876 = 4200 x 1.22^0.75), and the default bot shoots the nearest enemy, often the swarm outside the cage.
+  - Every W2 number ran with the inert picks listed in the P8 W2 hand-off (section 10.3). P19 re-measures after P8.
 
 **A1 note (P4 review).**
 - "Both phone views" means the P14 normalized camera views: 560 x 996 (portrait) and 996 x 560 (landscape). Measure them with `node scripts/measure.mjs 375 667 opening 560 996` and `node scripts/measure.mjs 375 667 opening 996 560`.
