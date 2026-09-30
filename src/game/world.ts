@@ -1,16 +1,17 @@
 import type { Texture } from 'pixi.js'
-import { DASH, GRACE, HASH_CELL } from '../config.ts'
+import { DASH, GRACE, HASH_CELL, XP } from '../config.ts'
 import { Pool } from '../core/pool.ts'
 import { RunRngs, SALT, hash32 } from '../core/rng.ts'
 import { hueShiftHex } from '../core/color.ts'
 import { SpatialHash } from '../core/spatialHash.ts'
 import { DEFAULT_WEAPON_ID, WEAPONS, type WeaponDef } from '../content/weapons.ts'
 import { resolveScript, type ResolvedScript } from '../content/runScripts.ts'
-import { PERKS, baseModifiers, perkById, type Modifiers, type PerkDef } from '../content/perks.ts'
+import { PERKS, applyBuild, baseModifiers, resetModifiers, type Modifiers, type PerkDef } from '../content/perks.ts'
 import { CHARACTERS, type CharacterDef } from '../content/characters.ts'
 import { ARENAS, type ArenaTheme } from '../content/arenas.ts'
 import { FeelKind, FeelQueue, RunAlertRing } from '../effects/feelQueue.ts'
 import { Director } from '../systems/director.ts'
+import { DraftState } from '../systems/draft.ts'
 import type { Layers } from '../render/app.ts'
 import type { IchorLayer } from '../render/ichorLayer.ts'
 import type { TextureRegistry } from '../render/textures.ts'
@@ -94,10 +95,6 @@ export class World {
   firstGemAt = -1
   firstGemX = 0
   firstGemY = 0
-  /** Drafts opened this run; each open reseeds the draft stream from it. */
-  draftIndex = 0
-  /** Cards of the open draft, rolled once per open and reused until the pick. */
-  readonly draftCards: PerkDef[] = []
   /** Boss fights started this run; each reseeds the boss stream. */
   bossFights = 0
   /** Live pickups per PICKUP_SLOT, for the per-kind pool reservation. */
@@ -137,6 +134,24 @@ export class World {
   dmgMul = 1
   /** Gem XP multiplier of the minute row in force (non-elite, non-boss kills). */
   xpScale = 1
+
+  // P5: draft, perks, XP flow
+  /** Draft counters, fusion states and the open draft's cached cards. */
+  readonly draft = new DraftState()
+  /** The perks this run may draft, in canonical order (Daily: every perk). */
+  perkPool: readonly PerkDef[] = PERKS
+  /** Sim time of the last level gained (SURGE counts from it). */
+  lastLevelAt = 0
+  /** Raw gem XP dropped and collected this run (before xpMul and SURGE). */
+  xpDropped = 0
+  xpCollected = 0
+  /** The crimson bank gem that holds XP past XP.gemSoftCap gems, or null. */
+  bankGem: Pickup | null = null
+  /** Seconds left on the Adrenal Wake and Berserker medkit fire-rate windows. */
+  adrenalT = 0
+  berserkT = 0
+  /** Magazine size of the equipped weapon, Quartermaster included (-1 = infinite). */
+  ammoMax = -1
 
   // P14: UI foundation
   /** The additive muzzle flash quad (section 6.4). */
@@ -228,8 +243,6 @@ export class World {
     this.pendingGameOver = false
     this.enemyUidSeq = 1
     this.firstGemAt = -1
-    this.draftIndex = 0
-    this.draftCards.length = 0
     this.bossFights = 0
     this.feel.clear()
     this.alerts.reset()
@@ -244,6 +257,14 @@ export class World {
     this.closeCallSeq = 0
     this.damageTaken = 0
     this.lastHitBy = -1
+    this.draft.reset()
+    this.perkPool = PERKS
+    this.lastLevelAt = 0
+    this.xpDropped = 0
+    this.xpCollected = 0
+    this.bankGem = null
+    this.adrenalT = 0
+    this.berserkT = 0
 
     const b = this.arena.bounds
     this.player.spawn(b.x + b.w / 2, b.y + b.h / 2)
@@ -258,6 +279,7 @@ export class World {
     this.pickups.clear()
     this.acid.clear()
     this.ichor.clear()
+    this.bankGem = null
   }
 
   get maxDashCharges(): number {
@@ -277,7 +299,8 @@ export class World {
 
   equipWeapon(id: string): void {
     this.weapon = WEAPONS[id]!
-    this.ammo = this.weapon.ammo
+    this.ammo = this.weapon.ammo < 0 ? -1 : Math.round(this.weapon.ammo * this.mods.ammoMul)
+    this.ammoMax = this.ammo
   }
 
   // --- XP / level ------------------------------------------------------------
@@ -289,6 +312,7 @@ export class World {
       this.level++
       this.xpToNext = xpForLevel(this.level)
       this.pendingLevelUps++
+      this.lastLevelAt = this.time
       this.feel.emit(FeelKind.LevelUp, 0, this.player.x, this.player.y, this.level)
     }
   }
@@ -312,37 +336,15 @@ export class World {
 
   recomputeModifiers(): void {
     const m = this.mods
-    Object.assign(m, baseModifiers())
+    resetModifiers(m)
     this.character.applyPassive(m) // pilot signature passive, then perks stack on top
-    for (const [id, stacks] of this.perkStacks) perkById(id).apply(m, stacks)
+    for (const [id, stacks] of this.perkStacks) applyBuild(m, id, stacks)
 
     const prevMax = this.player.maxHp
     this.player.maxHp = Math.max(10, Math.round(this.character.maxHp * m.hpMul + m.bonusHp))
     const dMax = this.player.maxHp - prevMax
     if (dMax > 0) this.player.hp = Math.min(this.player.maxHp, this.player.hp + dMax)
     else this.player.hp = Math.min(this.player.hp, this.player.maxHp)
-  }
-
-  /** Roll the next draft into `draftCards` (up to 3) and return the count.
-   *  Called once per draft open; the cards stay fixed until the pick. */
-  rollDraft(): number {
-    this.draftIndex++
-    const rng = this.rngs.draft
-    rng.reseed(hash32(this.seed, SALT.draft, this.draftIndex * 64, 0))
-    const avail = PERKS.filter((p) => (this.perkStacks.get(p.id) ?? 0) < p.maxStacks)
-    const bag: PerkDef[] = []
-    for (const p of avail) {
-      const w = p.rarity === 'rare' ? 1 : 3
-      for (let i = 0; i < w; i++) bag.push(p)
-    }
-    const cards = this.draftCards
-    cards.length = 0
-    let guard = 0
-    while (cards.length < 3 && cards.length < avail.length && guard++ < 300) {
-      const p = rng.pick(bag)
-      if (!cards.includes(p)) cards.push(p)
-    }
-    return cards.length
   }
 
   /** Start a boss fight: the boss stream is reseeded per fight. */
@@ -352,7 +354,7 @@ export class World {
   }
 }
 
-/** XP needed to clear `level` -> level+1. */
+/** XP needed to clear `level` -> level+1 (A6). */
 export function xpForLevel(level: number): number {
-  return Math.floor(5 + level * 4 + level * level * 0.55)
+  return level === 1 ? XP.firstLevelCost : Math.floor(XP.a + XP.b * level + XP.c * level * level)
 }

@@ -32,6 +32,9 @@ export interface WeaponDef {
   chainRange?: number
   /** Rail and beam: shots draw as tracers stretched along travel (section 6.4). */
   tracer?: true
+  /** Pickup weapons: the paired perk (A4.1) and the evolution id (A4.2). */
+  pair?: string
+  evolvesTo?: string
 }
 
 export const DEFAULT_WEAPON_ID = 'pistol'
@@ -45,59 +48,59 @@ export const WEAPONS: Record<string, WeaponDef> = {
   smg: {
     id: 'smg', name: 'Splatter SMG', fireRate: 13, damage: 7, projectileSpeed: 840,
     spread: 0.1, projectilesPerShot: 1, pierce: 0, knockback: 90, projectileLife: 0.6,
-    projectileRadius: 3.5, tint: COLORS.bullet, ammo: 260, kickPx: 1.0, sfx: 'smg',
+    projectileRadius: 3.5, tint: COLORS.bullet, ammo: 260, kickPx: 1.0, sfx: 'smg', pair: 'adrenaline', evolvesTo: 'gore_hose',
   },
   shotgun: {
     id: 'shotgun', name: 'Boomstick', fireRate: 2.1, damage: 6, projectileSpeed: 720,
     spread: 0.32, projectilesPerShot: 9, pierce: 0, knockback: 280, projectileLife: 0.36,
-    projectileRadius: 4, tint: 0xffd27a, ammo: 48, kickPx: 6, sfx: 'shotgun',
+    projectileRadius: 4, tint: 0xffd27a, ammo: 48, kickPx: 6, sfx: 'shotgun', pair: 'twin_shot', evolvesTo: 'devastator',
   },
   minigun: {
     id: 'minigun', name: 'Hive Ripper', fireRate: 20, damage: 6, projectileSpeed: 900,
     spread: 0.14, projectilesPerShot: 1, pierce: 0, knockback: 60, projectileLife: 0.55,
-    projectileRadius: 3.5, tint: 0xffe08a, ammo: 480, kickPx: 0.8, sfx: 'smg',
+    projectileRadius: 3.5, tint: 0xffe08a, ammo: 480, kickPx: 0.8, sfx: 'smg', pair: 'heavy_rounds', evolvesTo: 'hive_reaper',
   },
   plasma: {
     id: 'plasma', name: 'Ion Lance', fireRate: 7, damage: 18, projectileSpeed: 980,
     spread: 0.03, projectilesPerShot: 1, pierce: 3, knockback: 70, projectileLife: 0.9,
-    projectileRadius: 5.5, tint: 0xb98cff, ammo: 110, kickPx: 2, sfx: 'plasma',
+    projectileRadius: 5.5, tint: 0xb98cff, ammo: 110, kickPx: 2, sfx: 'plasma', pair: 'piercing', evolvesTo: 'ion_spear',
   },
   railgun: {
     id: 'railgun', name: 'Rail Spike', fireRate: 1.5, damage: 90, projectileSpeed: 1700,
     spread: 0.004, projectilesPerShot: 1, pierce: 8, knockback: 320, projectileLife: 0.6,
-    projectileRadius: 5, tint: 0x86f7ff, ammo: 28, kickPx: 9, sfx: 'crack', tracer: true,
+    projectileRadius: 5, tint: 0x86f7ff, ammo: 28, kickPx: 9, sfx: 'crack', pair: 'deadeye', evolvesTo: 'skewer', tracer: true,
   },
   flamethrower: {
     id: 'flamethrower', name: 'Pyre', fireRate: 22, damage: 4.5, projectileSpeed: 460,
     spread: 0.26, projectilesPerShot: 2, pierce: 2, knockback: 14, projectileLife: 0.32,
-    projectileRadius: 6, tint: 0xff9a3c, ammo: 420, kickPx: 0.4, sfx: 'whoosh',
+    projectileRadius: 6, tint: 0xff9a3c, ammo: 420, kickPx: 0.4, sfx: 'whoosh', pair: 'incendiary', evolvesTo: 'inferno',
   },
   rocket: {
     id: 'rocket', name: 'Bile Mortar', fireRate: 1.4, damage: 26, projectileSpeed: 560,
     spread: 0.02, projectilesPerShot: 1, pierce: 0, knockback: 200, projectileLife: 1.6,
-    projectileRadius: 7, tint: 0xa6ff7a, ammo: 26, kickPx: 5, sfx: 'heavy',
+    projectileRadius: 7, tint: 0xa6ff7a, ammo: 26, kickPx: 5, sfx: 'heavy', pair: 'explosive_rounds', evolvesTo: 'plague_barrage',
     explodeRadius: 92, explodeDamage: 44,
   },
   lightning: {
     id: 'lightning', name: 'Arc Lash', fireRate: 6, damage: 16, projectileSpeed: 1050,
     spread: 0.05, projectilesPerShot: 1, pierce: 0, knockback: 40, projectileLife: 0.6,
-    projectileRadius: 4.5, tint: 0x9be7ff, ammo: 130, kickPx: 1.5, sfx: 'beam',
+    projectileRadius: 4.5, tint: 0x9be7ff, ammo: 130, kickPx: 1.5, sfx: 'beam', pair: 'arc_rounds', evolvesTo: 'storm_lash',
     chain: 4, chainRange: 150,
   },
   beam: {
     id: 'beam', name: 'Photon Beam', fireRate: 24, damage: 5, projectileSpeed: 1500,
     spread: 0.008, projectilesPerShot: 1, pierce: 5, knockback: 8, projectileLife: 0.5,
-    projectileRadius: 3, tint: 0xff6cf0, ammo: 600, kickPx: 0.3, sfx: 'beam', tracer: true,
+    projectileRadius: 3, tint: 0xff6cf0, ammo: 600, kickPx: 0.3, sfx: 'beam', pair: 'long_barrel', evolvesTo: 'solar_lance', tracer: true,
   },
   vortex: {
     id: 'vortex', name: 'Vortex Cannon', fireRate: 2.2, damage: 22, projectileSpeed: 430,
     spread: 0.02, projectilesPerShot: 1, pierce: 12, knockback: 360, projectileLife: 1.3,
-    projectileRadius: 9, tint: 0x9b7aff, ammo: 64, kickPx: 5, sfx: 'plasma',
+    projectileRadius: 9, tint: 0x9b7aff, ammo: 64, kickPx: 5, sfx: 'plasma', pair: 'overpressure',
   },
   hailstorm: {
     id: 'hailstorm', name: 'Hailstorm', fireRate: 9, damage: 5, projectileSpeed: 780,
     spread: 0.22, projectilesPerShot: 3, pierce: 1, knockback: 50, projectileLife: 0.5,
-    projectileRadius: 3, tint: 0x86f7ff, ammo: 360, kickPx: 1.2, sfx: 'smg',
+    projectileRadius: 3, tint: 0x86f7ff, ammo: 360, kickPx: 1.2, sfx: 'smg', pair: 'cryo_rounds',
   },
 
   // --- pilot base weapons (infinite ammo, never drop) -------------------------

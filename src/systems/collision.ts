@@ -1,4 +1,4 @@
-import { BITE, CLOSE_CALL, GRACE, HEALTH_DROP_CHANCE, HEALTH_HEAL, HEALTH_HEAL_ELITE } from '../config.ts'
+import { ARC_ROUNDS, BITE, BOSS_SLOW_CAP, CLOSE_CALL, GRACE, HEALTH_DROP_CHANCE, HEALTH_HEAL, HEALTH_HEAL_ELITE } from '../config.ts'
 import { distSq } from '../core/vec.ts'
 import { PICKUP_WEAPON_IDS } from '../content/weapons.ts'
 import {
@@ -199,7 +199,7 @@ function applyHit(world: World, e: Enemy, p: Projectile): boolean {
 
   if (m.slowOnHit > 0) {
     e.slow = 1.2
-    e.slowFactor = m.slowOnHit
+    e.slowFactor = e.def.boss && m.slowOnHit > BOSS_SLOW_CAP ? BOSS_SLOW_CAP : m.slowOnHit
   }
 
   spawnHitSpark(world, p.x, p.y, p.vx, p.vy)
@@ -217,7 +217,9 @@ function applyHit(world: World, e: Enemy, p: Projectile): boolean {
     dealDamage(world, e, e.hp)
   }
 
-  if (p.chain > 0) chainLightning(world, e, p, (crit ? p.damage * m.critMul : p.damage) * 0.6)
+  const hit = crit ? p.damage * m.critMul : p.damage
+  if (p.chain > 0) chainLightning(world, e, p.chain, p.chainRange, hit * 0.6)
+  else if (m.arcChance > 0 && world.rngs.combat.float() < m.arcChance) chainLightning(world, e, m.arcHops, ARC_ROUNDS.range, hit * ARC_ROUNDS.dmgFrac)
   return crit
 }
 
@@ -237,20 +239,20 @@ function thornsDamage(world: World, e: Enemy, dmg: number): void {
   dealDamage(world, e, dmg)
 }
 
-/** Chain lightning hops to nearby enemies (separate scratch buffer so it can run
- *  inside the projectile loop without clobbering its query). Each enemy is
- *  struck at most once per chain. */
-function chainLightning(world: World, from: Enemy, p: Projectile, dmg: number): void {
+/** Chain lightning (and Arc Rounds) hops to nearby enemies (separate scratch
+ *  buffer so it can run inside the projectile loop without clobbering its
+ *  query). Each enemy is struck at most once per chain. */
+function chainLightning(world: World, from: Enemy, chain: number, range: number, dmg: number): void {
   const buf2 = world.queryBuf2
   const seen = world.chainSeen
   seen[0] = from.uid
   let seenN = 1
-  const hops = p.chain < seen.length - 1 ? p.chain : seen.length - 1
-  const range2 = p.chainRange * p.chainRange
+  const hops = chain < seen.length - 1 ? chain : seen.length - 1
+  const range2 = range * range
   let cx = from.x
   let cy = from.y
   for (let jump = 0; jump < hops; jump++) {
-    const n = world.hash.query(cx, cy, p.chainRange, buf2)
+    const n = world.hash.query(cx, cy, range, buf2)
     let best: Enemy | null = null
     let bestD = range2
     for (let k = 0; k < n; k++) {

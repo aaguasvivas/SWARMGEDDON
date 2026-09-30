@@ -24,6 +24,8 @@ export class Hud {
   private hpGhost = 1 // trailing value -> the bright "damage" sliver
   private xpDisplay = 0 // smooth XP fill
   private clock = 0
+  private shownLevel = -1
+  private shownPending = -1
 
   /** Fresh-run reset. Otherwise a retry starts with last run's dying bars
    *  visibly sweeping back up from empty. */
@@ -160,7 +162,14 @@ export class Hud {
     this.xpFill.clear()
     if (this.xpDisplay > 0) this.xpFill.roundRect(x, xpY, barW * this.xpDisplay, xpH, 3).fill(COLORS.xpBar)
 
-    this.levelText.text = `Lv ${world.level}`
+    // A level waiting for the draft gap shows as +N in gold (the P15 chip stub).
+    const pending = world.pendingLevelUps
+    if (world.level !== this.shownLevel || pending !== this.shownPending) {
+      this.shownLevel = world.level
+      this.shownPending = pending
+      this.levelText.text = pending > 0 ? `Lv ${world.level} +${pending}` : `Lv ${world.level}`
+      this.levelText.style.fill = pending > 0 ? T.accentGold : COLORS.xpBar
+    }
 
     const secs = Math.floor(world.time)
     this.stats.text = `${Math.floor(secs / 60)}:${(secs % 60).toString().padStart(2, '0')}   kills ${world.kills}`

@@ -96,9 +96,9 @@ await page.evaluate(() => {
   // the app's own storage instance. A dynamic import can load a second copy
   // once HMR has stamped the module URL with ?t=.
   S.saveJSON('best:world:depths', { time: 347, kills: 1209 })
-  // addXp queued MULTIPLE level-ups; picking one just opens the next draft and
-  // the modal swallows Escape. Clear the queue + unpause (the render loop then
-  // closes the modal), and only after that Escape routes playing -> menu.
+  // addXp queued several level-ups and the open modal swallows Escape. Clear
+  // the queue + unpause (the render loop then closes the modal), and only
+  // after that Escape routes playing -> menu.
   S.world.pendingLevelUps = 0
   S.world.paused = false
 })

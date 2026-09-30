@@ -53,6 +53,7 @@ import { pickupSystem } from './systems/pickups.ts'
 import { collisionSystem } from './systems/collision.ts'
 import { acidSystem } from './systems/acid.ts'
 import { dashSystem } from './systems/dash.ts'
+import { banishCard, canReroll, draftDue, openDraft as dealDraft, pickCard, pickPerkId, rerollDraft, skipDraft } from './systems/draft.ts'
 import { particleSystem } from './systems/particles.ts'
 
 type Screen = 'menu' | 'playing' | 'gameover' | 'leaderboard'
@@ -345,34 +346,45 @@ async function boot(): Promise<void> {
   }
   settingsPanel.onClose = () => settingsPanel.hide()
   /** The only way a draft opens: its cards are rolled once here and stay
-   *  cached on the world until the pick. An empty roll clears the pending
-   *  levels instead of freezing the run. */
+   *  cached on world.draft until the pick. An empty roll clears the pending
+   *  levels instead of freezing the run. Picks never chain-open: further
+   *  pending levels wait for the DRAFT.minGap rule. */
   function openDraft(): void {
-    if (world.rollDraft() === 0) {
+    if (dealDraft(world) === 0) {
       world.pendingLevelUps = 0
+      world.draft.open = false
       world.paused = false
       modal.close()
       return
     }
     world.paused = true
-    modal.open(world.draftCards)
+    modal.open(world.draft, input.lastType === 'touch')
     feel.draftOpened()
     levelFlash = 1
   }
-  function pickPerk(perkId: string): void {
-    world.choosePerk(perkId)
-    world.pendingLevelUps--
-    feel.cardPicked()
-    if (world.pendingLevelUps > 0) openDraft()
-    // A chained draft that rolled empty cleared pendingLevelUps, so it resumes here too.
-    if (world.pendingLevelUps > 0) return
+  function resumeFromDraft(): void {
     modal.close()
     world.paused = false
     world.resumeFromDraft()
     input.cancelDashPress()
     feel.time.play(TimePreset.Resume)
   }
-  modal.onPick = pickPerk
+  function takeCard(i: number): void {
+    if (!world.draft.open || i < 0 || i >= world.draft.count) return
+    pickCard(world, i)
+    feel.cardPicked()
+    resumeFromDraft()
+  }
+  function skipCard(): void {
+    if (!world.draft.open) return
+    skipDraft(world)
+    resumeFromDraft()
+  }
+  modal.onPick = takeCard
+  modal.onSkip = skipCard
+  modal.onReroll = () => rerollDraft(world)
+  modal.onBanish = (i) => banishCard(world, i)
+  modal.canReroll = () => canReroll(world)
 
   // --- layout (screen-dependent only; the arena/ichor are fixed-size) ---
   function layout(): void {
@@ -387,7 +399,7 @@ async function boot(): Promise<void> {
     touchHint.layout(w, h, insets, input.touch.dashX, input.touch.dashY)
     vignette.resize(w, h)
     backdrop.layout(w, h)
-    modal.setScreen(w, h)
+    modal.setScreen(w, h, insets)
     mainMenu.layout(w, h)
     gameOver.layout(w, h)
     settingsPanel.layout(w, h)
@@ -433,9 +445,13 @@ async function boot(): Promise<void> {
     const tgt = e.target as HTMLElement | null
     if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)) return
     if (modal.isOpen()) {
-      if (e.key === '1') modal.pickByIndex(0)
-      else if (e.key === '2') modal.pickByIndex(1)
-      else if (e.key === '3') modal.pickByIndex(2)
+      if (e.key === '1' || e.key === '2' || e.key === '3') modal.pressCard(Number(e.key) - 1)
+      else if (e.key === 'r' || e.key === 'R') modal.reroll()
+      else if (e.key === 'b' || e.key === 'B') modal.toggleBanish()
+      else if (e.key === 'Backspace') {
+        e.preventDefault()
+        skipCard()
+      }
       return
     }
     if (debug && e.key === '`') {
@@ -507,9 +523,10 @@ async function boot(): Promise<void> {
 
     sweepPools()
 
-    // Hand-off: a level earned this tick opens the draft (death outranks it, so
-    // a pick is never applied posthumously).
-    if (world.pendingLevelUps > 0 && !world.pendingGameOver) openDraft()
+    // Hand-off: a pending level opens the draft once DRAFT.minGap has passed
+    // since the last one (death outranks it, so a pick is never applied
+    // posthumously).
+    if (draftDue(world)) openDraft()
   }
 
   // Leaving the death sequence early: a fresh tap after the skip beat, or the
@@ -580,7 +597,7 @@ async function boot(): Promise<void> {
       crosshair.visible = showCrosshair
       if (showCrosshair) crosshair.position.set(input.pointerX, input.pointerY)
 
-      hud.view.visible = playing
+      hud.view.visible = playing && !modal.isOpen()
       if (playing) hud.update(world, fd)
 
       if ((!world.paused || !playing) && modal.isOpen()) modal.close()
@@ -722,7 +739,18 @@ async function boot(): Promise<void> {
       },
       startRun: (mode: RunMode) => startRun(mode),
       endRun: () => endRun(),
-      pickPerk: (id: string) => pickPerk(id),
+      pickCard: (i: number) => takeCard(i),
+      reroll: () => modal.reroll(),
+      banish: (i: number) => {
+        if (banishCard(world, i)) modal.refresh()
+      },
+      skip: () => skipCard(),
+      /** Harness forced pick: take perk `id` whatever the cards show. */
+      forcePick: (id: string) => {
+        if (!world.draft.open) return
+        pickPerkId(world, id)
+        resumeFromDraft()
+      },
       get settings() {
         return settings
       },

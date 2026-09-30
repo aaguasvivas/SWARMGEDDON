@@ -21,7 +21,6 @@ for (const f of files) {
       min: m + 1,
       levelUps: lv.filter((e) => e.t > lo && e.t <= hi).length,
       kills: c.reduce((s, x) => s + x.killsDelta, 0),
-      xpExpired: c.reduce((s, x) => s + x.xpExpired, 0),
       maxEnemies: Math.max(0, ...c.map((x) => x.maxEnemiesChunk)),
       capFrac: c.length ? +(c.reduce((s, x) => s + x.capFrac, 0) / c.length).toFixed(2) : 0,
       dmgTaken: c.reduce((s, x) => s + x.dmgTaken, 0),
@@ -63,11 +62,10 @@ for (const f of files) {
   const pods = ev.filter((e) => e.type === 'pod')
   const equips = ev.filter((e) => e.type === 'equip')
   const capChunk = r.chunks.find((c) => c.maxEnemiesChunk >= 700)
-  const xpCollected = r.xpTotal
   out.push({
     file: f,
     arena: r.cfg.arena,
-    mode: r.cfg.mode + (r.cfg.dash ? '+dash' : '') + (r.cfg.perkPolicy === 'priority' ? '+P' : ''),
+    mode: r.cfg.mode + (r.cfg.dash ? '+dash' : '') + ({ priority: '+P', random: '+R', evolve: '+E' }[r.cfg.perkPolicy] ?? ''),
     seed: r.cfg.seed,
     endTime: r.endTime,
     dead: r.dead,
@@ -96,9 +94,12 @@ for (const f of files) {
     podIds: pods.map((p) => p.id),
     equips: equips.map((e) => `${e.t}:${e.id}`),
     secondsOnPickupWeapon: +onPickup.toFixed(1),
-    xpCollected,
-    xpExpired: r.xpExpired,
-    xpExpiredFrac: +(r.xpExpired / Math.max(1, r.xpExpired + xpCollected)).toFixed(3),
+    xpDropped: r.xpDropped,
+    xpCollected: r.xpCollected,
+    xpCollectFrac: r.xpCollectFrac,
+    xpCollectFrac30: r.xpCollectFrac30,
+    firstDraftAt: r.firstDraftAt,
+    firstFusionAt: r.firstFusionAt,
     dmgTaken: r.dmgTaken,
     healed: r.healed,
     dashes: r.dashes ?? 0,
@@ -131,7 +132,7 @@ for (const s of out) {
       `boss1=${s.bossFirstSpawn} bosses=${s.bossSpawns.length} killed=${s.bossKills.length}`,
       `elites=${s.elites}`,
       `pods=${s.podsSeen}(kill ${s.podsFromKills}) equips=${s.equips.length} onPickup=${s.secondsOnPickupWeapon}s`,
-      `xpExp=${s.xpExpired}/${(s.xpExpiredFrac * 100).toFixed(0)}%`,
+      `xp=${(s.xpCollectFrac * 100).toFixed(1)}% draft1=${s.firstDraftAt} fusion=${s.firstFusionAt ?? '-'}`,
       `podFail=${s.podDropFailedAtPickupCap} pkCap=${s.pickupCapStepFrac}`,
       `lv/min=${s.levelUpsPerMin.join(',')}`,
       `dash=${s.dashes} cc/min=${s.closeCallsPerMin}`,

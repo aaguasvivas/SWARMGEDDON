@@ -20,6 +20,14 @@
 //                                  (cos 0.7t, sin 0.9t), aim at the nearest enemy, fire
 //                                  always, pick card 1, `seconds` of sim (default 780 =
 //                                  12:00 + 60 s). Same hash, same invariant as det.
+//   rerolls [arenaId|all] [seconds]
+//                                  P5 reroll independence: the det-long bot plays
+//                                  `seconds` (default 180) twice per world with the same
+//                                  forced picks (a fixed perk order, whatever the cards
+//                                  show), once with 0 rerolls and once rerolling twice on
+//                                  every draft that still has rerolls. The spawn and loot
+//                                  stream states and the field must be equal. (The draft
+//                                  stream is reseeded per roll, so it only shows the last.)
 //   opening [viewW viewH]          A1 opening probe: 5 seeds per world, stationary, aim
 //                                  at the nearest enemy in view. Reports first enemy in
 //                                  view, first kill and empty-view seconds over the first
@@ -94,6 +102,8 @@ const DET_HELPER = `(() => {
     return best ? [best, Math.sqrt(bd) || 1] : null
   }
   const DASH_TICKS = [60, 200, 330, 331]
+  const FORCED = ['heavy_rounds', 'twin_shot', 'adrenaline', 'piercing', 'vitality', 'regrowth', 'cryo_rounds', 'magnetic']
+  const MAX_OF = { heavy_rounds: 5, twin_shot: 3, adrenaline: 5, piercing: 4, vitality: 5, regrowth: 4, cryo_rounds: 3, magnetic: 3 }
   const botShort = () => {
     if (DASH_TICKS.includes(st.tick)) inp.pressDash()
     st.tick++
@@ -138,7 +148,7 @@ const DET_HELPER = `(() => {
     inp.move.y = Math.sin(0.9 * w.time)
   }
   window.__DET = {
-    start(c, a, runMode, long) {
+    start(c, a, runMode, long, rerolls = -1) {
       S.loop.stop()
       if (runMode !== 'daily') S.setLoadout(c, a)
       else S.setLoadout(c, 'hive')
@@ -146,15 +156,25 @@ const DET_HELPER = `(() => {
       w.player.maxHp = 1e9
       w.player.hp = 1e9
       if (!long) S.flood(200)
-      st = { drafts: 0, bosses: 0, realUpdate: inp.update, wasBoss: false, tick: 0 }
+      st = { drafts: 0, bosses: 0, realUpdate: inp.update, wasBoss: false, tick: 0, rerolls, rerollsUsed: 0 }
       inp.update = long ? botLong : botShort
     },
     run(n) {
       for (let i = 0; i < n; i++) {
         S.step(1)
-        while (w.paused && w.pendingLevelUps > 0 && w.draftCards.length > 0) {
+        while (w.paused && w.draft.open) {
           st.drafts++
-          S.pickPerk(w.draftCards[0].id)
+          if (st.rerolls < 0) {
+            S.pickCard(0)
+            continue
+          }
+          for (let r = 0; r < st.rerolls && w.draft.rerolls > 0; r++) {
+            S.reroll()
+            st.rerollsUsed++
+          }
+          const next = FORCED.find((id) => (w.perkStacks.get(id) ?? 0) < MAX_OF[id])
+          if (next) S.forcePick(next)
+          else S.skip()
         }
         if (w.bossAlive && !st.wasBoss) st.bosses++
         st.wasBoss = w.bossAlive
@@ -178,6 +198,9 @@ const DET_HELPER = `(() => {
       mix(w.kills); mix(w.level); mix(w.xp); mix(w.time); mix(w.ammo)
       mix(w.projectiles.size); mix(w.enemyProjectiles.size); mix(w.acid.size); mix(w.particles.size)
       mix(w.dashes); mix(w.closeCalls); mix(w.dashCharges); mix(w.dashRecharge)
+      const dr = w.draft
+      mix(dr.index); mix(dr.rerolls); mix(dr.banishes); mix(dr.sinceRare); mix(w.pendingLevelUps)
+      mix(w.xpDropped); mix(w.xpCollected); mix(w.lastLevelAt)
       for (const ch of w.weapon.id) byte(ch.charCodeAt(0))
       for (const [id, n] of w.perkStacks) { for (const ch of id) byte(ch.charCodeAt(0)); mix(n) }
       const d = w.director
@@ -202,6 +225,8 @@ const DET_HELPER = `(() => {
         level: w.level, drafts: st.drafts, pickups: w.pickups.active.length, time: +w.time.toFixed(2),
         bosses: st.bosses, director, byType, streams,
         dashes: w.dashes, closeCalls: w.closeCalls, damageTaken: Math.round(w.damageTaken),
+        rerollsUsed: st.rerollsUsed, xpDropped: +w.xpDropped.toFixed(1), xpCollected: +w.xpCollected.toFixed(1),
+        perks: Object.fromEntries(w.perkStacks),
       }
     },
   }
@@ -324,6 +349,30 @@ if (MODE === 'shot') {
     }))
   }
   if (pageErrors.length) console.log(JSON.stringify({ mode: MODE, pageErrors }))
+} else if (MODE === 'rerolls') {
+  const arenaArg = pos[3] || 'all'
+  const steps = Math.round(parseFloat(pos[4] || '180') * 60)
+  const arenas = arenaArg === 'all' ? ['hive', 'depths', 'wastes'] : [arenaArg]
+  await page.evaluate(DET_HELPER)
+  for (const arenaId of arenas) {
+    const runs = []
+    for (const rerolls of [0, 2]) {
+      await page.evaluate((a, r) => window.__DET.start('nova', a, 'endless', true, r), arenaId, rerolls)
+      for (let done = 0; done < steps; done += 3600) await page.evaluate((n) => window.__DET.run(n), Math.min(3600, steps - done))
+      runs.push(await page.evaluate(() => window.__DET.finish()))
+    }
+    const [a, b] = runs
+    const same = (k) => JSON.stringify(a[k]) === JSON.stringify(b[k])
+    const pass = a.streams.spawn === b.streams.spawn && a.streams.loot === b.streams.loot &&
+      same('perks') && a.kills === b.kills && a.enemies === b.enemies && a.pickups === b.pickups && b.rerollsUsed > 0
+    console.log(JSON.stringify({
+      mode: MODE, arenaId, seconds: steps / 60, drafts: [a.drafts, b.drafts], rerollsUsed: [a.rerollsUsed, b.rerollsUsed],
+      spawn: [a.streams.spawn, b.streams.spawn], loot: [a.streams.loot, b.streams.loot], draft: [a.streams.draft, b.streams.draft],
+      kills: [a.kills, b.kills], level: [a.level, b.level], enemies: [a.enemies, b.enemies], pickups: [a.pickups, b.pickups],
+      samePerks: same('perks'), pass,
+    }))
+  }
+  if (pageErrors.length) console.log(JSON.stringify({ mode: MODE, pageErrors }))
 } else if (MODE === 'opening') {
   const zoom = await page.evaluate(() => window.__SWARM.camera.baseZoom)
   const view = [parseFloat(pos[3]) || +(W / zoom).toFixed(1), parseFloat(pos[4]) || +(H / zoom).toFixed(1)]
@@ -364,7 +413,7 @@ if (MODE === 'shot') {
           while (w.time < 60) {
             const t0 = w.time
             S.step(1)
-            while (w.paused && w.pendingLevelUps > 0 && w.draftCards.length > 0) S.pickPerk(w.draftCards[0].id)
+            while (w.paused && w.draft.open) S.pickCard(0)
             w.player.maxHp = w.player.hp = 1e9
             if (w.time === t0) continue
             if (w.enemies.active.some(inView)) {
@@ -501,8 +550,8 @@ if (MODE === 'shot') {
     const w = S.world
     window.__PERF_PICKS = 0
     const keepLive = () => {
-      if (w.paused && w.pendingLevelUps > 0 && w.draftCards.length > 0) {
-        S.pickPerk(w.draftCards[0].id)
+      if (w.paused && w.draft.open) {
+        S.pickCard(0)
         window.__PERF_PICKS++
       }
       w.player.maxHp = 1e9
