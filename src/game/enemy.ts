@@ -51,10 +51,11 @@ export class Enemy implements Poolable {
   /** Cryo slow remaining (seconds) + its strength (0..1). */
   slow = 0
   slowFactor = 0
-  /** Burrower is underground: invulnerable + no contact damage. */
+  /** Underground (burrower) or still emerging (boss): intangible, no contact damage. */
   submerged = false
-  /** Boss enrage phase active. */
-  enraged = false
+  /** Boss fight (World.bossFights) this enemy was spawned into as brood, 0 for
+   *  none. The fight's own brood may stay inside its cage. */
+  brood = 0
   /** Per-enemy phase offset so the swarm doesn't wobble in lockstep. */
   animPhase = 0
   /** Sim time this enemy spawned; drives the cosmetic emerge fade (render-only read). */

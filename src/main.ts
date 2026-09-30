@@ -11,6 +11,7 @@ import { loadFonts } from './render/fonts.ts'
 import { TextureRegistry } from './render/textures.ts'
 import { IchorLayer } from './render/ichorLayer.ts'
 import { renderEntities } from './render/entityRenderer.ts'
+import { HazardRenderer } from './render/hazardRenderer.ts'
 import { PostFX } from './render/postfx.ts'
 import { Vignette } from './render/vignette.ts'
 import { BackdropSystem } from './render/backdrop.ts'
@@ -27,6 +28,7 @@ import { Hud } from './ui/hud.ts'
 import { LevelUpModal } from './ui/levelupModal.ts'
 import { MainMenu } from './ui/mainMenu.ts'
 import { GameOver } from './ui/gameOver.ts'
+import { WinPanel } from './ui/winPanel.ts'
 import { SettingsPanel } from './ui/settingsPanel.ts'
 import { Leaderboard } from './ui/leaderboard.ts'
 import { dismissNamePrompt } from './ui/namePrompt.ts'
@@ -45,7 +47,8 @@ import { CHARACTERS, DEFAULT_CHARACTER_ID, characterById } from './content/chara
 import { ARENAS, DEFAULT_ARENA_ID, arenaById } from './content/arenas.ts'
 import { evaluateUnlocks, grant, isUnlocked } from './state/unlocks.ts'
 import { spawnEnemy, debugFloodSwarmers } from './systems/spawn.ts'
-import { directorJumpTo, directorTick } from './systems/director.ts'
+import { clampPlayerToCage, directorJumpTo, directorTick } from './systems/director.ts'
+import { hazardsTick } from './systems/hazards.ts'
 import { aiSystem, buildEnemyHash } from './systems/ai.ts'
 import { weaponSystem } from './systems/weapons.ts'
 import { projectileSystem, enemyProjectileSystem } from './systems/projectiles.ts'
@@ -57,6 +60,7 @@ import { banishCard, canReroll, draftDue, openDraft as dealDraft, pickCard, pick
 import { particleSystem } from './systems/particles.ts'
 
 type Screen = 'menu' | 'playing' | 'gameover' | 'leaderboard'
+type RunEnd = 'death' | 'clear' | 'stalemate'
 
 /**
  * Phase 3 bootstrap + game state machine. boot -> menu -> playing -> gameover.
@@ -86,6 +90,7 @@ async function boot(): Promise<void> {
 
   const texReg = new TextureRegistry(app.renderer)
   texReg.bakePlaceholders()
+  texReg.bakeHazards()
   bakeIcons(app.renderer)
 
   const audio = new AudioEngine()
@@ -103,6 +108,8 @@ async function boot(): Promise<void> {
   const ichor = new IchorLayer(app.renderer, cosmetic)
   ichor.resize(arena.bounds.w, arena.bounds.h, arena.bounds.x, arena.bounds.y) // once; arena is fixed
   layers.ichor.addChild(ichor.view)
+  const hazardView = new HazardRenderer(texReg)
+  layers.ichor.addChild(hazardView.view)
 
   const player = new Player()
   const world = new World(arena, player, ichor, layers, texReg)
@@ -132,6 +139,7 @@ async function boot(): Promise<void> {
   const modal = new LevelUpModal()
   const mainMenu = new MainMenu()
   const gameOver = new GameOver()
+  const winPanel = new WinPanel()
   const settingsPanel = new SettingsPanel()
   const leaderboard = new Leaderboard()
   const touchHint = new TouchHint()
@@ -141,7 +149,7 @@ async function boot(): Promise<void> {
   // vignette sits at the bottom of the UI (above the world, below the HUD).
   layers.ui.addChild(
     vignette.view, hud.view, input.touch.view, hurtOverlay, flashOverlay, crosshair,
-    touchHint.view, modal.view, mainMenu.view, gameOver.view, settingsPanel.view, leaderboard.view,
+    touchHint.view, modal.view, winPanel.view, mainMenu.view, gameOver.view, settingsPanel.view, leaderboard.view,
   )
   if (debug) layers.ui.addChild(debug.view)
 
@@ -180,6 +188,8 @@ async function boot(): Promise<void> {
 
   // --- state machine ---
   let screen: Screen = 'menu'
+  /** Why the sim is paused beyond a draft: the win panel is up. */
+  let pauseReason: 'none' | 'win' = 'none'
   let lastResult: RunResult | null = null
   let submitToken = 0
 
@@ -250,15 +260,19 @@ async function boot(): Promise<void> {
     touchMoveUsed = false
     touchAimUsed = false
     screen = 'playing'
+    pauseReason = 'none'
     input.setEnabled(true)
     modal.close()
+    winPanel.hide()
     mainMenu.hide()
     gameOver.hide()
     settingsPanel.hide()
     leaderboard.hide()
   }
 
-  function endRun(): void {
+  function endRun(end: RunEnd): void {
+    pauseReason = 'none'
+    winPanel.hide()
     const result: RunResult = {
       mode: world.mode,
       time: world.time,
@@ -275,6 +289,9 @@ async function boot(): Promise<void> {
     const isHigh = recordRun(result)
     const gains = recordWorldBest(result) // per-world best time / most kills
     gameOver.show(result, isHigh, gains)
+    const text = world.script.text
+    if (end === 'clear') gameOver.setHeadline(text.win, 0xffc24a)
+    else if (end === 'stalemate') gameOver.setHeadline(text.stalemate, 0xff5a6e)
     // Earned unlocks: banner them and refresh the menu selectors.
     const fresh = evaluateUnlocks(result)
     feel.runEnded(isHigh, fresh.length > 0)
@@ -298,6 +315,8 @@ async function boot(): Promise<void> {
 
   function toMenu(): void {
     screen = 'menu'
+    pauseReason = 'none'
+    winPanel.hide()
     input.setEnabled(false)
     feel.reset()
     camera.reset()
@@ -386,6 +405,28 @@ async function boot(): Promise<void> {
   modal.onBanish = (i) => banishCard(world, i)
   modal.canReroll = () => canReroll(world)
 
+  /** The PRIME is dead and the purge is over: Standard asks EXTRACT or
+   *  OVERTIME, the Daily ends as a clear. Pending level-ups resolve first. */
+  function openWin(): void {
+    if (world.mode === 'daily') {
+      endRun('clear')
+      return
+    }
+    pauseReason = 'win'
+    world.paused = true
+    winPanel.show(world.script.text.win, world.director.clearTime)
+  }
+  winPanel.onExtract = () => endRun('clear')
+  winPanel.onOvertime = () => {
+    winPanel.hide()
+    pauseReason = 'none'
+    world.startOvertime()
+    world.paused = false
+    world.resumeFromDraft()
+    input.cancelDashPress()
+    feel.time.play(TimePreset.Resume)
+  }
+
   // --- layout (screen-dependent only; the arena/ichor are fixed-size) ---
   function layout(): void {
     const w = app.screen.width
@@ -400,6 +441,7 @@ async function boot(): Promise<void> {
     vignette.resize(w, h)
     backdrop.layout(w, h)
     modal.setScreen(w, h, insets)
+    winPanel.layout(w, h, insets)
     mainMenu.layout(w, h)
     gameOver.layout(w, h)
     settingsPanel.layout(w, h)
@@ -431,7 +473,7 @@ async function boot(): Promise<void> {
       settingsPanel.hide()
       return true
     }
-    if (modal.isOpen()) return true // swallow back while choosing a perk
+    if (modal.isOpen() || pauseReason === 'win') return true // swallow back while a choice is up
     if (screen !== 'menu') {
       toMenu()
       return true
@@ -454,6 +496,7 @@ async function boot(): Promise<void> {
       }
       return
     }
+    if (pauseReason === 'win') return
     if (debug && e.key === '`') {
       debug.toggle()
     } else if (screen === 'playing') {
@@ -484,6 +527,7 @@ async function boot(): Promise<void> {
     world.particles.sweep()
     world.pickups.sweep()
     world.acid.sweep()
+    world.hazards.sweep()
   }
 
   // One fixed simulation step (extracted so dev tooling can drive it).
@@ -514,29 +558,34 @@ async function boot(): Promise<void> {
     enemyProjectileSystem(world, dt)
     pickupSystem(world, dt)
     collisionSystem(world, dt)
+    hazardsTick(world, dt)
     acidSystem(world, dt)
     particleSystem(world, dt)
     player.update(dt, input.move, input.aimDir, arena.bounds, world.mods.moveSpeedMul, world.pullX, world.pullY)
+    clampPlayerToCage(world)
     if (player.hp > 0 && world.mods.regenPerSec > 0) {
       player.hp = Math.min(player.maxHp, player.hp + world.mods.regenPerSec * dt)
     }
 
     sweepPools()
 
-    // Hand-off: a pending level opens the draft once DRAFT.minGap has passed
-    // since the last one (death outranks it, so a pick is never applied
-    // posthumously).
-    if (draftDue(world)) openDraft()
+    // Hand-offs, in rank order: death (next tick), the stalemate, the win, then
+    // a draft (DRAFT.minGap apart). A pick is never applied posthumously, and
+    // level-ups earned before the win are drafted before the win panel opens.
+    if (world.pendingGameOver) return
+    if (world.pendingEnd) endRun('stalemate')
+    else if (world.pendingWin && world.pendingLevelUps === 0) openWin()
+    else if (draftDue(world)) openDraft()
   }
 
   // Leaving the death sequence early: a fresh tap after the skip beat, or the
   // app going to the background, goes straight to the recap.
   app.canvas.addEventListener('pointerdown', () => {
-    if (screen === 'playing' && world.pendingGameOver && feel.time.deathMs >= DEATH_SKIP_MS) endRun()
+    if (screen === 'playing' && world.pendingGameOver && feel.time.deathMs >= DEATH_SKIP_MS) endRun('death')
   })
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) return
-    if (screen === 'playing' && world.pendingGameOver) endRun()
+    if (screen === 'playing' && world.pendingGameOver) endRun('death')
     void flushStorage()
   })
   onAppPause(() => void flushStorage())
@@ -567,7 +616,7 @@ async function boot(): Promise<void> {
           postFX.shiftSaturation(-0.6)
           vignette.view.alpha = 0.85
         }
-        if (time.deathMs >= DEATH_RECAP_MS) endRun()
+        if (time.deathMs >= DEATH_RECAP_MS) endRun('death')
       }
       loop.timeScale = time.scale(world.paused)
       const playing = screen === 'playing'
@@ -579,6 +628,7 @@ async function boot(): Promise<void> {
       }
 
       renderEntities(world, alpha)
+      hazardView.update(world, alpha)
       player.render(alpha)
       // i-frames: the ship blinks at 15 Hz.
       player.view.alpha = player.invuln > 0 && (Math.floor(renderClock * 30) & 1) === 1 ? 0.35 : 1
@@ -738,7 +788,7 @@ async function boot(): Promise<void> {
         return screen
       },
       startRun: (mode: RunMode) => startRun(mode),
-      endRun: () => endRun(),
+      endRun: (end: RunEnd = 'death') => endRun(end),
       pickCard: (i: number) => takeCard(i),
       reroll: () => modal.reroll(),
       banish: (i: number) => {

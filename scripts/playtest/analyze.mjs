@@ -58,6 +58,19 @@ for (const f of files) {
   if (since !== null) onPickup += r.endTime - since
   const bossSpawns = ev.filter((e) => e.type === 'bossSpawn')
   const bossKills = ev.filter((e) => e.type === 'bossKill')
+  // Boss fights: each spawn runs until its kill, an ascend (the next spawn),
+  // the stalemate, or the end of the run.
+  const fights = bossSpawns.map((sp, i) => {
+    const next = bossSpawns[i + 1]
+    const end = ev.find((e) => e.t >= sp.t && (e.type === 'bossKill' || e.type === 'stalemate'))
+    const endT = end && (!next || end.t <= next.t) ? end.t : next ? next.t : r.endTime
+    const how = end && (!next || end.t <= next.t) ? (end.type === 'bossKill' ? 'kill' : 'stalemate') : next ? 'ascend' : r.dead ? 'death' : 'open'
+    return { stage: sp.stage, spawnT: sp.t, endT, len: +(endT - sp.t).toFixed(2), how, dist: sp.dist, cage: sp.cage, inCage: sp.inCage, inArena: sp.inArena, hp: sp.hp }
+  })
+  const killGaps = []
+  for (let i = 0; i < fights.length - 1; i++) {
+    if (fights[i].how === 'kill') killGaps.push(+(fights[i + 1].spawnT - fights[i].endT).toFixed(2))
+  }
   const elites = ev.filter((e) => e.type === 'elite')
   const pods = ev.filter((e) => e.type === 'pod')
   const equips = ev.filter((e) => e.type === 'equip')
@@ -65,7 +78,7 @@ for (const f of files) {
   out.push({
     file: f,
     arena: r.cfg.arena,
-    mode: r.cfg.mode + (r.cfg.dash ? '+dash' : '') + ({ priority: '+P', random: '+R', evolve: '+E' }[r.cfg.perkPolicy] ?? ''),
+    mode: r.cfg.mode + (r.cfg.dash ? '+dash' : '') + (r.cfg.focus ? '+focus' : '') + ({ priority: '+P', random: '+R', evolve: '+E' }[r.cfg.perkPolicy] ?? ''),
     seed: r.cfg.seed,
     endTime: r.endTime,
     dead: r.dead,
@@ -82,6 +95,10 @@ for (const f of files) {
     bossFirstSpawn: bossSpawns[0]?.t ?? null,
     bossSpawns: bossSpawns.map((e) => ({ t: e.t, id: e.id, hp: e.hp })),
     bossKills: bossKills.map((e) => e.t),
+    fights,
+    killGaps,
+    won: !!r.won,
+    stalemate: !!r.stalemate,
     elites: elites.length,
     eliteFirst: elites[0]?.t ?? null,
     elitesByMin: elites.map((e) => e.t),
@@ -140,6 +157,29 @@ for (const s of out) {
     ].join(' | '),
   )
 }
+// A5 arrivals, A6 fight lengths and the wins (docs/NEXT-LEVEL.md section 11).
+const median = (a) => {
+  if (!a.length) return null
+  const v = [...a].sort((x, y) => x - y)
+  const m = v.length >> 1
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2
+}
+const allFights = out.flatMap((s) => s.fights.map((f) => ({ ...f, run: s.file })))
+if (allFights.length) {
+  const dists = allFights.map((f) => f.dist)
+  const a5Bad = allFights.filter((f) => f.dist < 250 || f.dist > 340 || !f.cage || !f.inCage || !f.inArena)
+  console.log(`A5 arrivals=${allFights.length} dist min=${Math.min(...dists)} max=${Math.max(...dists)} cage+inside=${allFights.filter((f) => f.cage && f.inCage).length} inArena=${allFights.filter((f) => f.inArena).length} bad=${a5Bad.length} (pass: 250 to 340 u, cage active the same tick, boss inside the walls)`)
+  for (const f of a5Bad) console.log(`  A5 outlier ${f.run} ${f.stage} t=${f.spawnT} dist=${f.dist} cage=${f.cage} inCage=${f.inCage} inArena=${f.inArena}`)
+  for (const stage of ['mid1', 'mid2', 'final']) {
+    const k = allFights.filter((f) => f.stage === stage && f.how === 'kill').map((f) => f.len)
+    const other = allFights.filter((f) => f.stage === stage && f.how !== 'kill').map((f) => `${f.how}@${f.len}`)
+    console.log(`A6 ${stage} kills=${k.length} median=${median(k)} min=${k.length ? Math.min(...k) : '-'} max=${k.length ? Math.max(...k) : '-'} lens=[${k.join(', ')}] unfinished=[${other.join(', ')}]`)
+  }
+  const gaps = out.flatMap((s) => s.killGaps)
+  console.log(`A6 kill-to-next-arrival gaps=${gaps.length} min=${gaps.length ? Math.min(...gaps) : '-'} (pass: at least 20 s)`)
+}
+console.log(`WINS ${out.filter((s) => s.won).length}/${out.length} stalemates=${out.filter((s) => s.stalemate).length} runs: ${out.filter((s) => s.won).map((s) => s.file).join(', ')}`)
+
 // A10 readable deaths: seconds from the last moment at 50%+ HP to death.
 const readable = out.map((s) => s.fromHalfHp).filter((v) => v !== null).sort((a, b) => a - b)
 if (readable.length) {

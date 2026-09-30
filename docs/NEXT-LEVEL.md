@@ -278,7 +278,7 @@ export interface RunRngs { spawn: Rng; script: Rng; boss: Rng; loot: Rng; draft:
    - OVERTIME calls `world.startOvertime()` and grants the PRIME Hive Core.
 
 **FRENZY and STALEMATE:**
-- **FRENZY** starts 90 s after any boss arrives and steps every 15 s: cadence x1.1 per step (max x1.6), cage radius -25 per step (min 340), and a `FRENZY` alert.
+- **FRENZY** starts 90 s after any boss arrives and steps every 15 s: cadence x1.1 per step (compounding, max x1.6), cage radius -25 per step (min 340), and a `FRENZY` alert. A step past both caps changes nothing and is not announced.
 - **STALEMATE** comes 210 s after the PRIME arrives. The PRIME retreats, the cage drops, `pendingEnd = true`, and `endRun('stalemate')` runs.
 
 **OVERTIME** (Standard only). Cycles last 180 s.
@@ -494,7 +494,8 @@ Numbers are in A5.
 2. **t - 1.5:** a marker hazard (r 90, no damage) follows `player + 300·dir(φ)`.
 3. **At arrival:**
    - Cage center `C = clamp(player, arena shrunk by R + 30)`, with `R = max(520, |player - C| + 80)`.
-   - Boss spawn point `P = C + 300·dir(φ)`, flipped 180 degrees if it lands within 160 u of the player.
+   - Boss spawn point `P = player + 300·dir(φ')`: the marker's spot, so the marker never lies. `φ'` is the first of φ, φ + 180 degrees, then 30 degree steps either side (±30, 180 ∓ 30, ±60, 180 ∓ 60, ±90) that keeps `P` inside the arena (inset by the PRIME radius + 24) and inside the ring (inset by the PRIME radius + 20). No extra draw. (Decided in P6a: `C + 300·dir(φ)` puts the boss up to 750 u from a player near a wall, which breaks A5. Near a wall or a corner the ring reaches past the walls, so the P6a review added the arena test.)
+   - During the fight the boss body stays inside both the ring and the arena walls, lunges included.
    - A shockwave pushes non-boss enemies to `R + 40 + radius` and removes enemy shots, acid and hazards inside R.
    - The boss spends 1.0 s in `EMERGE`: untargetable, no bite, no attack.
    - The `boss` stream is reseeded.
@@ -505,7 +506,7 @@ Numbers are in A5.
    - The player is clamped inside R.
 5. **Kill:**
    - Slain text from the script.
-   - The cage drops, a 15 s post-boss lull starts, and `lastBossKillAt = t`.
+   - The cage drops, a 15 s post-boss lull (minAlive x0.5) starts, and `lastBossKillAt = t`.
    - Hive Core and pod drop.
 
 **HP** (fights of 20 to 40 s, PRIME 40 to 75 s):
@@ -651,6 +652,7 @@ export const enum FeelKind {
   ChargerWindup, EnemyShot, Teleport, Dash, CloseCall, Alert /* b = RunAlert ring index */,
   MultUp /* a = tier */, MultDown, ChainHit, Fusion /* b = fusion index */, Evolve /* b = weapon index */,
   CoreOpen /* a = levels */, Shard, BonusPickup /* b = bonus index */, BonusEnd, HazardDetonate, Win, Stalemate,
+  BossTele /* a = attack kind, b = telegraph seconds */,
 }
 export const FF_CRIT = 1, FF_ELITE = 2, FF_BOSS = 4, FF_AOE = 8, FF_DISCRETE = 16, FF_CONTACT = 32, FF_ACID = 64, FF_RAM = 128
 ```
@@ -1421,7 +1423,7 @@ Run each phase's acceptance plus this standard block:
 - Acceptance:
   - Standard block.
   - A5: boss spawns 250 to 340 u from the player, and the cage is active the same tick.
-  - A6 on Hive: mid1 median fight 20 to 40 s, final 40 to 75 s, kill-to-next-arrival at least 20 s.
+  - A6 on Hive: mid1 median fight 20 to 40 s, final 40 to 75 s, kill-to-next-arrival at least 20 s (on the boss-focus bot; A6 note in section 11).
   - A Hive smart+P bot can reach the win screen.
 
 **P6b: VOID MATRON and EMBER TYRANT kits, signatures** (about 600 lines)
@@ -1611,7 +1613,7 @@ node scripts/measure.mjs 390 844 perf ; node scripts/measure.mjs 390 844 perf-fi
 | A3 | Beats and density | beats on time or per deferral; alive at most `row.maxAlive + 160` and at most 610; at most 25% of non-event, non-cage steps at 95% or more of maxAlive |
 | A4 | Density band | smart+P median inside the A7 target band in 9 or more of 12 minutes |
 | A5 | Boss arrival | 250 to 340 u; cage active the same tick |
-| A6 | Fights | mid1/mid2 median 20 to 40 s; final 40 to 75 s; none over 150 s except stalemate; gap from kill to next arrival at least 20 s |
+| A6 | Fights | boss-focus bot (smart+focus+P): mid1/mid2 median 20 to 40 s; final 40 to 75 s. Default bot: none over 150 s except stalemate. Gap from kill to next arrival at least 20 s |
 | A7 | Win rate (10 seeds per world) | smart+P 25 to 45%; smart 5 to 25% |
 | A8 | Median survival | smart 5:30 or more; smart+P 8:00 or more; crude 2:30 or more; Hive crude median at least that of Depths and Wastes |
 | A9 | Level curve (smart+P median) | L9 to 12 at 3:00; L18 to 23 at 8:00; L23 to 28 at 11:00; no gap over 60 s after 1:00 |
@@ -1625,6 +1627,11 @@ node scripts/measure.mjs 390 844 perf ; node scripts/measure.mjs 390 844 perf-fi
 | A17 | Human (owner) | about 1 win in 3 Hive T0 runs on iPhone for a player with 5 or more runs. If 0 of 3 while A7 passes: Hive rows 5 to 10 maxAlive -10% and hpBase -10%. If 3 of 3: raise both by 10%. |
 | A18 | Build systems | dash bot survives 1.25x or more vs no-dash; 1 to 4 close calls per minute; 50% or more of priority runs take a fusion by 4:00; 40% or more of evolve runs that reach boss 2 evolve; XP collected 90% or more |
 | A-LB | Server | forged seed 400; wrong pilot 400; second Daily 409; 4th Daily per IP 429; 9th insert in 10 min 429; `killPts > 80 x xpSum` stored clamped; kills over 250/s 422; blocklisted name becomes `PILOT####`; burst of 12 accepts exactly the remaining budget; board returns one row per player; `me` present outside the top 50; no `player_id` in any response; `/api/score` 410 |
+
+**A6 note (P6a review).**
+- A6 medians are measured on the boss-focus bot, `smart+focus:SEED:14:nova:priority`, because a player aims at the boss during a fight. The default bot shoots the nearest enemy, which in a fight is often the swarm held outside the cage, so it only has to finish every fight under 150 s.
+- At the old mid1 `hpBase` of 1600 the focus bot's mid1 median was 18.4 s. P6a raised it to 2400 (A10.2).
+- Measured on Hive with 2400: focus bot, seeds 1001 to 10010: mid1 27.7 s, mid2 38.1 s, final 40.6 s (2 kills); 30 seeds (1001 x 1 to 30): mid1 23.6 s, mid2 27.2 s, final 44.1 s (7 kills). Default bot, 30 seeds: longest fight 136.3 s, 7 wins. Kill-to-next-arrival at least 103 s. P19 retunes `hpBase` from here.
 
 **A1 note (P4 review).**
 - "Both phone views" means the P14 normalized camera views: 560 x 996 (portrait) and 996 x 560 (landscape). Measure them with `node scripts/measure.mjs 375 667 opening 560 996` and `node scripts/measure.mjs 375 667 opening 996 560`.
@@ -1912,6 +1919,7 @@ export const CAGE_R = 520, CAGE_R_MIN = 340, CAGE_OUTSIDE_MIN = { hive: 40, dept
 export const BOSS_MIN_GAP = 20, POST_BOSS_LULL = 15, FRENZY_AFTER = 90, FRENZY_STEP = 15, STALEMATE_AFTER = 210
 export const BOSS_DPS_REF = 88, BOSS_TELE_MIN = 0.6, MAX_BOSS_TELEGRAPHS = 1, MAX_BROOD = 24, MAX_HAZARDS = 48
 export const PURGE_SEC = 1.2, PURGE_RADIUS = 1500, WIN_PANEL_DELAY = 2.0
+export const POST_BOSS_LULL_MIN = 0.5, BOSS_MARKER_LEAD = 1.5, BOSS_MARKER_R = 90, BOSS_EMERGE = 1.0, BOSS_ROAR = 0.8
 ```
 
 | t | Beat | script draws |
@@ -2075,7 +2083,7 @@ Elite XP (unscaled): guardian 20, abyssalWarden 26, duneLeviathan 30. Outline co
 
 | Stage | hpBase | Phases (HP frac) | Cadence per phase | Tele mul per phase |
 |---|---|---|---|---|
-| mid1 | 1600 | [0.5] | 1.0 / 1.2 | 1.0 / 1.0 |
+| mid1 | 2400 | [0.5] | 1.0 / 1.2 | 1.0 / 1.0 |
 | mid2 | 2600 | [0.66, 0.33] | 1.0 / 1.2 / 1.35 | 1.0 / 1.0 / 0.8 |
 | final (PRIME) | 4200 | [0.66, 0.33] | 1.0 / 1.2 / 1.35 | 1.0 / 1.0 / 0.75 |
 | overtime c | 2600 x 1.35^c | as mid2 | as mid2 | as mid2 |
@@ -2097,9 +2105,11 @@ Idle gap: queen 0.9 s, matron 0.7 s, tyrant 1.1 s. Cadence divides idleGap and r
 | Attack | tele | active | recover | dmg | Parameters |
 |---|---|---|---|---|---|
 | A sporeNova | 0.90 | instant | 0.70 | 12 per glob | 16 globs, speed 220, r 8, life 3.0; the first is aimed at the player. P2+: second ring 0.35 s later, rotated 11.25 degrees. PRIME P3: 20 per ring. |
-| B royalLunge | 0.90 | up to 1.0 | 1.00 | 30 | lane len 560, halfW 50, heading locked at tele start; dash 560 u/s; stops at the cage edge; one hit |
+| B royalLunge | 0.90 | up to 1.0 | 1.00 | 30 | lane len 560, halfW 50, heading locked at tele start; dash 560 u/s; stops at the cage edge or the arena wall; one hit, only inside the drawn lane (the stretch the body's front has swept), never on the wider PRIME body alone |
 | C eggClutch | 0.60 | instant | 0.60 | 0 | 5 eggs (PRIME P3: 7) on r 150, 1 boss draw; at brood cap, cast A instead |
 | SIG mothersCall | 1.20 | instant | 1.00 | none | 24 swarmers (hp x1.5) on 27 slots at `cage.r - 40`; 3 empty slots face away from the queen |
+
+Decals: sporeNova a circle r 120 on the queen; royalLunge its lane, cut at the ring or the wall; eggClutch a circle r 164 (the egg ring plus an egg radius); mothersCall a circle of `cage.r - 40` on the cage center. Until P6b lands, the VOID MATRON and EMBER TYRANT cast the QUEEN's attacks with their own idle movement and gaps.
 
 **THE VOID MATRON** (idle: strafes at 260 u)
 
@@ -2123,9 +2133,11 @@ Idle gap: queen 0.9 s, matron 0.7 s, tyrant 1.1 s. Cadence divides idleGap and r
 
 | Stage | Build ratio | HP | Fight length |
 |---|---|---|---|
-| mid1 | 1.0 | 1600 | 30 s |
+| mid1 | 1.0 | 2400 | 45 s |
 | mid2 | 5.0 | 8690 | 33 s |
 | final | 7.0 | 18060 | 49 s |
+
+This table is a design estimate. The mid1 row runs past 40 s at ratio 1.0, but the focus bot reaches mid1 at a median build ratio of 1.8 (1.0 to 6.1) and deals about the full estimate to the boss, not 0.6 of it, so A6 is measured with the bot (A6 note in section 11).
 
 ## A11. THREAT levels
 

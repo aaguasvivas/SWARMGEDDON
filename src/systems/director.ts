@@ -1,26 +1,60 @@
 import {
+  BOSS_BUILD_MAX,
+  BOSS_DPS_REF,
+  BOSS_HP_EXP,
+  BOSS_MARKER_LEAD,
+  BOSS_MARKER_R,
   BOSS_MIN_GAP,
   BOSS_SPAWN_DIST,
-  BOSS_SPAWN_MIN_DIST,
+  CAGE_OUTSIDE_MIN,
+  CAGE_PLAYER_PAD,
+  CAGE_R,
+  CAGE_R_MIN,
+  CAGE_SHOCK_PAD,
+  CAGE_SPAWN_PAD,
+  CAGE_WALL_PAD,
   DEFER_AFTER_KILL,
   DEFER_DROP_LATE,
   DEFER_GAP,
   DMG_RAMP_PER_MIN,
+  ELITE_AFFIX_HP,
+  ELITE_HP_MUL,
   ELITE_WARN_LEAD,
+  FRENZY_AFTER,
+  FRENZY_CADENCE,
+  FRENZY_CADENCE_MAX,
+  FRENZY_CAGE_STEP,
+  FRENZY_STEP,
+  GRACE,
   MID2_LATEST,
+  POST_BOSS_LULL,
+  POST_BOSS_LULL_MIN,
   PRACTICAL_CAP,
+  PURGE_RADIUS,
+  PURGE_SEC,
   RING_NEAR,
   RING_NEAR_UNTIL,
   RING_STD,
+  STALEMATE_AFTER,
   TOPUP_RATE,
   WARN_LEAD,
+  WIN_PANEL_DELAY,
 } from '../config.ts'
 import { clamp } from '../core/vec.ts'
+import { BOSS_STAGES } from '../content/bosses.ts'
 import { ENEMIES } from '../content/enemies.ts'
-import { AFFIX_BIT, BEAT_DRAW_SLOTS, DEFER_SLOTS, type Beat, type MinuteRow } from '../content/runScripts.ts'
+import { AFFIX_BIT, BEAT_DRAW_SLOTS, DEFER_SLOTS, type Beat, type BossStage, type MinuteRow } from '../content/runScripts.ts'
+import { WEAPONS } from '../content/weapons.ts'
+import { spawnPoof } from '../effects/fx.ts'
 import { AlertKind, FF_BOSS, FF_ELITE, FeelKind } from '../effects/feelQueue.ts'
+import type { Enemy } from '../game/enemy.ts'
+import { HZ_CIRCLE, type Hazard } from '../game/hazard.ts'
 import type { World } from '../game/world.ts'
+import { cancelBossTelegraph } from './bossAI.ts'
+import { clearHazards, clearHazardsNear, spawnHazard } from './hazards.ts'
 import { ringPointAt, ringSpawnPoint, ringOut, spawnEnemy } from './spawn.ts'
+
+export type RunState = 'running' | 'won' | 'overtime' | 'stalemate'
 
 const TAU = Math.PI * 2
 const DEG = Math.PI / 180
@@ -52,13 +86,29 @@ export class Director {
   bossWarned = false
   bossTitle = ''
   lastBossKillAt = -1e9
-  /** The boss cage (P6a raises it at arrival). While it is up, event and
-   *  elite beats wait in `deferred` and lulls are skipped. */
+  /** The boss cage, raised at arrival (`formingFrom` = that sim time). While
+   *  it is up, event and elite beats wait in `deferred` and lulls are skipped. */
   readonly cage = { active: false, x: 0, y: 0, r: 0, formingFrom: 0 }
   /** Held beat indices (-1 = empty slot); fire times are set when the cage
    *  drops (NaN until then). */
   readonly deferred = new Int16Array(DEFER_SLOTS)
   readonly deferredAt = new Float32Array(DEFER_SLOTS)
+  /** The coming boss's arrival marker and its seq (a recycled hazard has another). */
+  marker: Hazard | null = null
+  markerSeq = 0
+  fightStart = 0
+  nextFrenzyAt = 0
+  /** FRENZY steps taken this fight. */
+  frenzy = 0
+  runState: RunState = 'running'
+  clearTime = 0
+  /** Win purge: seconds since the PRIME died, and where it died. */
+  purgeT = 0
+  purgeX = 0
+  purgeY = 0
+  /** The current fight's brood alive (aiSystem counts it each tick). */
+  broodCount = 0
+  bossesKilled = 0
 
   reset(): void {
     this.pulseT = 2
@@ -77,6 +127,16 @@ export class Director {
     this.cage.active = false
     this.deferred.fill(-1)
     this.deferredAt.fill(Number.NaN)
+    this.marker = null
+    this.markerSeq = 0
+    this.fightStart = 0
+    this.nextFrenzyAt = 0
+    this.frenzy = 0
+    this.runState = 'running'
+    this.clearTime = 0
+    this.purgeT = 0
+    this.broodCount = 0
+    this.bossesKilled = 0
   }
 }
 
@@ -88,7 +148,8 @@ function leadOf(b: Beat): number {
 
 /**
  * One director step (stepSim slot: after the input sample, before the enemy
- * hash). Order: warnings, beats, deferred beats, boss arrival, then spawning.
+ * hash). Order: warnings, beats, deferred beats, boss arrival, the fight
+ * (frenzy, stalemate), then spawning. After the win it only runs the purge.
  */
 export function directorTick(world: World, dt: number): void {
   const d = world.director
@@ -97,6 +158,11 @@ export function directorTick(world: World, dt: number): void {
   const t = world.time
 
   world.dmgMul = 1 + DMG_RAMP_PER_MIN * Math.min(t / 60, 12)
+  if (d.runState === 'won') {
+    tickWin(world, dt)
+    return
+  }
+  if (d.runState === 'stalemate') return
 
   while (d.warnCursor < beats.length && beats[d.warnCursor]!.at - leadOf(beats[d.warnCursor]!) <= t) {
     warnBeat(world, d.warnCursor)
@@ -108,6 +174,8 @@ export function directorTick(world: World, dt: number): void {
   }
   if (!d.cage.active) tickDeferred(world)
   tickBossArrival(world)
+  tickFight(world)
+  if (d.runState !== 'running' && d.runState !== 'overtime') return
 
   const ri = Math.min(11, Math.floor(t / 60))
   const row = s.minutes[ri]!
@@ -119,15 +187,23 @@ export function directorTick(world: World, dt: number): void {
   }
   world.xpScale = row.xpScale
 
-  const lull = t < d.lullUntil
-  const minA = lull ? d.lullMin : row.minAlive
+  // Inside a cage the floor counts only the swarm outside it (not the boss or its brood).
+  const caged = d.cage.active
+  const lull = !caged && t < d.lullUntil
+  let alive = world.enemies.size
+  let minA = lull ? d.lullMin : row.minAlive
+  if (caged) {
+    alive -= d.broodCount + (world.bossAlive ? 1 : 0)
+    minA = CAGE_OUTSIDE_MIN[s.arenaId]!
+  }
   const maxA = Math.min(PRACTICAL_CAP, row.maxAlive)
   d.topupAcc = Math.min(d.topupAcc + TOPUP_RATE * dt, 10)
-  while (world.enemies.size < minA && d.topupAcc >= 1) {
+  while (alive < minA && d.topupAcc >= 1) {
     spawnPulseUnit(world, row)
+    alive++
     d.topupAcc -= 1
   }
-  if (!lull) {
+  if (!lull && !caged) {
     d.pulseT -= dt
     if (d.pulseT <= 0) {
       d.pulseT += row.every
@@ -241,14 +317,25 @@ function tickDeferred(world: World): void {
   }
 }
 
-/** A boss died: the cage drops and the held beats are scheduled in beat order. */
-export function directorBossKilled(world: World): void {
+/** collisionSystem killed the boss. A mid boss drops the cage, starts the
+ *  post-boss lull and schedules the held beats in beat order; the PRIME wins
+ *  the run. */
+export function directorBossKilled(world: World, e: Enemy): void {
   const d = world.director
+  const t = world.time
+  cancelBossTelegraph(world)
   world.bossAlive = false
   world.boss = null
-  d.lastBossKillAt = world.time
+  d.bossesKilled++
   d.cage.active = false
-  let at = world.time + DEFER_AFTER_KILL
+  if (world.bossFight.stage === 'final') {
+    win(world, e)
+    return
+  }
+  d.lastBossKillAt = t
+  d.lullUntil = t + POST_BOSS_LULL
+  d.lullMin = world.script.minutes[Math.min(11, Math.floor(t / 60))]!.minAlive * POST_BOSS_LULL_MIN
+  let at = t + DEFER_AFTER_KILL
   let prev = -1
   for (;;) {
     let slot = -1
@@ -263,11 +350,81 @@ export function directorBossKilled(world: World): void {
   }
 }
 
+/** The PRIME died: the run is cleared. Enemy shots and hazards go at once, the
+ *  swarm is purged outward from the kill point, and the panel hand-off follows. */
+function win(world: World, e: Enemy): void {
+  const d = world.director
+  d.runState = 'won'
+  d.clearTime = world.time
+  world.cleared = true
+  world.player.grantInvuln(GRACE.win, 2)
+  d.purgeT = 0
+  d.purgeX = e.x
+  d.purgeY = e.y
+  const eps = world.enemyProjectiles.active
+  for (let i = 0; i < eps.length; i++) eps[i]!.alive = false
+  clearHazards(world)
+  world.feel.emit(FeelKind.Win, 0, e.x, e.y)
+}
+
+/** Purged enemies give no credit, XP, drops or score. */
+function tickWin(world: World, dt: number): void {
+  const d = world.director
+  if (d.purgeT < PURGE_SEC) {
+    d.purgeT = Math.min(PURGE_SEC, d.purgeT + dt)
+    const r = (PURGE_RADIUS * d.purgeT) / PURGE_SEC
+    const a = world.enemies.active
+    for (let i = 0; i < a.length; i++) {
+      const e = a[i]!
+      if (!e.alive || e.def.boss) continue
+      const dx = e.x - d.purgeX
+      const dy = e.y - d.purgeY
+      if (dx * dx + dy * dy > r * r) continue
+      e.alive = false
+      spawnPoof(world, e.x, e.y, e.gibTint, 3)
+    }
+  }
+  if (!world.pendingWin && world.time >= d.clearTime + WIN_PANEL_DELAY) world.pendingWin = true
+}
+
+/** FRENZY steps and the PRIME's stalemate. */
+function tickFight(world: World): void {
+  const d = world.director
+  const boss = world.boss
+  if (!world.bossAlive || !boss) return
+  const t = world.time
+  if (world.bossFight.stage === 'final' && t >= d.fightStart + STALEMATE_AFTER) {
+    cancelBossTelegraph(world)
+    boss.alive = false
+    spawnPoof(world, boss.x, boss.y, boss.gibTint, 16)
+    world.bossAlive = false
+    world.boss = null
+    d.cage.active = false
+    d.runState = 'stalemate'
+    world.pendingEnd = true
+    world.feel.emit(FeelKind.Stalemate, 0, boss.x, boss.y)
+    return
+  }
+  if (t >= d.nextFrenzyAt) {
+    d.nextFrenzyAt += FRENZY_STEP
+    // Past both caps a step changes nothing, so it is not announced.
+    if (d.cage.r > CAGE_R_MIN || Math.pow(FRENZY_CADENCE, d.frenzy) < FRENZY_CADENCE_MAX) {
+      d.frenzy++
+      d.cage.r = Math.max(CAGE_R_MIN, d.cage.r - FRENZY_CAGE_STEP)
+      world.feel.emit(FeelKind.BossFrenzy, FF_BOSS, boss.x, boss.y, d.frenzy)
+    }
+  }
+}
+
+/** Boss arrival (section 4.7): the alert at WARN_LEAD, the marker at
+ *  BOSS_MARKER_LEAD, then the cage and the boss on the same tick. The final
+ *  beat arriving while a mid boss lives makes that boss ascend instead. */
 function tickBossArrival(world: World): void {
   const d = world.director
-  if (d.bossBeat < 0 || world.bossAlive) return
+  if (d.bossBeat < 0) return
   const b = world.script.beats[d.bossBeat]!
   if (b.kind !== 'boss') return
+  if (world.bossAlive && b.stage !== 'final') return
   const t = world.time
   const arrive = Math.max(b.at, d.lastBossKillAt + BOSS_MIN_GAP)
   if (b.stage === 'mid2' && arrive > MID2_LATEST) {
@@ -275,54 +432,203 @@ function tickBossArrival(world: World): void {
     return
   }
   const text = world.script.text[b.stage]
-  const slot = world.script.drawOff[d.bossBeat]!
+  const ang = d.beatAng[world.script.drawOff[d.bossBeat]!]!
+  const pl = world.player
   if (!d.bossWarned && t >= arrive - WARN_LEAD) {
     d.bossWarned = true
-    // The alert points where the boss will appear from where the player stands
-    // now, so the wall flip is decided here, before the alert goes out.
-    if (!bossPointAt(world, d.beatAng[slot]!)) {
-      d.beatAng[slot] = d.beatAng[slot]! + Math.PI
-      bossPointAt(world, d.beatAng[slot]!)
+    const boss = world.boss
+    if (world.bossAlive && boss) {
+      bossOut.x = boss.x
+      bossOut.y = boss.y
+    } else {
+      bossPoint(world, ang)
     }
-    const pl = world.player
     const len = Math.hypot(bossOut.x - pl.x, bossOut.y - pl.y) || 1
     const kind = b.stage === 'final' ? AlertKind.Final : AlertKind.Boss
     world.alerts.push(world.feel, kind, text.title, text.sub, (bossOut.x - pl.x) / len, (bossOut.y - pl.y) / len, t, pl.x, pl.y)
   }
-  if (t >= arrive && spawnBossAt(world, d.beatAng[slot]!)) {
+  if (world.bossAlive) {
+    if (t >= arrive && ascend(world)) {
+      d.bossTitle = text.title
+      d.bossBeat = -1
+    }
+    return
+  }
+  if (t >= arrive - BOSS_MARKER_LEAD && t < arrive) {
+    bossPoint(world, ang)
+    const m = d.marker
+    if (m && m.alive && m.seq === d.markerSeq) {
+      m.x = bossOut.x
+      m.y = bossOut.y
+    } else if (!m) {
+      const h = spawnHazard(world, HZ_CIRCLE, bossOut.x, bossOut.y, BOSS_MARKER_R, arrive - t, 0, 0)
+      if (h) d.markerSeq = h.seq
+      d.marker = h
+    }
+  }
+  if (t >= arrive && spawnBoss(world, b.stage, ang)) {
     d.bossTitle = text.title
     d.bossBeat = -1
+    d.marker = null
   }
 }
 
 const bossOut = { x: 0, y: 0 }
+const cageOut = { x: 0, y: 0, r: 0 }
 
-/** Sets bossOut to BOSS_SPAWN_DIST from the player along `ang`, kept inside the
- *  arena; false when the wall pulls that point within BOSS_SPAWN_MIN_DIST. */
-function bossPointAt(world: World, ang: number): boolean {
+/** The cage for a fight starting now (section 4.7): the center keeps the ring
+ *  CAGE_WALL_PAD inside the arena walls, and the radius grows until the ring
+ *  clears the player by CAGE_PLAYER_PAD. */
+function cageFor(world: World): void {
   const pl = world.player
   const b = world.arena.bounds
-  const inset = ENEMIES[world.script.boss.midId]!.radius + EDGE_INSET
-  bossOut.x = clamp(pl.x + Math.cos(ang) * BOSS_SPAWN_DIST, b.x + inset, b.x + b.w - inset)
-  bossOut.y = clamp(pl.y + Math.sin(ang) * BOSS_SPAWN_DIST, b.y + inset, b.y + b.h - inset)
-  const dx = bossOut.x - pl.x
-  const dy = bossOut.y - pl.y
-  return dx * dx + dy * dy >= BOSS_SPAWN_MIN_DIST * BOSS_SPAWN_MIN_DIST
+  const pad = CAGE_R + CAGE_WALL_PAD
+  cageOut.x = b.w > 2 * pad ? clamp(pl.x, b.x + pad, b.x + b.w - pad) : b.x + b.w / 2
+  cageOut.y = b.h > 2 * pad ? clamp(pl.y, b.y + pad, b.y + b.h - pad) : b.y + b.h / 2
+  cageOut.r = Math.max(CAGE_R, Math.hypot(pl.x - cageOut.x, pl.y - cageOut.y) + CAGE_PLAYER_PAD)
 }
 
-/** The boss appears BOSS_SPAWN_DIST from the player along its angle, flipped
- *  when the arena wall would pull it too close. P6a spawns `boss.primeId` for
- *  the final stage once the PRIME defs exist. */
-function spawnBossAt(world: World, ang: number): boolean {
-  const id = world.script.boss.midId
-  if (!bossPointAt(world, ang)) bossPointAt(world, ang + Math.PI)
+/** Turns tried from the rolled spawn angle, in order: the roll, its opposite,
+ *  then 30 degree steps either side. Near a wall or a corner only some of them
+ *  land inside both the arena and the cage. */
+const SPAWN_TURNS = [0, 180, 30, -30, 210, 150, 60, -60, 240, 120, 90, 270].map((d) => d * DEG)
+
+/** Where the boss emerges, the arrival marker's spot: BOSS_SPAWN_DIST from the
+ *  player along the first turn of `ang` that keeps the body inside the arena
+ *  and the cage. No draws, so every tick of the marker lead agrees with the spawn. */
+function bossPoint(world: World, ang: number): void {
+  cageFor(world)
+  const pl = world.player
+  const r = ENEMIES[world.script.boss.primeId]!.radius
+  for (let k = 0; k < SPAWN_TURNS.length; k++) {
+    const a = ang + SPAWN_TURNS[k]!
+    bossOut.x = pl.x + Math.cos(a) * BOSS_SPAWN_DIST
+    bossOut.y = pl.y + Math.sin(a) * BOSS_SPAWN_DIST
+    if (inArena(world, bossOut.x, bossOut.y, r + EDGE_INSET) && inCage(bossOut.x, bossOut.y, r + 20)) return
+  }
+  // Toward the cage center always fits: the ring clears the player by
+  // CAGE_PLAYER_PAD and its center sits CAGE_R + CAGE_WALL_PAD inside the walls.
+  const dx = cageOut.x - pl.x
+  const dy = cageOut.y - pl.y
+  const len = Math.hypot(dx, dy) || 1
+  bossOut.x = pl.x + (dx / len) * BOSS_SPAWN_DIST
+  bossOut.y = pl.y + (dy / len) * BOSS_SPAWN_DIST
+}
+
+function inArena(world: World, x: number, y: number, inset: number): boolean {
+  const b = world.arena.bounds
+  return x >= b.x + inset && x <= b.x + b.w - inset && y >= b.y + inset && y <= b.y + b.h - inset
+}
+
+function inCage(x: number, y: number, inset: number): boolean {
+  const r = cageOut.r - inset
+  const dx = x - cageOut.x
+  const dy = y - cageOut.y
+  return dx * dx + dy * dy <= r * r
+}
+
+/** The boss arrives: cage up, shockwave, then the boss in EMERGE, all on one tick. */
+function spawnBoss(world: World, stage: BossStage, ang: number): boolean {
+  bossPoint(world, ang)
+  const id = stage === 'final' ? world.script.boss.primeId : world.script.boss.midId
   const boss = spawnEnemy(world, id, bossOut.x, bossOut.y)
   if (!boss) return false
+  const c = world.director.cage
+  c.active = true
+  c.x = cageOut.x
+  c.y = cageOut.y
+  c.r = cageOut.r
+  c.formingFrom = world.time
+  shockwave(world)
+  beginFight(world, boss, stage)
+  return true
+}
+
+/** The mid boss still alive at the final beat becomes the PRIME: it leaves with
+ *  no credit and the PRIME takes its place at full HP in the same cage. */
+function ascend(world: World): boolean {
+  const old = world.boss
+  if (!old) return false
+  const boss = spawnEnemy(world, world.script.boss.primeId, old.x, old.y)
+  if (!boss) return false
+  cancelBossTelegraph(world)
+  old.alive = false
+  spawnPoof(world, old.x, old.y, old.gibTint, 16)
+  beginFight(world, boss, 'final')
+  return true
+}
+
+function beginFight(world: World, boss: Enemy, stage: BossStage): void {
+  const d = world.director
+  boss.hp = boss.maxHp = Math.round(BOSS_STAGES[stage].hpBase * world.script.boss.worldMul * buildHpScale(world))
+  boss.submerged = true
   world.beginBossFight()
+  world.bossFight.begin(stage)
   world.bossAlive = true
   world.boss = boss
+  d.fightStart = world.time
+  d.nextFrenzyAt = world.time + FRENZY_AFTER
+  d.frenzy = 0
   world.feel.emit(FeelKind.BossSpawn, FF_BOSS, boss.x, boss.y, 0, 0, boss.def)
-  return true
+}
+
+/** Arrival shockwave: the swarm is thrown clear of the ring, and enemy shots,
+ *  acid and hazards inside it are removed. */
+function shockwave(world: World): void {
+  const c = world.director.cage
+  const r2 = c.r * c.r
+  const a = world.enemies.active
+  for (let i = 0; i < a.length; i++) {
+    const e = a[i]!
+    if (!e.alive || e.def.boss) continue
+    const dx = e.x - c.x
+    const dy = e.y - c.y
+    const min = c.r + CAGE_SHOCK_PAD + e.radius
+    const d2 = dx * dx + dy * dy
+    if (d2 >= min * min) continue
+    const dd = Math.sqrt(d2)
+    e.x = e.prevX = dd > 1e-6 ? c.x + (dx / dd) * min : c.x + min
+    e.y = e.prevY = dd > 1e-6 ? c.y + (dy / dd) * min : c.y
+  }
+  const eps = world.enemyProjectiles.active
+  for (let i = 0; i < eps.length; i++) {
+    const p = eps[i]!
+    if ((p.x - c.x) ** 2 + (p.y - c.y) ** 2 < r2) p.alive = false
+  }
+  const acid = world.acid.active
+  for (let i = 0; i < acid.length; i++) {
+    const ap = acid[i]!
+    if ((ap.x - c.x) ** 2 + (ap.y - c.y) ** 2 < r2) ap.alive = false
+  }
+  clearHazardsNear(world, c.x, c.y, c.r)
+}
+
+/** Base weapon DPS with the build's multipliers (section 4.7); crits, Giant
+ *  Slayer, AoE and pickup weapons stay out of it. */
+function estimateBaseDps(world: World): number {
+  const wd = WEAPONS[world.baseWeaponId]!
+  const m = world.mods
+  return wd.fireRate * m.fireRateMul * wd.damage * m.damageMul * (wd.projectilesPerShot + m.extraProjectiles)
+}
+
+/** Boss and elite HP scale with the build: clamp(dps / 88, 1, 12) ** 0.75. */
+function buildHpScale(world: World): number {
+  return Math.pow(clamp(estimateBaseDps(world) / BOSS_DPS_REF, 1, BOSS_BUILD_MAX), BOSS_HP_EXP)
+}
+
+/** stepSim, right after player.update: the player stays inside the ring. */
+export function clampPlayerToCage(world: World): void {
+  const c = world.director.cage
+  if (!c.active) return
+  const pl = world.player
+  const max = c.r - pl.radius
+  const dx = pl.x - c.x
+  const dy = pl.y - c.y
+  const d2 = dx * dx + dy * dy
+  if (d2 <= max * max) return
+  const k = max / Math.sqrt(d2)
+  pl.x = c.x + dx * k
+  pl.y = c.y + dy * k
 }
 
 function firePack(world: World, i: number): void {
@@ -358,9 +664,16 @@ function fireElites(world: World, i: number): void {
     ringPointAt(world, d.beatAng[off + k]!, half)
     const e = spawnInside(world, world.script.eliteId, ringOut.x, ringOut.y)
     if (!e) continue
-    if (b.hpMul !== 1) e.hp = e.maxHp = Math.round(e.maxHp * b.hpMul)
+    const affixes = bitCount(d.beatAffix[off + k]!)
+    e.hp = e.maxHp = Math.round(e.maxHp * b.hpMul * ELITE_HP_MUL * buildHpScale(world) * (1 + ELITE_AFFIX_HP * affixes))
     world.feel.emit(FeelKind.EliteSpawn, FF_ELITE, e.x, e.y, 0, 0, e.def)
   }
+}
+
+function bitCount(v: number): number {
+  let n = 0
+  for (; v !== 0; v &= v - 1) n++
+  return n
 }
 
 /** The elite's side as rolled, or its opposite when the ring point on that side
@@ -404,16 +717,36 @@ function spawnPulseUnit(world: World, row: MinuteRow): void {
     }
   }
   ringSpawnPoint(world, world.time < RING_NEAR_UNTIL ? RING_NEAR : RING_STD)
+  const c = world.director.cage
+  if (c.active) {
+    // Keep arrivals clear of the ring: project outward from the cage center.
+    const min = c.r + CAGE_SPAWN_PAD
+    const dx = ringOut.x - c.x
+    const dy = ringOut.y - c.y
+    const d2 = dx * dx + dy * dy
+    if (d2 < min * min) {
+      const dd = Math.sqrt(d2)
+      ringOut.x = dd > 1e-6 ? c.x + (dx / dd) * min : c.x + min
+      ringOut.y = dd > 1e-6 ? c.y + (dy / dd) * min : c.y
+    }
+  }
   spawnEnemy(world, id, ringOut.x, ringOut.y)
 }
 
 /** DEV: jump the run to `t` with nothing earlier fired; the beat at `t`
- *  (FINAL SWARM for 600) fires on the next step. */
+ *  (FINAL SWARM for 600) fires on the next step. A boss still alive keeps its
+ *  cage and its fight clocks move with the jump. */
 export function directorJumpTo(world: World, t: number): void {
   const d = world.director
   const beats = world.script.beats
   let i = 0
   while (i < beats.length && beats[i]!.at < t) i++
+  if (world.bossAlive) {
+    d.fightStart += t - world.time
+    d.nextFrenzyAt += t - world.time
+  } else {
+    d.cage.active = false
+  }
   world.time = t
   d.beatCursor = i
   d.warnCursor = i
@@ -422,7 +755,7 @@ export function directorJumpTo(world: World, t: number): void {
   d.rowIndex = Math.min(11, Math.floor(t / 60))
   d.bossBeat = -1
   d.bossWarned = false
-  d.cage.active = false
+  d.marker = null
   d.deferred.fill(-1)
   d.deferredAt.fill(Number.NaN)
 }

@@ -208,12 +208,18 @@ const DET_HELPER = `(() => {
         beat: d.beatCursor, warn: d.warnCursor, pulseT: +d.pulseT.toFixed(3), topupAcc: +d.topupAcc.toFixed(3),
         lullUntil: d.lullUntil, bossBeat: d.bossBeat, lastBossKillAt: d.lastBossKillAt > 0 ? +d.lastBossKillAt.toFixed(2) : null,
         deferred: Array.from(d.deferred),
+        runState: d.runState, bossesKilled: d.bossesKilled, cage: d.cage.active ? Math.round(d.cage.r) : 0, hazards: w.hazards.active.length,
       }
       mix(d.beatCursor); mix(d.warnCursor); mix(d.pulseT); mix(d.topupAcc); mix(d.lullUntil); mix(d.bossBeat)
       mix(d.lastBossKillAt > 0 ? d.lastBossKillAt : 0)
       for (let k = 0; k < d.deferred.length; k++) mix(d.deferred[k])
       for (let k = 0; k < d.beatAng.length; k++) { mix(d.beatAng[k]); mix(d.beatAffix[k]) }
-      mix(w.boss ? w.boss.hp : -1); mix(w.boss && w.boss.enraged ? 1 : 0); mix(st.bosses)
+      mix(w.boss ? w.boss.hp : -1); mix(st.bosses)
+      const bf = w.bossFight
+      mix(bf.state); mix(bf.phase); mix(bf.rot); mix(bf.stateT)
+      mix(d.cage.active ? 1 : 0); mix(d.cage.x); mix(d.cage.y); mix(d.cage.r); mix(d.frenzy); mix(d.broodCount); mix(d.bossesKilled)
+      for (const ch of d.runState) byte(ch.charCodeAt(0))
+      for (const hz of w.hazards.active) { mix(hz.x); mix(hz.y); mix(hz.tele); mix(hz.shape) }
       const streams = {}
       for (const k of ['spawn', 'script', 'boss', 'loot', 'draft', 'combat', 'fx']) {
         const s = w.rngs[k].state

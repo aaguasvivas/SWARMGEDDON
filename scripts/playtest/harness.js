@@ -8,8 +8,9 @@
 // (cfg.perkPolicy): first (card 1), priority (fusions, then fusion parents,
 // then PRIORITY), random (seeded: rerolls, banishes, skips, random cards),
 // evolve (the held weapon's pair perk first, then priority). Never calls
-// endRun (so nothing is submitted to the leaderboard). With cfg.dash the bot
-// also dashes out of danger.
+// endRun itself; a stalemate ends the run through the game's own path. With
+// cfg.dash the bot also dashes out of danger; with cfg.focus it shoots the
+// boss during a fight.
 (() => {
   const DT = 1 / 60
   const FEEL_PLAYER_HURT = 5
@@ -22,6 +23,8 @@
   const TAG_FUSION_FIRST = 4
   const TAG_COMPLETES_FUSION = 8
   const TAG_EVOLVES_HELD = 32
+  const BOSS_FOCUS = 700
+  const BROOD_GUARD = 140
 
   function xpTotal(w) {
     let s = w.xp
@@ -76,7 +79,18 @@
       }
     }
 
-    // Aim + fire at the nearest targetable enemy.
+    // Aim + fire at the nearest targetable enemy. With cfg.focus, in a boss
+    // fight the bot shoots the boss (the swarm pressed on the cage fence is
+    // nearer but harmless) unless the fight's brood is within BROOD_GUARD.
+    const boss = w.boss
+    if (st.cfg.focus && w.bossAlive && boss && !boss.submerged && Math.hypot(boss.x - pl.x, boss.y - pl.y) < BOSS_FOCUS) {
+      let guard = false
+      for (let i = 0; i < act.length && !guard; i++) {
+        const e = act[i]
+        guard = e.alive && e !== boss && e.brood === w.bossFights && Math.hypot(e.x - pl.x, e.y - pl.y) < BROOD_GUARD
+      }
+      if (!guard) best = boss
+    }
     if (best) {
       const dx = best.x - pl.x
       const dy = best.y - pl.y
@@ -138,6 +152,32 @@
         const ny = pl2 > 0.5 ? perpY / pl2 : p.vx / sp
         fx += nx * 2.2
         fy += ny * 2.2
+      }
+      // Boss telegraphs: step sideways out of a lunge lane, out of a damaging circle.
+      const hz = w.hazards.active
+      for (let i = 0; i < hz.length; i++) {
+        const h = hz[i]
+        if (!h.alive) continue
+        if (h.shape === 1) {
+          const ux = Math.cos(h.ang)
+          const uy = Math.sin(h.ang)
+          const rx = pl.x - h.x
+          const ry = pl.y - h.y
+          const along = rx * ux + ry * uy
+          const perp = -rx * uy + ry * ux
+          if (along < -40 || along > h.len + 40 || Math.abs(perp) > h.r + pl.radius + 50) continue
+          const side = perp >= 0 ? 1 : -1
+          fx += -uy * side * 3
+          fy += ux * side * 3
+        } else if (h.damage > 0) {
+          const dx = pl.x - h.x
+          const dy = pl.y - h.y
+          const d = Math.hypot(dx, dy) || 1
+          if (d < h.r + pl.radius + 50) {
+            fx += (dx / d) * 3
+            fy += (dy / d) * 3
+          }
+        }
       }
       const ac = w.acid.active
       for (let i = 0; i < ac.length; i++) {
@@ -284,6 +324,9 @@
       healChunk: 0,
       lastWeapon: w.weapon.id,
       lastBossAlive: false,
+      bossesKilled: 0,
+      won: false,
+      stalemate: false,
       lastRevives: 0,
       hpHist: [],
       nextHpSample: 0,
@@ -408,7 +451,7 @@
     const st = window.__PT
     const inv = st.cfg.invincible
     let calls = 0
-    while (w.time < untilTime - 1e-9 && !st.dead && calls < maxCalls) {
+    while (w.time < untilTime - 1e-9 && !st.dead && !st.won && !st.stalemate && calls < maxCalls) {
       const pk = w.pickups.active
       const t0 = w.time
       const hp0 = w.player.hp
@@ -478,6 +521,14 @@
         break
       }
 
+      // The win panel pauses the sim; a stalemate ends the run.
+      if (w.pendingWin || w.pendingEnd) {
+        if (w.pendingWin) st.won = true
+        else st.stalemate = true
+        st.events.push({ t: +w.time.toFixed(2), type: w.pendingWin ? 'win' : 'stalemate', clearTime: w.director.clearTime ? +w.director.clearTime.toFixed(2) : null })
+        break
+      }
+
       if (inv) {
         w.player.maxHp = 1e9
         w.player.hp = 1e9
@@ -537,9 +588,21 @@
         const id = e.def.id
         if (st.firstSeen[id] === undefined) st.firstSeen[id] = +w.time.toFixed(2)
         if (e.def.elite) st.events.push({ t: +w.time.toFixed(2), type: 'elite', id, hp: Math.round(e.maxHp) })
-        if (e.def.boss) st.events.push({ t: +w.time.toFixed(2), type: 'bossSpawn', id, title: w.director.bossTitle, hp: Math.round(e.maxHp), dist: Math.round(Math.hypot(e.x - w.player.x, e.y - w.player.y)) })
+        if (e.def.boss) {
+          const c = w.director.cage
+          const b = w.arena.bounds
+          st.events.push({
+            t: +w.time.toFixed(2), type: 'bossSpawn', id, stage: w.bossFight.stage, title: w.director.bossTitle, hp: Math.round(e.maxHp),
+            dist: Math.round(Math.hypot(e.x - w.player.x, e.y - w.player.y)), cage: c.active && e === w.boss, cageR: Math.round(c.r),
+            inCage: Math.hypot(w.player.x - c.x, w.player.y - c.y) <= c.r,
+            inArena: e.x >= b.x + e.radius && e.x <= b.x + b.w - e.radius && e.y >= b.y + e.radius && e.y <= b.y + b.h - e.radius,
+          })
+        }
       }
-      if (st.lastBossAlive && !w.bossAlive) st.events.push({ t: +w.time.toFixed(2), type: 'bossKill' })
+      if (w.director.bossesKilled > st.bossesKilled) {
+        st.bossesKilled = w.director.bossesKilled
+        st.events.push({ t: +w.time.toFixed(2), type: 'bossKill', stage: w.bossFight.stage })
+      }
       st.lastBossAlive = w.bossAlive
       let timerPodSeen = false
       for (let i = 0; i < pk.length; i++) {
@@ -572,7 +635,7 @@
         st.lastRevives = w.revivesUsed
       }
     }
-    return { t: w.time, dead: st.dead, calls }
+    return { t: w.time, dead: st.dead, won: st.won, stalemate: st.stalemate, calls }
   }
 
   window.__PT_chunk = () => {
@@ -669,6 +732,8 @@
       cfg: st.cfg,
       endTime: +w.time.toFixed(2),
       dead: st.dead,
+      won: st.won,
+      stalemate: st.stalemate,
       death: st.death,
       level: w.level,
       kills: w.kills,

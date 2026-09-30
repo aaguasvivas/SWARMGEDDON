@@ -326,6 +326,92 @@ async function runSize(browser, size) {
     await sleep(900)
     await shot('09-gameover')
   })
+  // P6a: the boss arrival marker, a telegraphed royal lunge inside the formed
+  // cage, the WIN panel, and the clear and stalemate recap headers.
+  await step('10a-boss-marker', async () => {
+    await page.evaluate(() => {
+      const S = window.__SWARM
+      const w = S.world
+      S.setLoadout('nova', 'hive')
+      S.startRun('endless')
+      w.player.maxHp = w.player.hp = 1e9
+      S.jumpTo(236)
+      for (let i = 0; i < 60 * 8 && !(w.director.marker && w.director.marker.alive && w.director.marker.tele < 0.9); i++) S.step(1)
+      w.paused = true
+      S.feel.hurtFlash = 0
+    })
+    await sleep(700)
+    await shot('10a-boss-marker')
+  })
+  await step('10b-boss-tele', async () => {
+    await page.evaluate(() => {
+      const S = window.__SWARM
+      const w = S.world
+      w.paused = false
+      // bossFight.state 2 is TELE, attack 1 the royal lunge; wait for the ring to form.
+      const ready = () => w.bossAlive && w.bossFight.state === 2 && w.bossFight.attack === 1 && w.bossFight.stateT < 0.45 && w.time - w.director.cage.formingFrom > 1.6
+      for (let i = 0; i < 60 * 30 && !ready(); i++) {
+        S.step(1)
+        while (w.paused && w.draft.open) S.pickCard(0)
+        w.player.hp = 1e9
+      }
+      w.paused = true
+      S.feel.hurtFlash = 0
+    })
+    await sleep(700)
+    await shot('10b-boss-tele')
+  })
+  await step('13-win', async () => {
+    await page.evaluate(() => {
+      const S = window.__SWARM
+      const w = S.world
+      S.setLoadout('nova', 'hive')
+      S.startRun('endless')
+      w.player.maxHp = w.player.hp = 1e9
+      S.jumpTo(626)
+      const inp = S.input
+      const real = inp.update
+      inp.update = () => {
+        const b = w.boss
+        inp.move.x = inp.move.y = 0
+        inp.firing = !!b
+        if (b) {
+          const d = Math.hypot(b.x - w.player.x, b.y - w.player.y) || 1
+          inp.aimDir.x = (b.x - w.player.x) / d
+          inp.aimDir.y = (b.y - w.player.y) / d
+        }
+      }
+      try {
+        for (let i = 0; i < 60 * 30 && !w.pendingWin; i++) {
+          if (w.bossAlive && w.boss && !w.boss.submerged) w.boss.hp = Math.min(w.boss.hp, 1)
+          S.step(1)
+          while (w.paused && w.draft.open) S.pickCard(0)
+          w.player.hp = 1e9
+        }
+        S.step(1)
+      } finally {
+        inp.update = real
+      }
+      S.feel.hurtFlash = 0
+    })
+    await sleep(900)
+    await shot('13-win')
+  })
+  await step('14-clear-recap', async () => {
+    await tap(page, size, 'EXTRACT')
+    await sleep(900)
+    await shot('14-clear-recap')
+  })
+  await step('15-stalemate-recap', async () => {
+    await page.evaluate(() => {
+      const S = window.__SWARM
+      S.startRun('endless')
+      S.step(60)
+      S.endRun('stalemate')
+    })
+    await sleep(900)
+    await shot('15-stalemate-recap')
+  })
   await step('11-daily-start', async () => {
     await page.evaluate(() => window.__SWARM.startRun('daily'))
     await sleep(1000)

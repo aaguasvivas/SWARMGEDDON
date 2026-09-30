@@ -96,6 +96,8 @@ export class DraftState {
  *  pauses). The first draft waits for DRAFT.firstOpenAt, later ones for the gap. */
 export function draftDue(w: World): boolean {
   if (w.pendingLevelUps <= 0 || w.pendingGameOver) return false
+  // The win panel waits for pending levels; with the fight over they resolve without the gap.
+  if (w.pendingWin) return true
   const d = w.draft
   return d.index === 0 ? w.time >= DRAFT.firstOpenAt : w.time - d.lastOpenAt >= DRAFT.minGap
 }

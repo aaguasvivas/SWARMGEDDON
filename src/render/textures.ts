@@ -7,6 +7,11 @@ const BAKE_RES = 3
 /** Suffix of a sprite's hit-flash silhouette key (`swarmer@white`). */
 export const WHITE = '@white'
 
+/** Hazard decal sizes as baked (section 4.7); hazardRenderer scales from these. */
+export const HZ_TEX = { discR: 96, laneLen: 160, laneHalf: 40, sectorR: 160, cageR: 512 } as const
+/** The cage ring is large on screen and soft by design, so it bakes at 1x. */
+const CAGE_BAKE_RES = 1
+
 interface Baked {
   texture: Texture
   /** Anchor that pivots the sprite at the drawing's (0,0) origin, regardless of
@@ -51,6 +56,41 @@ export class TextureRegistry {
       g.destroy()
     }
     white.destroy()
+  }
+
+  /** White hazard decals: disc, lane, 120 degree sector and the cage ring,
+   *  tinted per hazard at draw time. */
+  bakeHazards(): void {
+    const { discR, laneLen, laneHalf, sectorR, cageR } = HZ_TEX
+    const disc = new Graphics()
+    disc.circle(0, 0, discR).fill({ color: 0xffffff, alpha: 0.45 })
+    disc.circle(0, 0, discR * 0.9).stroke({ width: discR * 0.16, color: 0xffffff, alpha: 0.4 })
+    disc.circle(0, 0, discR - 3).stroke({ width: 6, color: 0xffffff, alpha: 1 })
+    this.bakeCentered('hzDisc', disc, BAKE_RES)
+
+    const lane = new Graphics()
+    lane.roundRect(0, -laneHalf, laneLen, laneHalf * 2, laneHalf * 0.5).fill({ color: 0xffffff, alpha: 0.5 })
+    lane.roundRect(2, -laneHalf + 2, laneLen - 4, laneHalf * 2 - 4, laneHalf * 0.5).stroke({ width: 4, color: 0xffffff, alpha: 1 })
+    this.bakeCentered('hzLane', lane, BAKE_RES)
+
+    const sector = new Graphics()
+    const half = Math.PI / 3
+    sector.moveTo(0, 0).arc(0, 0, sectorR, -half, half).lineTo(0, 0).fill({ color: 0xffffff, alpha: 0.5 })
+    sector.moveTo(0, 0).arc(0, 0, sectorR - 2, -half, half).lineTo(0, 0).stroke({ width: 4, color: 0xffffff, alpha: 1 })
+    this.bakeCentered('hzSector', sector, BAKE_RES)
+
+    const cage = new Graphics()
+    cage.circle(0, 0, cageR - 14).stroke({ width: 28, color: 0xffffff, alpha: 0.18 })
+    cage.circle(0, 0, cageR - 14).stroke({ width: 8, color: 0xffffff, alpha: 1 })
+    this.bakeCentered('hzCage', cage, CAGE_BAKE_RES)
+  }
+
+  /** Bake `g` with its drawing origin as the sprite anchor, then free it. */
+  private bakeCentered(key: string, g: Graphics, resolution: number): void {
+    const b = g.getLocalBounds()
+    const texture = this.renderer.generateTexture({ target: g, frame: b.rectangle.clone(), resolution, antialias: true })
+    this.map.set(key, { texture, anchorX: -b.minX / b.width, anchorY: -b.minY / b.height })
+    g.destroy()
   }
 
   /** Raw texture for `key` (e.g. for swapping a pooled particle's frame). */

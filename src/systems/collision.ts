@@ -20,7 +20,7 @@ import type { Enemy } from '../game/enemy.ts'
 import type { Projectile } from '../game/projectile.ts'
 import type { World } from '../game/world.ts'
 
-const ENEMY_MAX_RADIUS = 48 // padding for broad-phase (queen is large)
+const ENEMY_MAX_RADIUS = 58 // broad-phase padding: the largest body (EMBER TYRANT PRIME)
 
 /**
  * All circle-overlap resolution for the tick: player projectiles vs enemies
@@ -350,13 +350,9 @@ function killEnemy(world: World, e: Enemy): void {
   }
 
   if (def.boss) {
-    directorBossKilled(world)
+    directorBossKilled(world, e)
     explode(world, e.x, e.y, 140, 0)
     spawnWeaponDrop(world, e.x, e.y, loot.pick(PICKUP_WEAPON_IDS))
-    for (let i = 0; i < 6; i++) {
-      const a = loot.angle()
-      dropGem(world, e.x + Math.cos(a) * 24, e.y + Math.sin(a) * 24, 20)
-    }
     world.feel.emit(FeelKind.BossKill, FF_BOSS, e.x, e.y, 0, 0, def)
   } else if (def.elite && loot.bool(0.5)) {
     spawnWeaponDrop(world, e.x, e.y, loot.pick(PICKUP_WEAPON_IDS))
