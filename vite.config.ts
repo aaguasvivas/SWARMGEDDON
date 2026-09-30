@@ -5,6 +5,8 @@ import { VitePWA } from 'vite-plugin-pwa'
 // from a file:// Capacitor shell, and from CDN/static hosting (Cloudflare Pages).
 export default defineConfig(({ mode }) => ({
   base: './',
+  // Parallel build lanes link one node_modules; each lane passes its own optimizer cache.
+  cacheDir: process.env.SWG_VITE_CACHE || 'node_modules/.vite',
   plugins: [
     VitePWA({
       // We register the SW ourselves (src/pwa/updatePrompt.ts) so we can show a
