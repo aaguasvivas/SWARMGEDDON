@@ -1,48 +1,54 @@
 import { loadJSON, saveJSON } from '../platform/storage.ts'
-import { CHARACTERS, type UnlockMeta } from '../content/characters.ts'
-import { ARENAS } from '../content/arenas.ts'
-import type { RunResult } from './runResult.ts'
+import { FEAT_REWARDS } from '../content/feats.ts'
+import { FACTORY_PAINT_ID, PAINTS } from '../content/paints.ts'
+import { PERKS, type PerkDef } from '../content/perks.ts'
+import { PICKUP_WEAPON_IDS } from '../content/weapons.ts'
+import type { RunMode } from '../game/world.ts'
 
 /**
- * Earned-unlock persistence. One flat id set: character and arena ids share the
- * namespace (they're globally unique). `premium` items will ALSO land in this
- * set when purchased/restored; the store only needs to call `grant()`.
+ * The owned set under `unlocks` (section 7.4). Pilots and worlds are stored by
+ * bare id; perks, weapons and paints as `perk:`, `weapon:` and `paint:` ids.
+ * `grant` is the only writer. Read through on every call, so a grant made in
+ * another tab is never rolled back.
  */
 const KEY = 'unlocks'
 
-let cache: Set<string> | null = null
-
-function unlockedSet(): Set<string> {
-  if (!cache) cache = new Set(loadJSON<string[]>(KEY, []))
-  return cache
+export function ownedKeys(): string[] {
+  const v = loadJSON<unknown>(KEY, [])
+  return Array.isArray(v) ? v.filter((k): k is string => typeof k === 'string') : []
 }
 
-export function isUnlocked(id: string, meta: UnlockMeta): boolean {
-  return meta.how === 'default' || unlockedSet().has(id)
+/** An item is locked if and only if a feat rewards it and it was never granted. */
+export function isOwned(key: string): boolean {
+  return !FEAT_REWARDS.has(key) || ownedKeys().includes(key)
 }
 
-export function grant(id: string): void {
-  const set = unlockedSet()
-  if (set.has(id)) return
-  set.add(id)
-  saveJSON(KEY, [...set])
+/** Add `key` to the owned set. False when it was already owned. */
+export function grant(key: string): boolean {
+  const keys = ownedKeys()
+  if (keys.includes(key)) return false
+  keys.push(key)
+  saveJSON(KEY, keys)
+  return true
 }
 
-/**
- * Check a finished run against every earnable item; grants and returns the
- * display names of anything NEWLY unlocked (for the game-over banner).
- */
-export function evaluateUnlocks(r: RunResult): string[] {
-  const fresh: string[] = []
-  const consider = (id: string, name: string, meta: UnlockMeta): void => {
-    if (meta.how !== 'earn' || !meta.earned) return
-    if (unlockedSet().has(id)) return
-    if (meta.earned(r)) {
-      grant(id)
-      fresh.push(name)
-    }
-  }
-  for (const c of CHARACTERS) consider(c.id, `PILOT ${c.name}`, c.unlock)
-  for (const a of ARENAS) consider(a.id, a.name, a.unlock)
-  return fresh
+export interface Pools {
+  perks: readonly PerkDef[]
+  weapons: readonly string[]
+}
+
+/** The content a run may draft and drop, resolved once at run start. The Daily
+ *  uses the canonical pools whatever the save holds; Standard keeps the
+ *  canonical order, filtered by ownership. */
+export function resolvePools(mode: RunMode): Pools {
+  if (mode === 'daily') return { perks: PERKS, weapons: PICKUP_WEAPON_IDS }
+  const own = new Set(ownedKeys())
+  const ok = (key: string): boolean => !FEAT_REWARDS.has(key) || own.has(key)
+  return { perks: PERKS.filter((p) => ok('perk:' + p.id)), weapons: PICKUP_WEAPON_IDS.filter((id) => ok('weapon:' + id)) }
+}
+
+/** Factory first, then every owned paint in table order. */
+export function ownedPaintIds(): string[] {
+  const own = new Set(ownedKeys())
+  return [FACTORY_PAINT_ID, ...PAINTS.filter((p) => own.has('paint:' + p.id)).map((p) => p.id)]
 }

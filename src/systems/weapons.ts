@@ -120,6 +120,6 @@ function launch(world: World, x: number, y: number, ang: number, dmgMul: number,
   const s = p.sprite
   s.visible = true
   s.alpha = 1
-  s.tint = w.tint
+  s.tint = w.id === world.character.startWeapon ? world.baseBulletTint : w.tint
   s.scale.set(w.tracer ? scale * (1 + speed / TRACER_STRETCH_SPEED) : scale, scale)
 }

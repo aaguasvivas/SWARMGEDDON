@@ -108,7 +108,7 @@ export const ARENAS: readonly ArenaTheme[] = [
     atmosphere: { kind: 'godRays', color: 0xd8e4ff, color2: 0xb06bff, alpha: 0.08 },
     broodName: 'Psychic Brood',
     broodHueShift: -75,
-    unlock: { how: 'earn', earnDesc: 'kill 150 in one run', earned: (r) => r.kills >= 150 },
+    unlock: { how: 'earn', feat: 'deep_dive' },
   },
   {
     id: 'wastes',
@@ -142,7 +142,7 @@ export const ARENAS: readonly ArenaTheme[] = [
     atmosphere: { kind: 'emberHaze', color: 0xff8a3d, color2: 0xffd27a, alpha: 0.09 },
     broodName: 'Ember Spawn',
     broodHueShift: -30,
-    unlock: { how: 'earn', earnDesc: 'complete a Daily Challenge', earned: (r) => r.mode === 'daily' },
+    unlock: { how: 'earn', feat: 'void_walker' },
   },
 ]
 

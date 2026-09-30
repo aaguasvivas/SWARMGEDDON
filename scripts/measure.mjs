@@ -67,6 +67,16 @@
 //                                  '{"shake":0,"reduceMotion":true,"damageNumbers":"off","flashes":false,"glow":0}'
 //   --mode=daily                   det / det-long start Daily runs (the date picks the
 //                                  world, so the arena argument is ignored).
+//   --save=unlocked                det modes own every feat reward first, so Standard
+//                                  drafts and drops from the canonical pools (default:
+//                                  the fresh save plus the pilot and world, the start pools).
+//                                  A 600-step det hashes the same for both saves, so it
+//                                  cannot show a pool difference; det-long and det-death can.
+//   --paint=<id>                   det modes fly this paint (granted first). Paints are
+//                                  cosmetic, so the hash must not change.
+//                                  Every det pass restores the owned set it started from,
+//                                  so a feat granted by pass 1 (det-death ends the run)
+//                                  never changes pass 2's pools.
 //
 // Notes: drives the DEV build's __SWARM handle (world/step/flood/give/setLoadout/loop).
 // rAF runs normally in headless "new"; sim-only checks use step() (no wall clock).
@@ -86,6 +96,7 @@ const MODE = pos[2] || 'perf'
 const DPR = flags.dpr ? parseFloat(flags.dpr) : 1
 const SETTINGS = flags.settings ? JSON.parse(flags.settings) : null
 const RUN_MODE = flags.mode === 'daily' ? 'daily' : 'endless'
+const SAVE_PREP = { unlocked: flags.save === 'unlocked', paint: flags.paint || null }
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
 // In-page determinism driver. Installed with page.evaluate(DET_HELPER); state
@@ -96,7 +107,9 @@ const DET_HELPER = `(() => {
   const S = window.__SWARM
   const w = S.world
   const inp = S.input
+  const PREP = ${JSON.stringify(SAVE_PREP)}
   let st = null
+  let owned = null
   const nearest = () => {
     const pl = w.player
     let best = null
@@ -157,6 +170,13 @@ const DET_HELPER = `(() => {
   window.__DET = {
     start(c, a, runMode, long, realHp, rerolls = -1) {
       S.loop.stop()
+      if (owned === null) {
+        if (PREP.unlocked) S.unlockAll()
+        if (PREP.paint) S.setPaint(PREP.paint)
+        owned = S.loadJSON('unlocks', [])
+      } else {
+        S.saveJSON('unlocks', owned)
+      }
       if (runMode !== 'daily') S.setLoadout(c, a)
       else S.setLoadout(c, 'hive')
       S.startRun(runMode)
@@ -393,7 +413,7 @@ if (MODE === 'shot') {
     const r = runs[0]
     console.log(JSON.stringify({
       mode: MODE, runMode: RUN_MODE, W, H, dpr: DPR, settings: SETTINGS ? applied : null, charId, arenaId: r.arena, steps,
-      hash: r.hash, rerunMatch: r.hash === runs[1].hash, enemies: r.enemies, kills: r.kills, level: r.level,
+      hash: r.hash, rerunMatch: r.hash === runs[1].hash, save: flags.save || 'fresh', paint: flags.paint || 'factory', enemies: r.enemies, kills: r.kills, level: r.level,
       drafts: r.drafts, dashes: r.dashes, closeCalls: r.closeCalls, damageTaken: r.damageTaken,
       score: r.score, chain: r.chain, peakTier: r.peakTier, hits: r.hits, pickups: r.pickups, time: r.time, bosses: r.bosses, director: r.director, streams: r.streams, byType: r.byType,
     }))
@@ -420,7 +440,7 @@ if (MODE === 'shot') {
     const x = r.result
     console.log(JSON.stringify({
       mode: MODE, runMode: RUN_MODE, W, H, dpr: DPR, settings: SETTINGS ? applied : null, charId, arenaId: x.arena,
-      hash: r.hash, rerunMatch: r.hash === runs[1].hash, screen: r.screen, end: x.end, time: +x.time.toFixed(2),
+      hash: r.hash, rerunMatch: r.hash === runs[1].hash, save: flags.save || 'fresh', paint: x.paint, screen: r.screen, end: x.end, time: +x.time.toFixed(2),
       kills: x.kills, level: x.level, score: x.score, killPts: x.killPts, xpSum: x.xpSum, bestChain: x.bestChain,
       peakTier: x.peakTier, hits: x.hits, damageTaken: x.damageTaken, killer: x.killer, nextBeat: x.nextBeat,
       revivesUsed: x.revivesUsed, podsEquipped: x.podsEquipped, weapons: x.weapons, drafts: r.drafts, streams: r.streams,

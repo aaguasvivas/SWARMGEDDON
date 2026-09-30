@@ -32,6 +32,7 @@ function makeWorld(seed, pilot, pool) {
     rngs: new RunRngs(),
     perkStacks: new Map(),
     perkPool: pool,
+    weaponPool: PICKUP_WEAPON_IDS,
     character: { id: pilot },
     weapon: WEAPONS.pistol,
     baseWeaponId: 'pistol',

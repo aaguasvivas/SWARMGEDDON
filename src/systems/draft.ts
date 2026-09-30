@@ -14,7 +14,7 @@ import {
   type FusionDef,
   type PerkDef,
 } from '../content/perks.ts'
-import { PICKUP_WEAPON_IDS, WEAPONS, type WeaponDef } from '../content/weapons.ts'
+import { WEAPONS, type WeaponDef } from '../content/weapons.ts'
 import type { World } from '../game/world.ts'
 import { healPlayer } from './damage.ts'
 
@@ -504,9 +504,10 @@ function heldPickup(w: World): WeaponDef | null {
   return w.weapon.id === w.baseWeaponId ? null : w.weapon
 }
 
-function pairedWeapon(perkId: string): WeaponDef | null {
-  for (let k = 0; k < PICKUP_WEAPON_IDS.length; k++) {
-    const wd = WEAPONS[PICKUP_WEAPON_IDS[k]!]!
+/** The pickup weapon paired with `perkId`, when this run's pods can drop it. */
+function pairedWeapon(w: World, perkId: string): WeaponDef | null {
+  for (let k = 0; k < w.weaponPool.length; k++) {
+    const wd = WEAPONS[w.weaponPool[k]!]!
     if (wd.pair === perkId) return wd
   }
   return null
@@ -543,7 +544,7 @@ function setPerkCard(w: World, c: DraftCard, p: PerkDef, tags: number): void {
       return
     }
   }
-  const pw = pairedWeapon(p.id)
+  const pw = pairedWeapon(w, p.id)
   if (pw) {
     c.tags |= TAG_PAIRS_WEAPON
     c.tagText = `PAIR: ${upper(pw.name)}`

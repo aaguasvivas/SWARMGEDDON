@@ -1,6 +1,6 @@
 import { BERSERK_MEDKIT, COLORS, MAX_PICKUPS, PICKUP_RESERVE, PODS, XP } from '../config.ts'
 import { clamp } from '../core/vec.ts'
-import { PICKUP_WEAPON_IDS, WEAPONS, weaponIndex } from '../content/weapons.ts'
+import { WEAPONS, weaponIndex } from '../content/weapons.ts'
 import { FeelKind } from '../effects/feelQueue.ts'
 import { PICKUP_SLOT, PICKUP_SLOTS, type Pickup, type PickupKind } from '../game/pickup.ts'
 import type { World } from '../game/world.ts'
@@ -194,7 +194,7 @@ function pairStacks(world: World, id: string): number {
  *  is owned, else any weapon; never the held one. */
 function pickPodType(world: World): string {
   const loot = world.rngs.loot
-  const pool = PICKUP_WEAPON_IDS
+  const pool = world.weaponPool
   const held = heldPickupId(world)
   podCand.length = 0
   if (loot.float() < PODS.affinityChance) {
@@ -208,7 +208,7 @@ function pickPodType(world: World): string {
 /** Boss pods: a weapon whose paired perk has 2+ stacks, else 1+, else any. */
 function pickBossPodType(world: World): string {
   const loot = world.rngs.loot
-  const pool = PICKUP_WEAPON_IDS
+  const pool = world.weaponPool
   for (let min = 2; min >= 1; min--) {
     podCand.length = 0
     for (let i = 0; i < pool.length; i++) if (pairStacks(world, pool[i]!) >= min) podCand.push(pool[i]!)
