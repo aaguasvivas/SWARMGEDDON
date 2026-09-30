@@ -1,4 +1,5 @@
 import { CanvasSource, Container, Sprite, Texture } from 'pixi.js'
+import { setTint } from './textures.ts'
 
 const RES = 3
 const PAD = 2
@@ -60,7 +61,7 @@ export class SegRing {
     const k = Math.floor(lit)
     for (let i = 0; i < this.n; i++) {
       const s = this.segs[i]!
-      s.tint = tint
+      setTint(s, tint)
       s.alpha = i < k ? on : off
     }
   }

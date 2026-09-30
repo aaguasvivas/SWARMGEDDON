@@ -1,11 +1,13 @@
 import { Container, Graphics, Rectangle, Text } from 'pixi.js'
 import { TIER_COLOR, XP } from '../config.ts'
+import { BONUSES, BONUS_FREEZE, BONUS_OVERDRIVE, BONUS_SHIELD } from '../content/bonuses.ts'
 import { BOSS_STAGES } from '../content/bosses.ts'
 import { ENEMIES } from '../content/enemies.ts'
 import { MARKER_BOSS, MARKER_EVENT, MARKER_FINAL } from '../content/runScripts.ts'
 import { TIER_STEPS } from '../core/rules.ts'
 import type { World } from '../game/world.ts'
 import type { Insets } from '../platform/safeArea.ts'
+import { SegRing } from '../render/segRing.ts'
 import { Plate } from './button.ts'
 import { CH_PLUS, DigitStrip } from './digits.ts'
 import { makeIcon } from './icons.ts'
@@ -38,6 +40,32 @@ const LANE_HALF = 29
 /** Landscape screens shorter than this take the callout at this scale (the 14 px sub stays at 12 px or more). */
 const SHORT_LANDSCAPE = 360
 const SHORT_LANE_SCALE = 0.86
+/** Timer rings for the timed bonuses (9.2): diameter, gap, segments. Portrait
+ *  puts them in row A right of the widest LEVEL UP chip; landscape, whose row A
+ *  holds the boss plate, puts them under the chip. */
+const RING_D = 28
+const RING_GAP = 6
+const RING_SEGS = 16
+const TIMED_BONUSES = [BONUS_FREEZE, BONUS_OVERDRIVE, BONUS_SHIELD] as const
+
+/** One timed bonus's ring: segments for the time left and its whole seconds. */
+class BonusRing {
+  readonly view = new Container()
+  readonly ring = new SegRing(RING_SEGS, RING_D / 2 - 1, 3, 6)
+  readonly secs: DigitStrip
+  lit = -1
+
+  constructor(
+    readonly tint: number,
+    readonly duration: number,
+  ) {
+    const back = new Graphics()
+    back.circle(0, 0, RING_D / 2).fill({ color: INK, alpha: 0.6 })
+    this.secs = new DigitStrip(2, 12, tint, 0.5)
+    this.view.addChild(back, this.ring.view, this.secs.view)
+    this.view.visible = false
+  }
+}
 
 /**
  * The run HUD (section 9.2): one plate across the top (pause, level chip, HP,
@@ -144,6 +172,13 @@ export class Hud {
   private pillW = PILL_MIN_W
   private pillX = 0
 
+  private readonly bonusRings = TIMED_BONUSES.map((b) => new BonusRing(BONUSES[b]!.tint, BONUSES[b]!.duration))
+  /** Bit i set: TIMED_BONUSES[i] runs (-1 forces a re-pack after layout). */
+  private ringMask = -1
+  private ringX = 0
+  private ringY = 0
+  private ringGap = RING_GAP
+
   constructor() {
     this.lvText = label('LV', 12, INK)
     this.daily = label('', 12, T.accentGold)
@@ -198,6 +233,7 @@ export class Hud {
       this.xpBack.view, this.xpFill.view, this.surge, this.timeline, this.nowTick.view,
       this.time.view, this.score.view, this.daily, this.chip, this.badge, this.boss, this.pill,
     )
+    for (const r of this.bonusRings) this.view.addChild(r.view)
   }
 
   /** Fresh run: bars start full or empty instead of sweeping from the last run,
@@ -286,6 +322,12 @@ export class Hud {
     this.chipText.position.set(10, CHIP_H / 2)
     this.chipNum.view.position.set(10 + this.chipText.width + 6, CHIP_H / 2)
     this.badge.position.set(portrait ? W - R - 100 : this.plateR - BADGE_W, rowY)
+    this.ringX = L + 8 + (portrait ? CHIP_MAX_W + 8 : 0) + RING_D / 2
+    this.ringY = portrait ? rowY + ROW_A_H / 2 : rowY + ROW_A_H + 4 + RING_D / 2
+    // Portrait: the three rings close up on narrow phones so the last keeps 6 px from the badge.
+    const room = portrait ? this.badge.x - 6 - (this.ringX - RING_D / 2) : Infinity
+    this.ringGap = Math.max(0, Math.min(RING_GAP, (room - 3 * RING_D) / 2))
+    this.ringMask = -1
 
     let bossX: number
     let bossY: number
@@ -326,7 +368,8 @@ export class Hud {
   /** Screen y below every HUD row showing at the top now. */
   get stackBottom(): number {
     const b = this.boss.visible ? this.boss.y + BOSS_H : this.chip.visible || this.badge.visible ? this.chip.y + ROW_A_H : 0
-    return Math.max(this.topBottom, b * this.s)
+    const r = this.ringMask > 0 ? this.ringY + RING_D / 2 : 0
+    return Math.max(this.topBottom, Math.max(b, r) * this.s)
   }
 
   /** Once per render frame while a run shows. `pulse` is the low-HP heartbeat (0..1). */
@@ -378,6 +421,32 @@ export class Hud {
     this.updateBadge(world, dt)
     this.updateBoss(world)
     this.updatePill(world)
+    this.updateRings(world)
+  }
+
+  /** FREEZE, OVERDRIVE and SHIELD rings: running ones pack left to right. */
+  private updateRings(world: World): void {
+    let mask = 0
+    for (let i = 0; i < this.bonusRings.length; i++) {
+      const t = i === 0 ? world.freezeT : i === 1 ? world.overdriveT : world.shieldT
+      if (t <= 0) continue
+      mask |= 1 << i
+      const r = this.bonusRings[i]!
+      const lit = Math.ceil((RING_SEGS * t) / r.duration)
+      if (lit !== r.lit) {
+        r.lit = lit
+        r.ring.fill(lit, r.tint, 1, 0.18)
+      }
+      r.secs.setInt(Math.ceil(t))
+    }
+    if (mask === this.ringMask) return
+    this.ringMask = mask
+    let k = 0
+    for (let i = 0; i < this.bonusRings.length; i++) {
+      const r = this.bonusRings[i]!
+      r.view.visible = (mask & (1 << i)) !== 0
+      if (r.view.visible) r.view.position.set(this.ringX + k++ * (RING_D + this.ringGap), this.ringY)
+    }
   }
 
   /** A hit dropped the multiplier: the badge flashes `x6 > x5`. */

@@ -1,5 +1,5 @@
 // SWARMGEDDON HUD capture (P15): the run HUD with a boss alive (in FRENZY), a
-// LEVEL UP x2 chip, tier x5, an overshield and a callout in the lane, at phone sizes with
+// LEVEL UP x2 chip, tier x5, an overshield, all three bonus timer rings and a callout in the lane, at phone sizes with
 // safe-area insets. Writes one PNG per size plus the HUD element boxes, and
 // checks: no two HUD boxes overlap (bitmap DigitStrips included, which a Text
 // dump misses), the DASH hit circle clears the weapon pill, the boss plate and
@@ -68,6 +68,10 @@ function stage(world) {
     w.tier = 5
     w.score = 1234567
     w.pendingLevelUps = 2
+    // All three bonus timer rings (FREEZE, OVERDRIVE, SHIELD) show.
+    w.freezeT = 2.5
+    w.overdriveT = 5.5
+    w.shieldT = 3.2
     w.draft.index = Math.max(1, w.draft.index)
     w.draft.lastOpenAt = w.time
     if (w.boss) w.boss.hp = w.boss.maxHp * 0.64
@@ -105,6 +109,7 @@ function measure() {
     chip: box(h.chip), badge: box(h.badge), boss: box(h.boss), pill: box(h.pill),
     callout: box(S.callouts.box),
     arrow0: box(S.arrows.slots[0]), arrow1: box(S.arrows.slots[1]), arrow2: box(S.arrows.slots[2]),
+    ring0: box(h.bonusRings[0].view), ring1: box(h.bonusRings[1].view), ring2: box(h.bonusRings[2].view),
   }
   const t = S.input.touch
   const hint = S.touchHint
@@ -155,6 +160,30 @@ async function arrowProbe() {
     out[side] = { cx: Math.round(b.minX + b.width / 2), x0: Math.round(b.minX), x1: Math.round(b.maxX), visible: S.arrows.slots[0].visible }
   }
   return out
+}
+
+/** In page: a SHIELD bonus far to the left and a Hive Core far to the right of
+ *  the ship each get an edge arrow in their tint (section 6.5 priority list). */
+async function pickupArrowProbe() {
+  const S = window.__SWARM
+  const w = S.world
+  const pk = await import('/src/systems/pickups.ts')
+  const pl = w.player
+  // Along the screen's short axis, so the cage clamp still leaves them off screen.
+  const vert = S.app.screen.width > S.app.screen.height
+  pk.dropBonus(w, pl.x - (vert ? 0 : 900), pl.y - (vert ? 900 : 0), 3)
+  pk.dropHiveCore(w, pl.x + (vert ? 0 : 900), pl.y + (vert ? 900 : 0), 0)
+  await new Promise((r) => setTimeout(r, 200))
+  const out = []
+  for (let i = 1; i < S.arrows.slots.length; i++) {
+    const s = S.arrows.slots[i]
+    if (!s.visible) continue
+    const b = s.getBounds()
+    out.push({ tint: S.arrows.icons[i].tint, cx: Math.round(b.minX + b.width / 2), cy: Math.round(b.minY + b.height / 2) })
+  }
+  const cam = S.camera
+  const at = (k) => w.pickups.active.filter((p) => p.alive && p.kind === k).map((p) => ({ sx: Math.round(cam.worldToScreenX(p.x)), sy: Math.round(cam.worldToScreenY(p.y)) }))
+  return { arrows: out, bonus: at('bonus'), core: at('core'), vert }
 }
 
 /** In page: the tier-drop flash from the real scoring calls. A chain decay drop
@@ -235,6 +264,10 @@ function check(m) {
     ['callout', 'boss'], ['callout', 'badge'], ['callout', 'chip'], ['callout', 'pill'], ['hpNum', 'time'], ['hpNum', 'shieldNum'],
     ['arrow0', 'callout'], ['arrow1', 'callout'], ['arrow2', 'callout'],
   ]
+  for (const r of ['ring0', 'ring1', 'ring2']) {
+    if (!b[r]) fails.push(`bonus ring ${r} not showing`)
+    for (const q of ['chip', 'badge', 'boss', 'callout', 'pill', 'lvChip', 'hpBar', 'xpBar', 'timeline', 'time', 'score', 'daily', 'arrow0', 'arrow1', 'arrow2']) pairs.push([r, q])
+  }
   for (const [p, q] of pairs) if (overlap(b[p], b[q])) fails.push(`overlap ${p} / ${q}`)
   for (const [k, v] of Object.entries(b)) if (v && (v.x < 0 || v.y < 0 || v.x + v.w > m.W || v.y + v.h > m.H)) fails.push(`offscreen ${k}`)
   const circleHits = (c, r) => {
@@ -305,6 +338,17 @@ try {
     if (!arrows.west.visible || arrows.west.cx < L + 26 - 1) fails.push(`west alert arrow at x ${arrows.west.cx}, inside the left inset ${L} + 26`)
     if (!arrows.east.visible || arrows.east.cx > md.W - R - 26 + 1) fails.push(`east alert arrow at x ${arrows.east.cx}, past the right inset ${R} + 26`)
 
+    const pa = await page.evaluate(pickupArrowProbe)
+    const off = (list) => list.length > 0 && list.every((q) => q.sx < L || q.sx > md.W - R || q.sy < 0 || q.sy > md.H)
+    if (!off(pa.bonus) || !off(pa.core)) fails.push('pickup arrows: the probe pickups are not off screen ' + JSON.stringify(pa))
+    else {
+      // The bonus lies left of (portrait) or above (landscape) the ship, the core on the other side.
+      const bonusArrow = pa.arrows.find((a) => a.tint === 0x4dffa0)
+      const coreArrow = pa.arrows.find((a) => a.tint === 0xffc24a)
+      const at = (a) => (pa.vert ? a.cy : a.cx)
+      if (!bonusArrow || !coreArrow || at(bonusArrow) >= at(coreArrow)) fails.push('bonus and Hive Core arrows missing or on the wrong sides: ' + JSON.stringify(pa.arrows))
+    }
+
     const tier = await page.evaluate(tierProbe)
     if (tier.decay.length) fails.push('a chain decay flashed the tier drop: ' + JSON.stringify(tier.decay))
     if (JSON.stringify(tier.hit) !== '[[5,4]]' || !tier.dropVisible) fails.push('a hit did not flash x5 > x4: ' + JSON.stringify(tier))
@@ -344,8 +388,8 @@ try {
       if (p.paused !== wantPaused[i] || p.advancing === wantPaused[i]) fails.push(`${p.label}: paused ${p.paused}, time advancing ${p.advancing}`)
     })
 
-    report[size.name] = { file, dailyFile, fails, errors, ...m, dailyTexts, arrows, tier, callouts, pause }
-    console.log(JSON.stringify({ size: size.name, file, dailyFile, fails, errors, boxes: m.boxes, dash: m.dash, rest: m.rest, laneY: m.laneY, dailyTexts, arrows, tier, callouts, pause }))
+    report[size.name] = { file, dailyFile, fails, errors, ...m, dailyTexts, arrows, pickupArrows: pa, tier, callouts, pause }
+    console.log(JSON.stringify({ size: size.name, file, dailyFile, fails, errors, boxes: m.boxes, dash: m.dash, rest: m.rest, laneY: m.laneY, dailyTexts, arrows, pickupArrows: pa, tier, callouts, pause }))
     await ctx.close()
   }
 } finally {

@@ -1,7 +1,10 @@
 import { Container, Graphics, type Sprite } from 'pixi.js'
 import type { World } from '../game/world.ts'
 import type { Camera } from '../render/camera.ts'
+import { setTint } from '../render/textures.ts'
 import { makeIcon } from './icons.ts'
+import { CORES } from '../config.ts'
+import { BONUSES } from '../content/bonuses.ts'
 import { WEAPONS } from '../content/weapons.ts'
 import { INK, T, ensureContrast } from './tokens.ts'
 
@@ -19,6 +22,8 @@ const KIND_BOSS = 0
 const KIND_ELITE = 1
 const KIND_CHARGER = 2
 const KIND_POD = 3
+const KIND_BONUS = 4
+const KIND_CORE = 5
 const TINT_BOSS = T.bossFill
 /** An arrow keeps this far (its radius plus a gap) outside the callout's box. */
 const LANE_CLEAR = 24
@@ -28,7 +33,7 @@ const TINT_CHARGER = 0xff5a3c
 
 /**
  * Screen-edge arrows toward what matters off screen (section 6.5): boss >
- * elite > charger in windup > pod, plus a 3 s arrow toward the side a
+ * elite > charger in windup > pod > bonus > Hive Core, plus a 3 s arrow toward the side a
  * run-arc alert names. Screen space, drawn under the HUD; 8 pooled slots.
  */
 export class OffscreenArrows {
@@ -130,6 +135,14 @@ export class OffscreenArrows {
       const p = ps[i]!
       if (p.alive && p.kind === 'weapon') this.target(cam, p.x, p.y, WEAPONS[p.weaponId]!.tint, KIND_POD)
     }
+    for (let i = 0; i < ps.length && this.n < SLOTS; i++) {
+      const p = ps[i]!
+      if (p.alive && p.kind === 'bonus') this.target(cam, p.x, p.y, BONUSES[p.sub]!.tint, KIND_BONUS)
+    }
+    for (let i = 0; i < ps.length && this.n < SLOTS; i++) {
+      const p = ps[i]!
+      if (p.alive && p.kind === 'core') this.target(cam, p.x, p.y, CORES.coreTint, KIND_CORE)
+    }
     for (let i = this.n; i < SLOTS; i++) this.slots[i]!.visible = false
   }
 
@@ -138,7 +151,7 @@ export class OffscreenArrows {
     const y = cam.worldToScreenY(wy)
     if (x > this.left + ON_SCREEN_PAD && x < this.right - ON_SCREEN_PAD && y > this.top - EDGE + ON_SCREEN_PAD && y < this.bottom + EDGE - ON_SCREEN_PAD) return
     const i = this.n++
-    this.place(i, x, y, kind === KIND_POD ? ensureContrast(tint, INK) : tint, kind === KIND_BOSS ? 1.15 : 1)
+    this.place(i, x, y, kind >= KIND_POD ? ensureContrast(tint, INK) : tint, kind === KIND_BOSS ? 1.15 : 1)
     this.slots[i]!.alpha = kind === KIND_CHARGER ? 0.7 + 0.3 * Math.sin(this.clock * 16) : 1
   }
 
@@ -165,6 +178,6 @@ export class OffscreenArrows {
     s.scale.set(scale)
     const icon = this.icons[i]!
     icon.rotation = Math.atan2(dy, dx)
-    icon.tint = tint
+    setTint(icon, tint)
   }
 }
