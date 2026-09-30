@@ -4,6 +4,7 @@
 //   mode: turret (invincible, stationary) | roam (invincible, kite+collect)
 //         crude (normal HP, flee centroid) | smart (normal HP, kite+dodge+collect)
 import puppeteer from '/Users/Adelson/Desktop/personal/SWARMGEDDON/node_modules/puppeteer-core/lib/esm/puppeteer/puppeteer-core.js'
+import { acquireChromeLock } from '../lib/chromeLock.mjs'
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -47,6 +48,7 @@ async function launch() {
   throw new Error('could not launch Chrome')
 }
 
+await acquireChromeLock('playtest')
 const { browser, page } = await launch()
 await page.evaluate(readFileSync(join(HERE, 'harness.js'), 'utf8'))
 for (const { mode, seed, minutes, char, perkPolicy } of configs) {

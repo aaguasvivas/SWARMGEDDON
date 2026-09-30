@@ -26,6 +26,7 @@
 // Notes: drives the DEV build's __SWARM handle (world/step/flood/give/setLoadout/loop).
 // rAF runs normally in headless "new"; sim-only checks use step() (no wall clock).
 import puppeteer from 'puppeteer-core'
+import { acquireChromeLock } from './lib/chromeLock.mjs'
 
 const ORIGIN = (process.env.SWG_URL || 'http://localhost:5176').replace(/\/+$/, '')
 const flags = {}
@@ -41,6 +42,7 @@ const DPR = flags.dpr ? parseFloat(flags.dpr) : 1
 const SETTINGS = flags.settings ? JSON.parse(flags.settings) : null
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
+await acquireChromeLock('measure')
 const browser = await puppeteer.launch({
   executablePath: CHROME,
   headless: true,

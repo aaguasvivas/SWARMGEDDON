@@ -4,10 +4,12 @@
 // Each frame is a real render of the real game; staging only normalizes the
 // probe artifacts (invincibility HP readout) and sets a plausible kill count.
 import puppeteer from 'puppeteer-core'
+import { acquireChromeLock } from './lib/chromeLock.mjs'
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const [W, H] = [2796, 1290]
 const OUT = new URL('../store-assets/screenshots', import.meta.url).pathname
 
+await acquireChromeLock('store-shots')
 const browser = await puppeteer.launch({
   executablePath: CHROME,
   headless: true,

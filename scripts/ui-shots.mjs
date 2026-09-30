@@ -12,6 +12,7 @@
 // request that is not same-origin and not a GET is aborted, so nothing
 // reaches the live leaderboard.
 import puppeteer from 'puppeteer-core'
+import { acquireChromeLock } from './lib/chromeLock.mjs'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -40,6 +41,7 @@ const SIZES = [
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 async function launch() {
+  await acquireChromeLock('ui-shots')
   const opts = {
     executablePath: CHROME,
     headless: true,
