@@ -145,6 +145,11 @@ export class AudioEngine {
   private readonly lastAt = {} as Record<SfxName, number>
   private chaffLevel = 1
   private chaffUntil = 0
+  /** The music duck's release: `musicDuckLevel` at `musicDuckAt`, linear to the
+   *  base at `musicDuckEnd`. */
+  private musicDuckAt = 0
+  private musicDuckLevel = 1
+  private musicDuckEnd = 0
   private paused = false
   private lowHp = false
   private dying = false
@@ -306,6 +311,7 @@ export class AudioEngine {
     const g = this.musicDuck.gain
     g.cancelScheduledValues(t)
     g.setTargetAtTime(this.duckBase(), t, LP_GLIDE_TC)
+    this.musicDuckEnd = 0
   }
 
   private duckBase(): number {
@@ -436,15 +442,31 @@ export class AudioEngine {
     this.chaffUntil = until
   }
 
+  /** Duck the music to `level`, then release linearly to the base over
+   *  `release` s. A duck still releasing merges with the new one: the release
+   *  starts from the lower of the two levels and ends at the later end, so a
+   *  shallower duck never cuts a deeper one short. */
   private duckMusic(level: number, release: number, now: number): void {
     const duck = this.musicDuck
     if (!duck) return
     const base = this.duckBase()
+    const at = now + MUSIC_DUCK_ATTACK
+    let v = Math.min(level, base)
+    let end = at + release
+    if (at < this.musicDuckEnd) {
+      const lvl = this.musicDuckLevel
+      const held = lvl + ((base - lvl) * (at - this.musicDuckAt)) / (this.musicDuckEnd - this.musicDuckAt)
+      if (held < v) v = held
+      if (this.musicDuckEnd > end) end = this.musicDuckEnd
+    }
     const g = duck.gain
     g.cancelScheduledValues(now)
     g.setValueAtTime(g.value, now)
-    g.linearRampToValueAtTime(Math.min(level, base), now + MUSIC_DUCK_ATTACK)
-    g.linearRampToValueAtTime(base, now + MUSIC_DUCK_ATTACK + release)
+    g.linearRampToValueAtTime(v, at)
+    g.linearRampToValueAtTime(base, end)
+    this.musicDuckAt = at
+    this.musicDuckLevel = v
+    this.musicDuckEnd = end
   }
 
   // Every recipe is LAYERED (click transient + tonal body + low thump); the
@@ -891,16 +913,19 @@ function jit(pct: number): number {
   return 1 + (Math.random() * 2 - 1) * pct
 }
 
-/** A pan bus feeding `into`. Browsers without StereoPannerNode get a
- *  pass-through gain (center). */
+/** A pan bus feeding `into`. StereoPannerNode is equal-power: a mono voice at
+ *  pan 0 reaches each channel at 0.707, so its input gain is sqrt 2 to keep the
+ *  center at the unpanned (v1) level. Browsers without StereoPannerNode get a
+ *  unity pass-through (center). */
 function makePan(ctx: AudioContext, pan: number, into: AudioNode): AudioNode {
+  const input = ctx.createGain()
   if (typeof ctx.createStereoPanner !== 'function') {
-    const g = ctx.createGain()
-    g.connect(into)
-    return g
+    input.connect(into)
+    return input
   }
+  input.gain.value = Math.SQRT2
   const p = ctx.createStereoPanner()
   p.pan.value = pan
-  p.connect(into)
-  return p
+  input.connect(p).connect(into)
+  return input
 }

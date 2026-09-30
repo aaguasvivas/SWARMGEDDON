@@ -4,6 +4,13 @@
 // Usage: node scripts/audio-probe.mjs
 //
 // Scenarios, all through the real FeelDirector drain and the real AudioEngine:
+//   panLevel The AudioEngine graph built on an OfflineAudioContext: a quiet 440 Hz sine
+//            into each chaff pan bus vs straight into the chaff bus (the v1 route, no pan
+//            stage), with and without StereoPannerNode. Reports the per-channel RMS
+//            ratio to the direct route; the center bus must be 1 in both builds.
+//   duckMerge death, then levelup 100 ms later: the music duck must follow the death
+//            duck (0.35, 900 ms release) and not jump to the shallower levelup release.
+//            Control: levelup alone is back to 1 by 0.5 s.
 //   wipe     200 swarmers packed on the player die in one tick to thorns while the
 //            boss arrives in the same tick. Reports the peak voice count, whether the
 //            boss cue started, and the chaff and music duck levels right after it.
@@ -11,7 +18,9 @@
 //            tier 1 voices and the boss cue must take a slot anyway.
 //   chaff    300 shots, 300 hits, 240 chaff kills and 240 gems over 60 frames, sim
 //            frozen: no vibrate call may happen (no haptic per shot, hit or chaff kill).
-// Pass: peak <= 24 in every scenario, the boss cue starts in wipe and capFull, the
+// Pass: center pan ratio 1 +-0.01 with and without StereoPannerNode; duckMerge at
+// 0.56 s <= 0.85 and not back to 1 before 0.85 s, control back to 1 by 0.5 s;
+// peak <= 24 in every scenario, the boss cue starts in wipe and capFull, the
 // chaff bus stays below 0.1 from 10 to 110 ms after the boss cue, chaff haptics = 0,
 // no page errors.
 import puppeteer from 'puppeteer-core'
@@ -57,6 +66,100 @@ try {
     const tick = () => (--left <= 0 ? r() : requestAnimationFrame(tick))
     requestAnimationFrame(tick)
   }), n)
+
+  // --- panLevel ---
+  const panLevel = await page.evaluate(async () => {
+    const { AudioEngine } = await import('/src/audio/audio.ts')
+    const RealCtor = window.AudioContext
+    const SR = 48000
+    const render = async (noPanner, into) => {
+      window.AudioContext = function () {
+        const c = new OfflineAudioContext(2, SR / 2, SR)
+        if (noPanner) c.createStereoPanner = undefined
+        return c
+      }
+      try {
+        const au = new AudioEngine()
+        au.ensureContext()
+        const ctx = au.ctx
+        const osc = ctx.createOscillator()
+        osc.frequency.value = 440
+        const g = ctx.createGain()
+        g.gain.value = 0.02 // quiet, so the tanh shaper stays linear
+        osc.connect(g).connect(into(au))
+        osc.start(0)
+        const buf = await ctx.startRendering()
+        const rms = (ch) => {
+          const d = buf.getChannelData(ch)
+          let s = 0
+          for (let i = 0; i < d.length; i++) s += d[i] * d[i]
+          return Math.sqrt(s / d.length)
+        }
+        return [rms(0), rms(1)]
+      } finally {
+        window.AudioContext = RealCtor
+      }
+    }
+    const ratios = async (noPanner, buses) => {
+      const [dl, dr] = await render(noPanner, (au) => au.chaffBus)
+      const out = []
+      for (const i of buses) {
+        const [l, r] = await render(noPanner, (au) => au.chaffPan[i])
+        out.push([+(l / dl).toFixed(3), +(r / dr).toFixed(3)])
+      }
+      return out
+    }
+    return { panner: await ratios(false, [0, 1, 2, 3, 4]), noPannerCenter: (await ratios(true, [2]))[0] }
+  })
+  console.log(JSON.stringify({ scenario: 'panLevel', busesLeftToRight: [-1, -0.5, 0, 0.5, 1], ...panLevel }))
+  const near1 = (x) => Math.abs(x - 1) <= 0.01
+  const [cl, cr] = panLevel.panner[2]
+  if (!near1(cl) || !near1(cr) || !near1(panLevel.noPannerCenter[0]) || !near1(panLevel.noPannerCenter[1])) failed = true
+  if (panLevel.panner[0][1] > 0.05 || panLevel.panner[4][0] > 0.05) failed = true
+
+  // --- duckMerge ---
+  const duckMerge = await page.evaluate(async () => {
+    const au = window.__SWARM.audio
+    const ctx = au.ctx
+    const g = au.musicDuck.gain
+    const settle = () => new Promise((r) => {
+      let since = -1
+      const tick = () => {
+        if (g.value < 0.999) since = -1
+        else if (since < 0) since = ctx.currentTime
+        if (since >= 0 && ctx.currentTime - since > 0.3) r()
+        else requestAnimationFrame(tick)
+      }
+      tick()
+    })
+    const run = (seq, dur) => new Promise((r) => {
+      const t0 = ctx.currentTime
+      let k = 0
+      const samples = []
+      const tick = () => {
+        const dt = ctx.currentTime - t0
+        while (k < seq.length && dt >= seq[k][1]) au.play(seq[k++][0])
+        samples.push([+dt.toFixed(3), +g.value.toFixed(3)])
+        if (dt < dur) requestAnimationFrame(tick)
+        else r(samples)
+      }
+      tick()
+    })
+    const at = (s, t) => s.reduce((b, x) => (Math.abs(x[0] - t) < Math.abs(b[0] - t) ? x : b))[1]
+    const backAt = (s) => (s.find((x) => x[0] > 0.05 && x[1] >= 0.99) ?? [null])[0]
+    await settle()
+    const merged = await run([['death', 0], ['levelup', 0.1]], 1.2)
+    await settle()
+    const alone = await run([['levelup', 0]], 0.7)
+    return {
+      merged: { at020: at(merged, 0.02), at140: at(merged, 0.14), at300: at(merged, 0.3), at560: at(merged, 0.56), at800: at(merged, 0.8), backToOneAt: backAt(merged) },
+      levelupAlone: { at140: at(alone, 0.14), backToOneAt: backAt(alone) },
+    }
+  })
+  console.log(JSON.stringify({ scenario: 'duckMerge', ...duckMerge }))
+  const m = duckMerge.merged
+  if (m.at560 > 0.85 || m.backToOneAt === null || m.backToOneAt < 0.85) failed = true
+  if (duckMerge.levelupAlone.backToOneAt === null || duckMerge.levelupAlone.backToOneAt > 0.5) failed = true
 
   // --- wipe ---
   await page.evaluate(() => {

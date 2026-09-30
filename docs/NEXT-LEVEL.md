@@ -2284,12 +2284,13 @@ Other copy:
 ### A16.1 Buses
 
 ```
-voice → [chaffBus | mainBus] → panBus[-1, -0.5, 0, 0.5, 1] → sfxBus → shaper → master
+voice → panBus[-1, -0.5, 0, 0.5, 1] of its tier → [chaffBus | mainBus] → sfxBus → shaper → master
 music → musicBus → musicDuck → musicLP (20 kHz idle) → master
 ```
 
 - Voice cap: 24 (a voice is one recipe instance, alive until its last source stops). A tier 0 sound is dropped at the cap. A tier 1 or 2 sound at the cap takes the slot of the oldest voice of the lowest lower tier (8 ms fade); with none, it is dropped.
-- Pan sits before the tier gain in the graph (gain and pan commute), so each tier bus keeps one duck param: `voice → panBus[p] of its tier → chaffBus | mainBus → sfxBus`.
+- Each tier has its own 5 pan buses in front of its tier bus, so one gain param per tier bus carries every duck.
+- A pan bus is a gain of `Math.SQRT2` into an equal-power StereoPanner, so a center voice keeps the unpanned (v1) level on each channel. Without StereoPanner it is a unity gain.
 - Pan = `clamp((screenX - W/2) / (W/2), -1, 1)`, snapped to the nearest bus.
 
 | Tier | Sounds | On play |
@@ -2297,6 +2298,8 @@ music → musicBus → musicDuck → musicLP (20 kHz idle) → master
 | 0 | pistol, smg, plasma, beam, whoosh, hit, kill, gem, graze, spit, teleport, crit, tick | none |
 | 1 | shotgun, heavy, crack, weapon, hurt, heal, eliteSpawn, chargerWindup, podSpawn, emptyClick, lowAmmo, heartbeat, ui, uiConfirm, uiBack, cardDeal, countdown, stamp, dash, closecall, shard, bonus_*, multUp, multBreak, alertEvent, alertElite | chaffBus to 0.4 for 40 ms |
 | 2 | boss, bossKill, death, levelup, fusion, evolve, core1, core3, core5, newBest, feat, win, alertBoss | musicDuck to 0.5 (15 ms attack, 400 ms release); chaffBus to 0 for 120 ms. bossKill, death and win: 0.35 with a 900 ms release |
+
+Overlapping music ducks merge: the release starts from the lower of the two levels and ends at the later end time, so a shallower duck never cuts a deeper one short.
 
 States: pause sets LP 600 Hz and duck 0.6. Low HP sets LP 900 Hz. Death sweeps LP to 400 Hz over 600 ms. When hidden, `ctx.suspend()`.
 
@@ -2347,7 +2350,7 @@ Primitives: `zap`, `tone`, `thump`, `click`, `noiseSweep`, `arp`, `arpAt`. `play
 | bonus_vacuum | zap(200,1600,.4,'sine',.12,2000,6000,0) | none |
 | newBest / feat | arp([659,784,988,1319],.07,'triangle',.18) | none |
 
-Kill ladder: `play('kill', { semis: min(12, 2 x (tier - 1)) })`, with the 40 ms throttle kept.
+Kill ladder: `play('kill', min(12, 2 x (tier - 1)), 1, pan)`, with the 40 ms throttle kept.
 
 ### A16.3 Shake per event
 
