@@ -36,6 +36,8 @@ const GOAL_ROW_H = 34
 const LINE = 18
 /** A one-line toast needs this much free height (its plate plus a margin). */
 const TOAST_ROOM = 48
+/** Space a toast under the meta column keeps above the buttons. */
+const TOAST_GAP = 8
 const STAMP_ROT = (-6 * Math.PI) / 180
 const L_ROW_MAX_W = 600
 
@@ -680,8 +682,8 @@ export class Recap {
   /** A toast takes the opt-in card's place (the toasts here follow a choice
    *  on that card), else free room above the buttons, else the top band. */
   private freeSlot(x: number, colW: number, meta: { bottom: number; cardY: number; cardH: number }, limit: number): ToastSlot {
-    if (meta.cardH > 0) return { x, y: meta.cardY, w: colW }
-    if (limit - meta.bottom >= TOAST_ROOM) return { x, y: meta.bottom, w: colW }
+    if (meta.cardH > 0) return { x, y: meta.cardY, w: colW, h: meta.cardH }
+    if (limit - meta.bottom >= TOAST_ROOM) return { x, y: meta.bottom, w: colW, h: limit - meta.bottom - TOAST_GAP }
     return { x, y: this.insets.top + 8, w: colW }
   }
 }

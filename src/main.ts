@@ -548,14 +548,17 @@ async function boot(): Promise<void> {
     const model = buildRecapModel(result, before, done, nearestGoals(featsBefore, loadFeats()))
     recap.show(model)
     feel.runEnded(model.newBest, done.length > 0)
-    const featsHint = done.length > 0 ? hints.once('feats') : null
-    if (featsHint) showToast(featsHint)
     const ask = shouldAskOptIn(lifetime.runs) && recap.canShowOptIn()
     if (ask) markAsked()
     recap.setOptInVisible(ask)
     screen = 'gameover'
     input.setEnabled(false)
     void postRun(result, true)
+    // Last, so the toast takes the recap's free slot in its final layout (the
+    // opt-in card and the rank row placed). It waits for a recap with no opt-in
+    // card: the card's area is the toast slot, and it would cover its buttons.
+    const featsHint = done.length > 0 && !ask ? hints.once('feats') : null
+    if (featsHint) showToast(featsHint)
     flushUpdatePrompt() // a parked "new version" toast may show now
   }
 

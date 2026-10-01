@@ -8,11 +8,14 @@ const PAD_Y = 10
 const MAX_W = 420
 const FADE_S = 0.3
 
-/** A column a screen keeps free for the toast: left edge, top and width. */
+/** A column a screen keeps free for the toast: left edge, top and width, and
+ *  the height free under its top when it is bounded (a taller toast, such as a
+ *  two-line one, goes to the top of the screen instead). */
 export interface ToastSlot {
   x: number
   y: number
   w: number
+  h?: number
 }
 
 /** One short message on the menu, gone after `sec` seconds: at the top of the
@@ -69,7 +72,8 @@ export class Toast {
     const bw = Math.min(room, this.label.width + PAD_X * 2)
     const bh = this.label.height + PAD_Y * 2
     const cx = (left + right) / 2
-    const y = Math.max(s ? s.y : 0, this.insets.top + 8)
+    const fits = !s || s.h === undefined || bh <= s.h
+    const y = Math.max(s && fits ? s.y : 0, this.insets.top + 8)
     this.plate.resize(bw, bh)
     this.plate.view.position.set(cx - bw / 2, y)
     this.label.position.set(cx, y + PAD_Y)
