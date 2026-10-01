@@ -18,10 +18,18 @@
 //            the loop's own step with 2 s of no input first (the gate holds, then
 //            the bot's first sample opens it). The run state hashes must match.
 //   background  the page going hidden opens the pause sheet and holds the run.
-//   pad      a fake standard gamepad: Start pauses and B resumes after the
-//            countdown; on a draft the d-pad moves the focus and A picks the
-//            focused card, Y rerolls, X arms banish, B skips; A on a Hive Core
-//            continues; A on the WIN panel extracts; A on the recap retries.
+//   chain    with the PRIME dead and 3 levels pending, each pick opens the next
+//            draft at once; that draft must show at full alpha with every card
+//            at scale 1 (the last pick's fade and pop must not carry over).
+//   rotate   cards with two-sentence descriptions: after the screen turns to
+//            landscape and back to portrait, each card shows what a fresh deal
+//            would show at that size (a description cut to its first sentence
+//            in one orientation comes back whole in the other).
+//   pad      a fake standard gamepad: Start pauses, A on SETTINGS opens it, B
+//            goes back to the sheet, and B resumes after the countdown; on a
+//            draft the d-pad moves the focus and A picks the focused card, Y
+//            rerolls, X arms banish, B skips; A on a Hive Core continues; A on
+//            the WIN panel extracts; A on the recap retries.
 import puppeteer from 'puppeteer-core'
 import { acquireChromeLock } from './lib/chromeLock.mjs'
 
@@ -365,6 +373,101 @@ async function checkBackground(browser, out) {
   }
 }
 
+/** In page: what the modal shows now (alpha, card scales, the ceremony's deal count). */
+function modalState() {
+  const S = window.__SWARM
+  const M = S.modal
+  return {
+    open: M.isOpen(),
+    shown: M.isShown(),
+    draftOpen: S.world.draft.open,
+    alpha: M.view.alpha,
+    faces: M.views.map((v) => +v.face.scale.x.toFixed(3)),
+    dealt: M.dealt,
+    pending: S.world.pendingLevelUps,
+  }
+}
+
+async function checkChain(browser, out) {
+  const { page, errors } = await open(browser, { touch: true, pad: false })
+  await page.evaluate(() => {
+    const S = window.__SWARM
+    const w = S.world
+    S.setLoadout('nova', 'hive')
+    S.startRun('endless')
+    w.player.maxHp = w.player.hp = 1e9
+    S.step(60)
+    w.player.hp = 1e9
+    // The PRIME is dead: pending levels resolve back to back (draftDue).
+    w.pendingWin = true
+    for (let i = 0; i < 3; i++) w.addXp(w.xpToNext - w.xp)
+  })
+  const drafts = []
+  await page.waitForFunction(() => window.__SWARM.modal.isOpen(), { timeout: 5000 })
+  await sleep(600)
+  drafts.push(await page.evaluate(modalState))
+  for (let k = 0; k < 2; k++) {
+    await page.evaluate(() => window.__SWARM.modal.pressCard(0))
+    await sleep(1000)
+    drafts.push(await page.evaluate(modalState))
+  }
+  await page.close()
+  out.chain = {
+    pass: drafts.every((d, i) => d.open && d.shown && d.draftOpen && d.alpha === 1 && d.faces.every((f) => f === 1) && d.dealt === 3 && d.pending === 3 - i),
+    drafts,
+    errors,
+  }
+}
+
+/** In page: each card's shown description ('' when left out) and its full text. */
+function descs() {
+  const S = window.__SWARM
+  return S.modal.views.map((v, i) => (v.root.visible ? { shown: v.desc.visible ? v.desc.text : '', full: S.world.draft.cards[i].desc } : null))
+}
+
+async function checkRotate(browser, out) {
+  const { page, errors } = await open(browser, { touch: true, pad: false })
+  await page.evaluate(readyDraft)
+  await page.waitForFunction(() => window.__SWARM.modal.isOpen(), { timeout: 5000 })
+  await sleep(600)
+  // The first draft's keystones have one-sentence descriptions: show the
+  // longest two-sentence ones from the content tables on its cards instead.
+  await page.evaluate(async () => {
+    const { PERKS, FUSIONS, FALLBACKS } = await import('/src/content/perks.ts')
+    const two = [...PERKS, ...FUSIONS, ...FALLBACKS].map((p) => p.desc).filter((d) => d.indexOf('. ') > 0).sort((a, b) => b.length - a.length)
+    const S = window.__SWARM
+    for (let i = 0; i < S.world.draft.count; i++) S.world.draft.cards[i].desc = two[i]
+    S.modal.refresh()
+  })
+  const fresh = async () => {
+    const now = await page.evaluate(descs)
+    await page.evaluate(() => window.__SWARM.modal.refresh())
+    return { now, fresh: await page.evaluate(descs) }
+  }
+  const turn = async (w, h) => {
+    await page.setViewport({ width: w, height: h, deviceScaleFactor: 1, isMobile: true, hasTouch: true })
+    await sleep(500)
+    return fresh()
+  }
+  const portrait = await page.evaluate(descs)
+  const land = await turn(667, 375)
+  const back = await turn(375, 667)
+  await page.close()
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
+  // Exercised: some card shows a different part of its description in the two orientations.
+  const differs = portrait.some((d, i) => d && land.fresh[i] && d.shown !== land.fresh[i].shown)
+  out.rotate = {
+    pass: differs && same(land.now, land.fresh) && same(back.now, back.fresh) && same(back.now, portrait),
+    exercised: differs,
+    landscapeMatchesFreshDeal: same(land.now, land.fresh),
+    portraitAgainMatchesFreshDeal: same(back.now, back.fresh),
+    portrait,
+    landscape: land.now,
+    portraitAgain: back.now,
+    errors,
+  }
+}
+
 async function checkPad(browser, out) {
   const { page, errors } = await open(browser, { touch: false, pad: true })
   const press = async (button, holdMs = 80) => {
@@ -390,6 +493,12 @@ async function checkPad(browser, out) {
   })
   await press(START)
   r.startPauses = await page.evaluate(() => window.__SWARM.pauseSheet.isOpen() && window.__SWARM.world.paused)
+  // SETTINGS from the sheet, and B back to it.
+  await press(DOWN)
+  await press(A)
+  r.aOpensSettings = await page.evaluate(() => window.__SWARM.settingsPanel.isOpen() && !window.__SWARM.pauseSheet.isOpen())
+  await press(B)
+  r.bBackToSheet = await page.evaluate(() => !window.__SWARM.settingsPanel.isOpen() && window.__SWARM.pauseSheet.isOpen() && window.__SWARM.world.paused)
   await press(B)
   await sleep(1500)
   r.bResumes = await page.evaluate(() => !window.__SWARM.world.paused && !window.__SWARM.pauseSheet.isShown())
@@ -475,6 +584,8 @@ try {
   if (want('gatedet')) await checkGateDet(browser, out)
   if (want('lock')) await checkLock(browser, out)
   if (want('background')) await checkBackground(browser, out)
+  if (want('chain')) await checkChain(browser, out)
+  if (want('rotate')) await checkRotate(browser, out)
   if (want('pad')) await checkPad(browser, out)
 } finally {
   await browser.close()

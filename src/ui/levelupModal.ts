@@ -107,6 +107,8 @@ interface CardView {
   stat: Text
   tag: Text
   desc: Text
+  /** The card's whole description; `desc` may show only its first sentence. */
+  fullDesc: string
   /** performance.now() of the pointerdown that started the current press. */
   downAt: number
 }
@@ -234,6 +236,10 @@ export class LevelUpModal {
     this.banishMode = false
     this.focusIdx = 0
     this.hoverIdx = -1
+    // A draft can open while the last pick's delayed fade and card pop are
+    // still queued (pending levels after the PRIME resolve at once).
+    tweens.kill(this.view)
+    for (const v of this.views) tweens.kill(v.face)
     this.view.visible = true
     this.view.alpha = 1
     this.open_ = true
@@ -408,6 +414,7 @@ export class LevelUpModal {
       stat: text(13, T.textHi),
       tag: text(12, T.accentGold, '800'),
       desc: text(13, DESC_FILL),
+      fullDesc: '',
       downAt: 0,
     }
     v.name.style.fontWeight = '700'
@@ -447,7 +454,7 @@ export class LevelUpModal {
     v.stat.text = c.stat
     v.tag.text = c.tagText
     v.tag.style.fill = c.tags & TAG_EVOLVES_HELD ? T.rarityEvolution : c.kind === 'fusion' || c.tags & TAG_COMPLETES_FUSION ? T.rarityFusion : T.accentGold
-    v.desc.text = c.desc
+    v.fullDesc = c.desc
     setIcon(v.glyph, (c.glyph || 'damage') as IconName, 24)
     v.glyph.tint = accent
     v.stripe.tint = c.keystone ? T.accentGold : RARITY_COLOR[c.rarity]
@@ -664,7 +671,7 @@ export class LevelUpModal {
       t.position.set(x, y)
       y += Math.round(t.height)
     }
-    const full = v.desc.text
+    const full = v.fullDesc
     v.desc.visible = false
     const lines = Math.floor((bottom - y) / LINE)
     if (lines <= 0 || !full) return
@@ -680,7 +687,6 @@ export class LevelUpModal {
         break
       }
     }
-    if (!v.desc.visible) v.desc.text = full
   }
 }
 

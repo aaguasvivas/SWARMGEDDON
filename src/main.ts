@@ -27,7 +27,7 @@ import { DEATH_BEAT_MS, DEATH_RECAP_MS, DEATH_SKIP_MS, TimePreset } from './effe
 import { Arena, type DecorSpeck } from './game/arena.ts'
 import { Player } from './game/player.ts'
 import { World, type RunConfig, type RunMode } from './game/world.ts'
-import { InputManager, PAD_START } from './input/input.ts'
+import { InputManager, PAD_B, PAD_START } from './input/input.ts'
 import { DebugOverlay } from './ui/debugOverlay.ts'
 import { Hud } from './ui/hud.ts'
 import { Callouts } from './ui/callouts.ts'
@@ -1125,7 +1125,9 @@ async function boot(): Promise<void> {
         if (modal.isOpen()) modal.pad(pad)
         else if (pauseReason === 'win') winPanel.padPress(pad)
         else if (pauseReason === 'core') coreReveal.padPress(pad)
-        else if (pauseSheet.isOpen()) pauseSheet.padPress(pad)
+        else if (settingsPanel.isOpen()) {
+          if (pad & (PAD_B | PAD_START)) settingsPanel.onClose()
+        } else if (pauseSheet.isOpen()) pauseSheet.padPress(pad)
         else if (screen === 'gameover') recap.padPress(pad)
         else if (playing && pad & PAD_START) openPause()
       }
@@ -1292,6 +1294,7 @@ async function boot(): Promise<void> {
       numbers,
       pause: () => openPause(),
       pauseSheet,
+      settingsPanel,
       recap,
       modal,
       winPanel,
