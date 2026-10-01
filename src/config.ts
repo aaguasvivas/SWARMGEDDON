@@ -131,8 +131,12 @@ export const DASH = {
   iframes: 0.20, endLag: 0.10, endLagSpeedMul: 0.5,
   cooldown: 2.0, buffer: 0.15, minMoveForDir: 0.2, maxCharges: 4, closeCallRefund: 0.8,
 } as const
-export const GRACE = { hit: 0.5, draft: 0.75, revive: 1.5, win: 3.0 } as const
-export const BITE = { scale: 0.4, window: 0.4, w2: 0.5, w3: 0.25, capFracOfMaxHp: 0.16 } as const
+export const GRACE = { hit: 0.8, draft: 0.75, revive: 1.5, win: 3.0 } as const
+export const BITE = { scale: 0.4, window: 0.4, w2: 0.5, w3: 0.25, capFracOfMaxHp: 0.08 } as const
+/** Acid and magma pools: `dps` x world.dmgMul (taken when the pool lands)
+ *  while the player overlaps; at most `maxStack` overlapping pools hurt per
+ *  tick, in pool order. */
+export const ACID = { dps: 16, maxStack: 1 } as const
 /** A burrower (or dune leviathan) that surfaced this recently, with its body
  *  this close to the player, counts as a Close Call trigger (section 4.3). */
 export const CLOSE_CALL = { surfacedWithin: 0.25, surfacedDist: 60 } as const

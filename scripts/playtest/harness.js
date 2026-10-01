@@ -540,6 +540,12 @@
       dead: false,
       death: null,
       lastHalfHpT: 0,
+      /** A10 window: HP at the last step at 50%+ HP, then the damage by kind and
+       *  the healing since that step (reset while HP stays at 50% or more). */
+      halfHp: 0,
+      halfDmg: {},
+      halfHeal: 0,
+      halfDirty: false,
       hurts: [],
       podsSeen: 0,
       podsSeenChunk: 0,
@@ -738,6 +744,8 @@
         const kind = hzHit ? 'hazard' : lunge ? 'lunge' : f & FF_ACID ? 'acid' : f & FF_CONTACT ? 'bite' : f & FF_RAM ? 'ram' : f & FF_DISCRETE ? 'shot' : 'other'
         st.dmgByKind[kind] = (st.dmgByKind[kind] || 0) + q.a[i]
         st.hurts.push([w.time, kind, q.a[i]])
+        st.halfDmg[kind] = (st.halfDmg[kind] || 0) + q.a[i]
+        st.halfDirty = true
       }
       q.clear()
       while (st.hurts.length && st.hurts[0][0] < w.time - 3) st.hurts.shift()
@@ -747,6 +755,8 @@
       } else if (hp1 > hp0) {
         st.heal += hp1 - hp0
         st.healChunk += hp1 - hp0
+        st.halfHeal += hp1 - hp0
+        st.halfDirty = true
       }
 
       if (w.pendingGameOver) {
@@ -782,6 +792,9 @@
           maxHp: pl.maxHp,
           revivesUsed: w.revivesUsed,
           fromHalfHp: +(w.time - st.lastHalfHpT).toFixed(3),
+          hpAtHalf: +st.halfHp.toFixed(1),
+          dmgFromHalfByKind: Object.fromEntries(Object.entries(st.halfDmg).map(([k, v]) => [k, +v.toFixed(1)])),
+          healFromHalf: +st.halfHeal.toFixed(1),
           dmgLast3sByKind: st.hurts.reduce((o, [, k, a]) => ((o[k] = +((o[k] || 0) + a).toFixed(1)), o), {}),
           hurtsLast2s: st.hurts.filter((h) => h[0] >= w.time - 2).map(([t, k, a]) => [+t.toFixed(3), k, +a.toFixed(1)]),
           lastHitBy: w.lastHitBy,
@@ -816,6 +829,12 @@
         w.player.hp = 1e9
       } else if (w.player.hp >= w.player.maxHp * 0.5) {
         st.lastHalfHpT = w.time
+        st.halfHp = w.player.hp
+        if (st.halfDirty) {
+          st.halfDmg = {}
+          st.halfHeal = 0
+          st.halfDirty = false
+        }
       }
 
       if (w.paused && w.core.pending) handleCore(S, w, st)

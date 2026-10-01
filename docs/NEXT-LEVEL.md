@@ -82,8 +82,8 @@ Presentation:
 | # | Conflict | Decision |
 |---|---|---|
 | C1 | RNG derivation. Run arc: `deriveSeed(seedFromString)` with spawn, script and boss streams. Build: `hash32` salts for spawn, loot, draft, combat and fx. Feel: `fxRng = seed ^ 0x2545f491`. | One `RunRngs` object in `src/core/rng.ts` holds 7 streams, each seeded by `hash32(seed, SALT)`. `boss` is reseeded per fight and `draft` per draft. `fx` is non-sim. `world.rng` is deleted. Section 3.1. |
-| C2 | Damage model. Run arc: bites every 0.4 s from the top 3 overlapping enemies. Build: sum contact and cap it at 40% max HP/s. Meta: continuous damage counted as hits per 10 HP. | Use run-arc bites, then cap each bite at `0.16 x maxHp` (the build cap applied per bite window). All player damage goes through one function, `hurtPlayer()` (section 4.2). For score, a bite is continuous damage: every 10 HP after reduction counts as one hit. |
-| C3 | Grace. Draft grace 0.75 s (run arc) vs 1.0 s (build). Hit i-frames 0.5 s vs 0.4 s. | Draft and core-close grace **0.75 s**, plus a 300 ms render slow ramp. Hit i-frames **0.5 s**. Revive 1.5 s. Win 3.0 s. |
+| C2 | Damage model. Run arc: bites every 0.4 s from the top 3 overlapping enemies. Build: sum contact and cap it at 40% max HP/s. Meta: continuous damage counted as hits per 10 HP. | Use run-arc bites, then cap each bite at `0.08 x maxHp` (the build cap applied per bite window; 0.16 until the P19 deaths pass). All player damage goes through one function, `hurtPlayer()` (section 4.2). For score, a bite is continuous damage: every 10 HP after reduction counts as one hit. |
+| C3 | Grace. Draft grace 0.75 s (run arc) vs 1.0 s (build). Hit i-frames 0.5 s vs 0.4 s. | Draft and core-close grace **0.75 s**, plus a 300 ms render slow ramp. Hit i-frames **0.5 s** (0.8 s since the P19 deaths pass, A1.1). Revive 1.5 s. Win 3.0 s. |
 | C4 | XP knobs. Run arc: `row.xpScale` per minute. Build: `xpMul` per world plus a new curve. | Keep the build curve (`xpForLevel`), no gem expiry, the bank gem, homing and SURGE. Supply is `row.xpScale` per world per minute, and per-world `xpMul` is dropped. Starting values in A7 already include the x0.85 no-expiry factor. |
 | C5 | Chained drafts. Feel re-deals chained level-ups with "+2 MORE". Build keeps a 12 s minimum gap with a pending chip. | Build wins: drafts are at least 12 s apart, and the HUD shows a `LEVEL UP x2` pending chip. Feel's chain re-deal is cut. |
 | C6 | Draft input lock: 350 ms vs 450 ms. | 450 ms for the full ceremony (first 3 drafts), 300 ms after that. |
@@ -352,16 +352,16 @@ export function hurtPlayer(w: World, amount: number, kind: HurtKind, srcIdx: num
 // 4 amount *= (1 - mods.damageReduction)
 // 5 overshield (LIVING ARMOR) absorbs first; a hit it takes whole emits feel ShieldHit (no PlayerHurt, no registerHit) and returns
 // 6 hp -= rest; w.damageTaken += rest; w.lastHitBy = srcIdx (-2 = acid, -3 = hazard)
-// 7 discrete: hitCd = 0.5, registerHit(w), feel Hit event; bite/zone: addContinuousDamage(w, rest)
+// 7 discrete: hitCd = GRACE.hit (0.8), registerHit(w), feel Hit event; bite/zone: addContinuousDamage(w, rest)
 ```
 
 **Contact pass** (replaces `pl.hp -= e.damage * dt`):
 - Take the top 3 overlapping bite values `e.damage x 0.4`, skipping frozen, submerged or emerging enemies. Weight them 1 + 0.5 + 0.25.
-- Every 0.4 s, when `invuln <= 0`, compute `bite = min(weighted x dmgMul, 0.16 x maxHp)` and call `hurtPlayer(bite, 'bite')`.
+- Every 0.4 s, when `invuln <= 0`, compute `bite = min(weighted x dmgMul, 0.08 x maxHp)` and call `hurtPlayer(bite, 'bite')`.
 - A charger in phase 2 is a discrete hit, once per dash.
 - Thorns keep ticking per enemy.
 
-**Call sites:** `collision.ts:75` (ram, discrete), `:82` (contact, bite), `:100` (enemy projectile, discrete), `acid.ts:43` (zone; this also fixes acid ignoring Bulwark), and every hazard (discrete).
+**Call sites:** `collision.ts:75` (ram, discrete), `:82` (contact, bite), `:100` (enemy projectile, discrete), `acid.ts:43` (zone; this also fixes acid ignoring Bulwark; at most `ACID.maxStack` = 1 overlapping pool hurts per tick, the first in pool order), and every hazard (discrete).
 
 **Grace:**
 - `world.resumeFromDraft()` sets `invuln = max(invuln, 0.75)` with `invulnSrc = 2`. `main.ts` calls it after a draft or core reveal, and so does the harness.
@@ -369,9 +369,9 @@ export function hurtPlayer(w: World, amount: number, kind: HurtKind, srcIdx: num
 - The ship blinks at 15 Hz (render) while `invuln > 0`.
 
 **Worst case at 12:00:**
-- 30 swarmers engulfing the player deal about 52 dps.
-- Brutes are capped at 40 dps for NOVA (0.16 x 100 / 0.4 s).
-- A full engulf from full HP therefore takes at least 2.5 s.
+- 30 swarmers engulfing the player deal about 52 dps before the cap.
+- Bites are capped at 20 dps for NOVA (0.08 x 100 / 0.4 s), so neither a brute nor a full engulf deals more.
+- A full engulf therefore takes at least 5 s from full HP and 2.5 s from half. Discrete hits (shots, rams, hazards) add at most one hit per `GRACE.hit` (0.8 s), and acid adds one pool's dps (section 11, A10 note).
 
 ### 4.3 Dash and Close Call
 
@@ -1956,6 +1956,13 @@ node scripts/measure.mjs 390 844 perf ; node scripts/measure.mjs 390 844 perf-fi
 - With the first minute-0 minAlive values (Hive 12, Depths 10, Wastes 10), the normalized views failed: worst empty view 3.45 s portrait, 1.83 s landscape.
 - P4 raised minute-0 minAlive to Hive 16, Depths 14, Wastes 14 (A7.2). Measured worst: empty view 0.80 s portrait and 1.32 s landscape, first enemy in view 0.30 s, first kill 0.57 s. P19 may lower these values only while A1 still passes at both normalized views.
 
+**A10 note (P19 deaths pass).** Full tables, every arm and the commands: `docs/tuning/pass-deaths.md`. Smart-family deaths (smart, smart+P, smart+focus+P, smart+dash+P, smart+E), seeds 1001 x 1 to 30 per world, T0, 14 min.
+- What killed fast (old values): the A10 window (last step at 50%+ HP to death) held bites, enemy shots, acid and charger rams at about 49, 41, 7 and 3% of its damage. Bites hit the 0.16 x maxHp cap every 0.4 s in an engulf (40 dps for NOVA), discrete hits (shots, rams, hazards) landed every 0.5 s at 17 to 36 HP each after the time ramp, and up to 4 overlapping acid pools hurt at once. The fastest deaths were two capped bites and one shot inside 0.42 s.
+- Values (A1.1): `GRACE.hit` 0.5 to 0.8, `BITE.capFracOfMaxHp` 0.16 to 0.08, `ACID.maxStack` 1 (one overlapping pool hurts per tick, the first in pool order; every pool did before). `BITE.scale` 0.4 and `DMG_RAMP_PER_MIN` 0.04 stay: single-knob arms of scale 0.32 and ramp 0.02 did not move the tail, and ramp 0.02 on top of the rest made Hive smart+P win 9 of 10.
+- **A10:** 316 deaths, median 2.12 s, minimum 0.42 s, 66 under 1.2 s (old values); 207 deaths, median 3.83 s, minimum 0.82 s, 7 under 1.2 s (new). The median passes; **the minimum still FAILS.** Every death under 1.2 s left is two discrete hits 0.8 s apart (two spitter or psychic shots of 20 to 25 HP, a Warden shot of 36 HP, or two charger rams of 36 HP) plus 1 to 3 capped bites. No value of these knobs bounds it: a 1.2 s window can hold 2 discrete hits at `GRACE.hit` up to 1.2 s, and two hits of 35 HP are already 70% of NOVA's HP. A guaranteed 1.2 s needs discrete hits of at most about 15% max HP each (enemy `projectileDamage` and the charger's `damage`, or a cross-source damage cap per window, which is a rule change). Owner or a later P19 pass decides.
+- **Side effect, A7 and A8:** win rates rise past A7 in Hive and Wastes: smart+P 8/30, 7/30, 6/30 to 23/30, 7/30, 17/30 (Hive, Depths, Wastes), smart 4/30, 3/30, 5/30 to 12/30, 4/30, 11/30. A8 smart and smart+P now pass in every world (Hive smart 6:50 to 9:35, Depths smart+P 6:58 to 8:25, Wastes smart+P 7:07 to 14:00); crude stays at about 2:08 (its deaths got slower, not later). The boss-HP and density passes take the A7 overshoot. A12 passes (T0 23/30, T1 19/30, T4 2/30). **A13 gets worse:** 47/72 (65%) dead by 20:00 and 18 alive past 24:00 (baseline 25/33, 4), because more runs win and the bite cap is a share of max HP that OVERTIME's dmgMul cannot raise.
+- Determinism on the new values (A14, 21 of 21 lines agree across 375x667, 667x375 and the settings injection): det keeps the W5 hashes (642fbc46, 1365ccb6, d3c8cef6); det-long 8c3766b0, 54a5737, 51ca7954; det-death 7408614a (159 s), 5739e8a2 (141.87 s), 224be1c (168.1 s).
+
 ---
 
 ## 12. Later
@@ -2000,9 +2007,12 @@ export const DASH = {
   iframes: 0.20, endLag: 0.10, endLagSpeedMul: 0.5,
   cooldown: 2.0, buffer: 0.15, minMoveForDir: 0.2, maxCharges: 4, closeCallRefund: 0.8,
 } as const
-export const GRACE = { hit: 0.5, draft: 0.75, revive: 1.5, win: 3.0 } as const
-export const BITE = { scale: 0.4, window: 0.4, w2: 0.5, w3: 0.25, capFracOfMaxHp: 0.16 } as const
+export const GRACE = { hit: 0.8, draft: 0.75, revive: 1.5, win: 3.0 } as const
+export const BITE = { scale: 0.4, window: 0.4, w2: 0.5, w3: 0.25, capFracOfMaxHp: 0.08 } as const
+export const ACID = { dps: 16, maxStack: 1 } as const   // pool dps x dmgMul at landing; overlapping pools that hurt per tick
 ```
+
+- P19 deaths pass (section 11, A10 note): `GRACE.hit` 0.5 to 0.8, `BITE.capFracOfMaxHp` 0.16 to 0.08, and `ACID` (new: the pool dps moved out of `acid.ts`, and `maxStack` 1 where every overlapping pool used to hurt).
 
 - Base charges: NOVA 1, VESPER 1, EMBER 2. Phase Step adds more, up to maxCharges 4.
 - Maxed mobility is Phase Step 3 plus Slipstream 3: 3 charges, a 1.23 s recharge and 0.30 s i-frames. That gives about 24% i-frame uptime.

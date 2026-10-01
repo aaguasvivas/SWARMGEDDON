@@ -251,7 +251,7 @@ if (wantSteps.has('gc')) {
 
 // ---- metrics ------------------------------------------------------------------
 const fmt = (x, d = 2) => (x === null || x === undefined || Number.isNaN(x) ? '-' : typeof x === 'number' ? +x.toFixed(d) : x)
-const mmss = (s) => (s === null ? '-' : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`)
+const mmss = (s) => (s === null ? '-' : `${Math.floor(Math.round(s) / 60)}:${String(Math.round(s) % 60).padStart(2, '0')}`)
 const pct = (a, b) => (b ? Math.round((100 * a) / b) : 0)
 /** Seconds survived: a death's time, else the whole run (a win or a stalemate survived). */
 const survival = (s) => (s.dead ? s.endTime : (s.minutes ?? 14) * 60)
@@ -446,13 +446,18 @@ if (has('A10')) {
     const x = a10Stats(of(smartFam, w))
     if (x) byWorld[w] = { deaths: x.deaths, median: x.median, min: x.min }
   }
-  // What the fastest deaths took in their last 3 s (the harness's damage by kind).
-  const fastest = runs
-    .filter((r) => smartFam.includes(r.set) && r.s.fromHalfHp !== null)
+  // The A10 window (last step at 50%+ HP to death): damage by kind summed over
+  // the smart-family deaths, and the deaths under 1.2 s and 3.0 s.
+  const fam = runs.filter((r) => smartFam.includes(r.set) && r.s.fromHalfHp !== null)
+  const windowDmg = {}
+  for (const r of fam) for (const [k, v] of Object.entries(r.death.dmgFromHalfByKind ?? {})) windowDmg[k] = +((windowDmg[k] || 0) + v).toFixed(1)
+  const under = { '1.2': fam.filter((r) => r.s.fromHalfHp < 1.2).length, '3.0': fam.filter((r) => r.s.fromHalfHp < 3).length }
+  // What the fastest deaths took inside the window (older runs: the last 3 s).
+  const fastest = fam
     .sort((a, b) => a.s.fromHalfHp - b.s.fromHalfHp)
     .slice(0, 8)
-    .map((r) => ({ run: r.s.file, fromHalfHp: r.s.fromHalfHp, t: r.death.t, dmgLast3sByKind: r.death.dmgLast3sByKind, lastHitBy: r.death.lastHitBy }))
-  add('A10', 'Readable deaths (smart-family deaths; crude in the details)', st ? `${st.deaths} deaths, median ${fmt(st.median)} s, min ${fmt(st.min)} s` : 'no deaths', 'median >= 3.0 s; minimum >= 1.2 s', st ? st.median >= 3 && st.min >= 1.2 : false, { bySet, byWorld, fastest })
+    .map((r) => ({ run: r.s.file, fromHalfHp: r.s.fromHalfHp, t: r.death.t, hpAtHalf: r.death.hpAtHalf ?? null, maxHp: r.death.maxHp, dmgFromHalfByKind: r.death.dmgFromHalfByKind ?? null, dmgLast3sByKind: r.death.dmgLast3sByKind, lastHitBy: r.death.lastHitBy }))
+  add('A10', 'Readable deaths (smart-family deaths; crude in the details)', st ? `${st.deaths} deaths, median ${fmt(st.median)} s, min ${fmt(st.min)} s` : 'no deaths', 'median >= 3.0 s; minimum >= 1.2 s', st ? st.median >= 3 && st.min >= 1.2 : false, { bySet, byWorld, under, windowDmg, fastest })
 }
 
 if (has('A11')) {
@@ -611,8 +616,10 @@ if (det('A10')) {
   md.push('### A10 deaths by set and world', '', '| Group | Deaths | Median s | Min s |', '|---|---|---|---|')
   for (const [k, v] of Object.entries(det('A10').bySet)) md.push(`| ${esc(k)} | ${v.deaths} | ${fmt(v.median)} | ${fmt(v.min)} |`)
   for (const [k, v] of Object.entries(det('A10').byWorld)) md.push(`| ${k} (smart family) | ${v.deaths} | ${fmt(v.median)} | ${fmt(v.min)} |`)
-  md.push('', 'Fastest smart-family deaths (damage by kind in the last 3 s):', '')
-  for (const f of det('A10').fastest) md.push(`- ${f.run}: ${fmt(f.fromHalfHp)} s at ${mmss(f.t)}, ${esc(JSON.stringify(f.dmgLast3sByKind))}`)
+  const a10 = det('A10')
+  md.push('', `Smart-family deaths under 1.2 s: ${a10.under['1.2']}; under 3.0 s: ${a10.under['3.0']}. Damage by kind inside the windows (last step at 50%+ HP to death), summed: ${esc(JSON.stringify(a10.windowDmg))}`)
+  md.push('', 'Fastest smart-family deaths (HP at the window start / max HP, damage by kind inside the window; older runs: the last 3 s):', '')
+  for (const f of a10.fastest) md.push(`- ${f.run}: ${fmt(f.fromHalfHp)} s at ${mmss(f.t)}, ${f.hpAtHalf ?? '-'}/${f.maxHp} HP, ${esc(JSON.stringify(f.dmgFromHalfByKind ?? f.dmgLast3sByKind))}`)
   md.push('')
 }
 if (det('A3')) {

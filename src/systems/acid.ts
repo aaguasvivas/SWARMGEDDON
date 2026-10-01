@@ -1,4 +1,4 @@
-import { MAX_ACID } from '../config.ts'
+import { ACID, MAX_ACID } from '../config.ts'
 import { distSq } from '../core/vec.ts'
 import { spawnAcidSplash } from '../effects/fx.ts'
 import type { World } from '../game/world.ts'
@@ -13,7 +13,7 @@ export function spawnAcidPool(world: World, x: number, y: number): void {
   ap.x = x
   ap.y = y
   ap.radius = rng.range(24, 34)
-  ap.damage = 16 * world.dmgMul
+  ap.damage = ACID.dps * world.dmgMul
   ap.life = ap.maxLife = rng.range(3.5, 5)
 
   world.ichor.queueStamp(x, y, world.rngs.fx)
@@ -27,10 +27,12 @@ export function spawnAcidPool(world: World, x: number, y: number): void {
   q.alpha = 0.5
 }
 
-/** Tick acid pools (fade by lifetime) and apply damage to a standing player. */
+/** Tick acid pools (fade by lifetime) and apply damage to a standing player:
+ *  at most ACID.maxStack overlapping pools hurt per tick. */
 export function acidSystem(world: World, dt: number): void {
   const a = world.acid.active
   const pl = world.player
+  let stack = 0
   for (let i = 0; i < a.length; i++) {
     const ap = a[i]!
     ap.life -= dt
@@ -38,7 +40,11 @@ export function acidSystem(world: World, dt: number): void {
       ap.alive = false
       continue
     }
+    if (stack >= ACID.maxStack) continue
     const rr = ap.radius + pl.radius * 0.4
-    if (distSq(ap.x, ap.y, pl.x, pl.y) < rr * rr) hurtPlayer(world, ap.damage * dt, 'zone', -2, ap.x, ap.y)
+    if (distSq(ap.x, ap.y, pl.x, pl.y) < rr * rr) {
+      hurtPlayer(world, ap.damage * dt, 'zone', -2, ap.x, ap.y)
+      stack++
+    }
   }
 }
