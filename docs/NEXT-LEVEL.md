@@ -174,15 +174,19 @@ export interface RunRngs { spawn: Rng; script: Rng; boss: Rng; loot: Rng; draft:
 
 - **Prewarmed pools:**
   - projectiles 512
+  - enemy shots 300 (`MAX_ENEMY_PROJECTILES`, PB)
+  - particles 1500 (`MAX_PARTICLES`, PB)
   - pickups 256 of MAX 400
   - hazards 48
   - blast queue `Float32Array(64 * 6)`
   - FeelQueue 1024 slots (typed arrays)
   - RunAlert ring 6
   - tween pool 96
-  - damage numbers 64 x 6 glyph sprites
+  - damage numbers 64 x 6 glyph quads
   - off-screen arrows 8
   - charger lanes 6
+  - ichor stamps 64 (PB)
+- **Render side (PB):** pooled entities, particles, emerge parts, backdrop motes, damage-number glyphs and ichor stamps draw as quads in ParticleContainers (`src/render/quads.ts`), one texture source per layer. A dead pool entry keeps its quad at zero size instead of toggling `visible`, which rebuilt the whole draw list.
 - **Per-entity typed memory:** `Projectile.hitUids = new Int32Array(8)` (factory); `world.chainSeen = new Int32Array(16)`; `Director` typed arrays (A7.3).
 - **Banned in per-tick paths** (director, events, bossAI, hazards, collision, dash, draft tick, scoring, blasts): `new`, array or object literals, closures, template strings.
 - **Allowed exceptions, at event rate:** alert and callout titles (at most about 40 per run), draft open, core reveal, `endRun`, `resolveScript` (in `beginRun`).
@@ -1705,6 +1709,11 @@ Run each phase's acceptance plus this standard block:
 - The owner does iPhone A17 calibration, the server deploy (section 8.4) and publishes the store copy.
 - Set `DAILY_EPOCH` to the release day.
 
+**PB: Render-side zero allocation** (W5, beside P16 and P17; not a numbered phase)
+- Files: `src/render/quads.ts`, `src/game/warmup.ts` (new); `render/textures.ts` (atlas), `render/entityRenderer.ts`, `render/emergeFx.ts`, `render/backdrop.ts`, `render/ichorLayer.ts`, `render/app.ts` (render groups), `effects/damageNumbers.ts`, `effects/screenFx.ts`; the sim's spawn sites write quad fields (`systems/spawn.ts`, `weapons.ts`, `bossAI.ts`, `ai.ts`, `acid.ts`, `pickups.ts`, the `game/` entity classes, `world.ts`); `main.ts` (atlas bake, warm-up call).
+- Tasks: section 3.2 on the render side, after PA: particles and pooled entities in ParticleContainers on one atlas, pooled sprites kept visible and moved out of view, pre-settled fields, no per-frame `Graphics.clear()`, and a boot warm-up of the boss and event code paths on a scratch World.
+- Acceptance: `probe-alloc all all` total 1.0 MB/s or less in every scene and no sim function over 0.1 MB/s; post-GC growth under 0.2 MB per 60 s; det, det-long and det-death hashes unchanged; side-by-side screenshots at 375x667 and 667x375 show no change. Results in the section 11 PB note.
+
 ---
 
 ## 11. Verification matrix (THREAT 0 unless noted)
@@ -1850,6 +1859,40 @@ node scripts/measure.mjs 390 844 perf ; node scripts/measure.mjs 390 844 perf-fi
 - **hud-shots.** The HUD scene shows the tag `DAILY #1000`, and the intro check stages the title `DAILY #1000`. So the Daily pairs (the tag against the timeline and the score, and the bonus rings against the tag) now run. `node scripts/hud-shots.mjs p320,l568,p375,l667,p390,l844 --world=hive` passes at all six sizes. At p320 the tag (79 x 13) starts 11 px right of the timeline. As a negative control, the tag `DAILY #1000 PRACTICE` fails `overlap daily / timeline` at p320 and p375, which is why the HUD tag carries no practice mark.
 - **ui-shots and the leaderboard.** The leaderboard steps (opt-in card, name prompt, rank lines, JOIN, NO THANKS) need a dev server with `VITE_LEADERBOARD_URL` and `VITE_LEADERBOARD_DEV_SUBMIT`. Any URL works, because the script mocks the API in the page. `ui-shots.mjs` reads the env the dev server injects. Without both variables it skips steps 16, 17, 18b, 21 and 23, lists them under `skipped` and prints the reason. Run them with `VITE_LEADERBOARD_URL=http://127.0.0.1:8788 VITE_LEADERBOARD_DEV_SUBMIT=1 npx vite --port 5177 --strictPort`, then `SWG_URL=http://localhost:5177 node scripts/ui-shots.mjs p375,l667`. Results at p375 and l667: 0 failed with the variables. Without them, 0 failed and 5 skipped. The overlap list is unchanged from 7d473a1: text under the confirm sheet and the settings panel, and the 13-win `COLLECT FOR XP` line (P17).
 - **Determinism and perf on the fixed build.** Every det, det-long, det-death, settings-injection, Daily and `--threat=3` hash in the W4 note is unchanged, because the fix changes only OVERTIME and presentation. Perf ran alone at 390x844 (load 3.8 to 4.9, with system media daemons busy). `perf nova hive` and `perf nova wastes`: 60 fps, p95 16.8 and 16.7 ms, max 16.8 ms, 0 frames over 20 ms. `perf-final nova hive`: p95 16.7 ms, max 16.8 ms, 0 over 33.4 ms, peak alive 329.
+
+**Section 3.2 note (PB, render-side zero allocation, W5).**
+- Measured with `node scripts/probe-alloc.mjs all all --budget=1.0` (the scenes of the PA note), MB per second. Base: the W4 build `16939b5`, one run in this lane. PB: three runs, the total as a range and the last run's split.
+
+| Scenario | Base total | Base sim | Base Pixi | PB total (3 runs) | PB sim | PB presentation | PB Pixi |
+|---|---|---|---|---|---|---|---|
+| flood hive | 10.50 | 0.77 | 9.53 | 0.59 to 0.67 | 0.14 | 0.12 | 0.35 |
+| boss hive | 2.83 | 0.03 | 2.73 | 0.37 to 0.40 | 0.02 | 0.06 | 0.32 |
+| event hive | 8.82 | 0.64 | 8.07 | 0.50 | 0.09 | 0.10 | 0.31 |
+| flood depths | 9.01 | 0.11 | 8.78 | 0.52 to 0.60 | 0.12 | 0.07 | 0.33 |
+| boss depths | 4.29 | 0.83 | 3.42 | 0.36 to 0.39 | 0.04 | 0.04 | 0.28 |
+| event depths | 8.52 | 0.07 | 8.35 | 0.48 to 0.50 | 0.10 | 0.05 | 0.35 |
+| flood wastes | 9.31 | 0.19 | 8.99 | 0.48 to 0.52 | 0.08 | 0.09 | 0.34 |
+| boss wastes | 3.28 | 0.01 | 3.22 | 0.33 to 0.34 | 0.01 | 0.05 | 0.27 |
+| event wastes | 8.62 | 0.07 | 8.42 | 0.37 to 0.40 | 0.06 | 0.06 | 0.25 |
+
+- **Acceptance: PASS.** Every scene is at most 1.0 MB/s in every run (the 0.5 of section 3.2 holds in 6 of 9 scenes in the last run; the flood scenes are 0.48 to 0.67). No sim function reaches 0.1 MB/s in any run (largest: `hypot`, 0.04). Base sim functions over 0.1: `aiSystem` 0.43 to 0.74 in flood hive, event hive and boss depths.
+- Where base allocated: `updateTransformAndChildren` 1.9 to 6.0 MB/s (Pixi's shared setters and transform update see every node class, so each fractional field read or write of a changed sprite is a megamorphic access that boxes the double, 70 to 150 B per sprite per frame), `break` 0.2 to 2.4 (the whole stage's draw list rebuilt whenever a pooled sprite was shown or hidden, in 263 to 289 of 300 frames of flood hive), and `set alpha` and `set tint` 0.4 to 0.7.
+- What changed:
+  - Enemies, player and enemy shots, pickups and acid pools draw as quads in ParticleContainers (`src/render/quads.ts`), one per pool. Each pool entry owns a quad in a fixed slot (so the draw order stays that of the old sprites), and a dead entry's quad gets zero size instead of `visible = false`. The sim's spawn sites write the look (frame and anchor, tint, alpha, scale) as plain fields; the renderer writes position, rotation and the packed color each frame. Entity layer order: player shots, enemy shots, enemies (the order most sprites had in a full run, where the pools had grown past their prewarm). The fx layer: pod rings, emerge, pickups, normal particles, additive particles.
+  - Particles, emerge parts, backdrop motes and glows, damage-number glyphs and ichor stamps are refilled into quad layers each frame (one layer per blend mode and texture source). Particles no longer own a sprite.
+  - One atlas (`TextureRegistry.packAtlas`, 2049 px wide): every texture baked at resolution 3 but the hazard lane and sector, copied pixel for pixel with 3 px gutters; the ichor splats get their own small atlas (`packTextures`).
+  - `warpHost` and `overlay` are render groups: the camera moves one matrix, and a toggle inside one rebuilds only that group. Structure changes in flood hive: 263 to 289 of 300 frames before, 11 of 298 after (HUD, callouts and arrows at event rate).
+  - Two Pixi details in `quads.ts`: the generated upload loop (`new Function`, sloppy mode) assigns `offset` and the vertex corners without declaring them, so each corner was a boxed implicit global (about 3 MB/s by itself); a `var` line makes them locals. And each layer has its own particle shader instance, so drawing layers of different textures does not rebind one shared shader.
+  - The hurt edge glow parks off screen at alpha 0 instead of toggling `visible`.
+  - Particles prewarm to `MAX_PARTICLES` and enemy shots to `MAX_ENEMY_PROJECTILES`; refilled layers reserve their caps; ichor prewarms 64 stamps.
+  - First-use warm-up (`src/game/warmup.ts`, called once in `boot` before the loop starts): on a scratch World with its own arena, player, ichor and unattached layers, every event, elite and boss beat of each world (THREAT 0, 2 and 4), boss phases, deaths and the PRIME win, the OVERTIME start, every bonus, pickup and weapon, the full perk and fusion build and dashes run through stepSim's systems, and `renderEntities` after each step. It takes about 100 ms on an M1 (9 boss kills, 3 clears, 36 elite kills); boot under 4x CPU throttling measured 1.9 to 2.0 s against the base's 1.4 to 2.6 s on the dev server. The real input's fields are restored after.
+- No `Graphics.clear()` runs per frame: a hook on `Graphics.clear` and `GraphicsContext.clear` over 4 s of a Depths boss fight counted none (P15's NineSlice plates and DigitStrips).
+- Determinism: det at 375x667, 667x375, a rerun, the settings injection and `--threat=3`, det-long and det-death at both views, and the Daily of 2026-10-02 (a fresh save at 375x667, the unlocked save with the extreme settings at 667x375, det-death at 390x844) give exactly the W4 hashes listed above, `rerunMatch` true in all 30 lines. `probe-alloc x all --shapes`: pass, no representation change (190 markers).
+- Heap growth after a forced GC, 60 s of flood hive: 0.38 to 0.46 MB with the probe's 20 s warm-up, 0.10 to 0.15 MB with `--warm=80` (4 runs; the PA note measured 0.84 to 0.95 at 20 s). A heap-snapshot diff by node type over the 20 to 80 s window puts most of the early growth in optimized code objects (V8 finishing tier-up; code space is part of the heap), which the sampler books to the requestAnimationFrame callback when the code lands. Pools that still grew inside the window (particles to 1500, enemy shots to 160) were the rest and are now prewarmed. Steady state is under 0.2 MB per 60 s; the 20 s number is dominated by engine warm-up.
+- `node scripts/measure.mjs 390 844 bench nova hive 10 --perks=piercing,cryo_rounds,explosive_rounds,arc_rounds,incendiary,ricochet,f_shatter,f_firestorm`, 5 runs alternating base and PB on a loaded machine (load 4.5 to 6): Pixi draw mean 1.70 to 1.95 ms base, 0.48 to 0.67 ms PB; render update 0.63 to 0.76 ms base, 0.26 to 0.37 ms PB; stepSim 0.42 to 0.52 ms base, 0.43 to 0.59 ms PB (noise).
+- Other checks on the PB build: `npm run build` (check:sim included); a scripted bot plays Standard Hive to 12:20 with the live render loop (mid1 killed, the mid2 and PRIME fights rendered), the recap, a Daily and the menu, with no page or console error; `probe-score`, `probe-meta` and `probe-p8` read entity quads now (`p.quad`): probe-score and probe-meta pass, and probe-p8 fails the same 3 checks on the base build with its own copy (`pods.cageClamp` 0.024 u over, `pods.crossNoTake` and `pods.holdTime`, which predate NOVA's instant pods from P9). `ui-shots p375,l667`: 0 failed and 5 skipped on both builds; the lists differ only in where the 13-win `COLLECT FOR XP` label lands (offscreen or over the win text, a timing-dependent known P17 item).
+- Visual check: frame-stepped screenshots (live loop stopped, synthetic timestamps, shake off, DPR 2) of the base and PB builds at 375x667 and 667x375: flood, event, boss and dense-swarm scenes and an emerge scene per world, looked at side by side with no visible change. Pixels differing by more than 8 of 255: 0.007 to 0.08% in the flood, event and emerge scenes, 1.0% in the dense swarm at 375x667 (overlapping particles drawn in another order: normal and additive particles are now two layers, and a layer is refilled in pool order). The Depths boss scene differs 9 to 12%, but two base runs differ 7.9% from each other: the Void Matron warps, and the warp's wobble reads the wall clock (`main.ts`, `performance.now()`), so that scene is not frame-reproducible.
+- What remains on the render side (0.25 to 0.35 MB/s of Pixi in every scene): the bloom and grade filter passes rebind pooled render textures (listener records in `setResource`, 0.04 to 0.09), each quad layer's buffer upload emits an event (0.04 to 0.06), render-target binds (0.03 to 0.05), and the remaining UI sprite updates (0.03 to 0.04). Not run in this lane: perf, perf-final and A16's `--gc` trace (the integrator's).
 
 **A1 note (P4 review).**
 - "Both phone views" means the P14 normalized camera views: 560 x 996 (portrait) and 996 x 560 (landscape). Measure them with `node scripts/measure.mjs 375 667 opening 560 996` and `node scripts/measure.mjs 375 667 opening 996 560`.

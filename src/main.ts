@@ -6,7 +6,7 @@ import { dailySpec, seedFromString } from './core/rules.ts'
 import { initSafeArea, getInsets } from './platform/safeArea.ts'
 import { setHapticsEnabled } from './platform/haptics.ts'
 import { initNative, onAppPause, registerBackButton } from './platform/native.ts'
-import { createRenderer } from './render/app.ts'
+import { createRenderer, makeLayers } from './render/app.ts'
 import { Camera } from './render/camera.ts'
 import { loadFonts } from './render/fonts.ts'
 import { TextureRegistry } from './render/textures.ts'
@@ -26,6 +26,7 @@ import { DEATH_BEAT_MS, DEATH_RECAP_MS, DEATH_SKIP_MS, TimePreset } from './effe
 import { Arena, type DecorSpeck } from './game/arena.ts'
 import { Player } from './game/player.ts'
 import { World, type RunConfig, type RunMode } from './game/world.ts'
+import { warmSystems } from './game/warmup.ts'
 import { InputManager } from './input/input.ts'
 import { DebugOverlay } from './ui/debugOverlay.ts'
 import { Hud } from './ui/hud.ts'
@@ -130,6 +131,7 @@ async function boot(): Promise<void> {
   const texReg = new TextureRegistry(app.renderer)
   texReg.bakePlaceholders()
   texReg.bakeHazards()
+  texReg.packAtlas()
   bakeIcons(app.renderer)
 
   const audio = new AudioEngine()
@@ -1140,6 +1142,10 @@ async function boot(): Promise<void> {
     app.stage.removeChild(warm)
     warm.destroy({ children: true })
   }
+
+  // PB: run the boss, event and hit code paths once on a scratch World.
+  const scratch = new World(new Arena(), new Player(), new IchorLayer(app.renderer, new Rng(1)), makeLayers(), texReg)
+  warmSystems(scratch, buildRunConfig('endless', todayUtc()), input, (w) => renderEntities(w, 0))
 
   loop.start()
 

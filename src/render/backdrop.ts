@@ -1,9 +1,10 @@
-import { Sprite, Texture, type BLEND_MODES } from 'pixi.js'
+import { Sprite, Texture } from 'pixi.js'
 import { Rng } from '../core/rng.ts'
 import { seedFromString } from '../core/rules.ts'
 import type { ArenaTheme } from '../content/arenas.ts'
 import type { Layers } from './app.ts'
 import type { PostFX } from './postfx.ts'
+import { QuadLayer, packColor } from './quads.ts'
 import type { Vignette } from './vignette.ts'
 
 /**
@@ -29,7 +30,6 @@ const BLOB = 32 // baked mote/bloom base size in px
 const RAMP_H = 128
 
 interface Mote {
-  sprite: Sprite
   x: number
   y: number
   vy: number // world-units/sec (negative = rising)
@@ -38,6 +38,8 @@ interface Mote {
   ph: number
   sway: number // horizontal sway frequency
   amp: number // horizontal sway amplitude (units/sec)
+  tint: number
+  add: boolean
 }
 
 interface Atm {
@@ -52,7 +54,9 @@ interface Atm {
 }
 
 interface GroundGlow {
-  sprite: Sprite
+  x: number
+  y: number
+  tint: number
   ph: number
   baseA: number
   baseS: number
@@ -62,6 +66,12 @@ export class BackdropSystem {
   private readonly motes: Mote[] = []
   private readonly atm: Atm[] = []
   private readonly glows: GroundGlow[] = []
+  /** Ground glows, then the additive and the normal motes: the draw order of
+   *  one sprite list, since a world's additive motes come first. */
+  private readonly glowQuads = new QuadLayer('add')
+  private readonly moteAddQuads = new QuadLayer('add')
+  private readonly moteQuads = new QuadLayer()
+  private glowCount = 0
   private readonly rand = new Float32Array(RAND_LEN)
   private ri = 0
   private readonly blobTex: Texture
@@ -90,20 +100,13 @@ export class BackdropSystem {
     for (let i = 0; i < RAND_LEN; i++) this.rand[i] = rng.float()
 
     // Ground glows FIRST so they draw beneath the drifting motes.
-    for (let i = 0; i < MAX_GLOWS; i++) {
-      const s = new Sprite(this.bloomTex)
-      s.anchor.set(0.5)
-      s.blendMode = 'add'
-      s.visible = false
-      this.layers.backdrop.addChild(s)
-      this.glows.push({ sprite: s, ph: 0, baseA: 0.1, baseS: 1 })
-    }
+    this.layers.backdrop.addChild(this.glowQuads.view, this.moteAddQuads.view, this.moteQuads.view)
+    this.glowQuads.reserve(MAX_GLOWS, this.bloomTex)
+    this.moteAddQuads.reserve(MAX_MOTES, this.blobTex)
+    this.moteQuads.reserve(MAX_MOTES, this.blobTex)
+    for (let i = 0; i < MAX_GLOWS; i++) this.glows.push({ x: 0, y: 0, tint: 0xffffff, ph: 0, baseA: 0.1, baseS: 1 })
     for (let i = 0; i < MAX_MOTES; i++) {
-      const s = new Sprite(this.blobTex)
-      s.anchor.set(0.5)
-      s.visible = false
-      this.layers.backdrop.addChild(s)
-      this.motes.push({ sprite: s, x: 0, y: 0, vy: 0, size: 1, baseA: 0.3, ph: 0, sway: 0.5, amp: 5 })
+      this.motes.push({ x: 0, y: 0, vy: 0, size: 1, baseA: 0.3, ph: 0, sway: 0.5, amp: 5, tint: 0xffffff, add: false })
     }
     for (let i = 0; i < 4; i++) {
       const s = new Sprite(this.bloomTex)
@@ -139,20 +142,16 @@ export class BackdropSystem {
    *  alpha + a slight swell animate. Worlds with no spots (depths) show none. */
   private configGlows(theme: ArenaTheme, spots: readonly { x: number; y: number }[]): void {
     const n = Math.min(MAX_GLOWS, spots.length)
-    for (let i = 0; i < MAX_GLOWS; i++) {
+    this.glowCount = n
+    for (let i = 0; i < n; i++) {
       const gl = this.glows[i]!
-      if (i >= n) {
-        gl.sprite.visible = false
-        continue
-      }
       const r0 = this.rand[(i * 5 + 2) % RAND_LEN]!
-      gl.sprite.visible = true
-      gl.sprite.tint = theme.atmosphere.color
-      gl.sprite.position.set(spots[i]!.x, spots[i]!.y)
+      gl.tint = theme.atmosphere.color
+      gl.x = spots[i]!.x
+      gl.y = spots[i]!.y
       gl.ph = r0 * 6.2832
       gl.baseA = (0.09 + r0 * 0.05) * this.qual
       gl.baseS = ((110 + r0 * 60) * 2) / BLOB
-      gl.sprite.scale.set(gl.baseS)
     }
   }
 
@@ -160,19 +159,13 @@ export class BackdropSystem {
     const kind = theme.motes.kind
     const total = Math.min(MAX_MOTES, Math.round(theme.motes.count * this.qual))
     this.moteCount = total
-    for (let i = 0; i < MAX_MOTES; i++) {
+    for (let i = 0; i < total; i++) {
       const mo = this.motes[i]!
-      const s = mo.sprite
-      if (i >= total) {
-        s.visible = false
-        continue
-      }
-      s.visible = true
       const r0 = this.rand[(i * 3) % RAND_LEN]!
       const r1 = this.rand[(i * 3 + 1) % RAND_LEN]!
       const r2 = this.rand[(i * 3 + 2) % RAND_LEN]!
       let tint: number
-      let blend: BLEND_MODES
+      let add: boolean
       if (kind === 'spores') {
         mo.vy = -(8 + r0 * 18)
         mo.size = 1 + r1 * 1.6
@@ -180,7 +173,7 @@ export class BackdropSystem {
         mo.sway = 0.4 + r0 * 0.7
         mo.amp = 4 + r1 * 6
         tint = i % 6 ? 0x6cff5a : 0xb6ffcf
-        blend = 'add'
+        add = true
       } else if (kind === 'marineSnow') {
         mo.vy = 12 + r0 * 20
         mo.size = 1 + r1 * 2
@@ -188,7 +181,7 @@ export class BackdropSystem {
         mo.sway = 0.3 + r0 * 0.5
         mo.amp = 3 + r1 * 4
         tint = i % 4 ? 0xd8e4ff : 0x8a5cff
-        blend = i < 6 ? 'add' : 'normal' // most diffuse so bloom doesn't blow it out
+        add = i < 6 // most diffuse so bloom doesn't blow it out
       } else {
         // emberAsh: first ~60% rise as embers (additive), rest fall as ash.
         if (i < total * 0.6) {
@@ -198,7 +191,7 @@ export class BackdropSystem {
           mo.sway = 0.5 + r0 * 0.7
           mo.amp = 4 + r1 * 5
           tint = i % 3 ? 0xff965a : 0xffd27a
-          blend = 'add'
+          add = true
         } else {
           mo.vy = 8 + r0 * 12
           mo.size = 1 + r1
@@ -206,13 +199,12 @@ export class BackdropSystem {
           mo.sway = 0.4 + r0 * 0.5
           mo.amp = 3 + r1 * 3
           tint = 0x60504a
-          blend = 'normal'
+          add = false
         }
       }
       mo.ph = r0 * 6.2832
-      s.tint = tint
-      s.blendMode = blend
-      s.scale.set((mo.size * 2) / BLOB)
+      mo.tint = tint
+      mo.add = add
     }
     this.seeded = false // reseed positions across the camera window on next update
   }
@@ -312,18 +304,21 @@ export class BackdropSystem {
       }
       if (mo.x < left) mo.x = right
       else if (mo.x > right) mo.x = left
-      const s = mo.sprite
-      s.position.set(mo.x, mo.y)
-      s.alpha = mo.baseA * (0.6 + 0.4 * Math.sin(clock * 2 + mo.ph))
     }
+    this.drawMotes(clock)
 
-    for (let i = 0; i < this.glows.length; i++) {
+    const gq = this.glowQuads
+    gq.begin()
+    for (let i = 0; i < this.glowCount; i++) {
       const gl = this.glows[i]!
-      if (!gl.sprite.visible) continue
       const k = 0.55 + 0.45 * Math.sin(clock * 0.7 + gl.ph)
-      gl.sprite.alpha = gl.baseA * k
-      gl.sprite.scale.set(gl.baseS * (0.94 + 0.08 * k))
+      const q = gq.next(this.bloomTex)
+      q.x = gl.x
+      q.y = gl.y
+      q.scaleX = q.scaleY = gl.baseS * (0.94 + 0.08 * k)
+      q.color = packColor(gl.tint, gl.baseA * k)
     }
+    gq.end()
 
     for (let i = 0; i < this.atm.length; i++) {
       const a = this.atm[i]!
@@ -337,6 +332,23 @@ export class BackdropSystem {
         a.sprite.alpha = a.baseA * (0.7 + 0.3 * Math.sin(clock * 1.3 + a.ph))
       }
     }
+  }
+
+  private drawMotes(clock: number): void {
+    const add = this.moteAddQuads
+    const normal = this.moteQuads
+    add.begin()
+    normal.begin()
+    for (let i = 0; i < this.moteCount; i++) {
+      const mo = this.motes[i]!
+      const q = mo.add ? add.next(this.blobTex) : normal.next(this.blobTex)
+      q.x = mo.x
+      q.y = mo.y
+      q.scaleX = q.scaleY = (mo.size * 2) / BLOB
+      q.color = packColor(mo.tint, mo.baseA * (0.6 + 0.4 * Math.sin(clock * 2 + mo.ph)))
+    }
+    add.end()
+    normal.end()
   }
 
   private nextRand(): number {

@@ -1,6 +1,16 @@
-import { Container, Graphics, RenderTexture, Sprite, Texture, type Renderer } from 'pixi.js'
+import { Container, Graphics, RenderTexture, Sprite, type Texture, type Renderer } from 'pixi.js'
 import { COLORS, ICHOR_INTENSITY, ICHOR_MAX_SCALE, ICHOR_MIN_SCALE } from '../config.ts'
 import { Rng } from '../core/rng.ts'
+import { QuadLayer, packColor } from './quads.ts'
+import { packTextures } from './textures.ts'
+
+/** Width of the splat atlas, in pixels (splats bake at resolution 1). */
+const SPLAT_ATLAS_W = 256
+
+/** Fractional values first, so every request has double fields from birth. */
+function newStamp(): StampReq {
+  return { x: 0.5, y: 0.5, scale: 0.5, rot: 0.5, tint: 0, alpha: 0.5 }
+}
 
 interface StampReq {
   x: number
@@ -28,14 +38,17 @@ export class IchorLayer {
   readonly view = new Sprite()
 
   private rt: RenderTexture | null = null
-  private readonly splats: Texture[] = []
-  private readonly stampSprites: Sprite[] = []
-  private readonly batch = new Container()
+  /** The splat frames, all on one texture, so a frame's stamps are one quad layer. */
+  private splats: Texture[] = []
+  private readonly batch = new QuadLayer()
   private readonly clearLayer = new Container()
   // Pooled stamp requests: reused across frames (grows to peak, never GC'd per
   // kill), so heavy combat adds zero steady-state allocation.
   private readonly stamps: StampReq[] = []
   private stampCount = 0
+  /** Stamp requests and quads made up front: a frame of mass kills stamps
+   *  dozens, and growing past this is heap growth (section 3.2). */
+  private static readonly PREWARM = 64
   /** Settings-driven intensity multiplier on stamp alpha. */
   intensityMul = 1
   private originX = 0
@@ -46,10 +59,13 @@ export class IchorLayer {
     rng: Rng,
   ) {
     this.buildSplatTextures(rng)
+    for (let i = 0; i < IchorLayer.PREWARM; i++) this.stamps.push(newStamp())
+    this.batch.reserve(IchorLayer.PREWARM, this.splats[0]!)
   }
 
   /** A few organic white blobs (metaball clusters) baked once; tinted at stamp time. */
   private buildSplatTextures(rng: Rng): void {
+    const baked: Texture[] = []
     for (let v = 0; v < 4; v++) {
       const g = new Graphics()
       const blobs = 7 + Math.floor(rng.float() * 5)
@@ -59,9 +75,11 @@ export class IchorLayer {
         g.circle(Math.cos(a) * r, Math.sin(a) * r, rng.range(6, 15)).fill({ color: 0xffffff, alpha: 0.45 })
       }
       g.circle(0, 0, rng.range(8, 12)).fill({ color: 0xffffff, alpha: 0.85 })
-      this.splats.push(this.renderer.generateTexture({ target: g, resolution: 1 }))
+      baked.push(this.renderer.generateTexture({ target: g, resolution: 1 }))
       g.destroy()
     }
+    this.splats = packTextures(this.renderer, baked, 1, SPLAT_ATLAS_W)
+    for (const t of baked) t.destroy(true)
   }
 
   /**
@@ -95,7 +113,7 @@ export class IchorLayer {
   queueStamp(worldX: number, worldY: number, rng: Rng): void {
     let req = this.stamps[this.stampCount]
     if (req === undefined) {
-      req = { x: 0, y: 0, scale: 0, rot: 0, tint: 0, alpha: 0 }
+      req = newStamp()
       this.stamps[this.stampCount] = req
     }
     req.x = worldX - this.originX
@@ -110,31 +128,23 @@ export class IchorLayer {
   /** Bake the frame's queued stamps into the texture in one render pass. */
   flush(): void {
     if (!this.rt || this.stampCount === 0) return
-    this.batch.removeChildren()
+    const b = this.batch
+    b.begin()
     for (let i = 0; i < this.stampCount; i++) {
       const req = this.stamps[i]!
-      const spr = this.getStampSprite(i)
-      spr.texture = this.splats[i % this.splats.length]!
-      spr.position.set(req.x, req.y)
-      spr.rotation = req.rot
-      spr.scale.set(req.scale)
-      spr.tint = req.tint
-      spr.alpha = req.alpha
-      this.batch.addChild(spr)
+      const tex = this.splats[i % this.splats.length]!
+      const q = b.next(tex)
+      q.texture = tex
+      q.x = req.x
+      q.y = req.y
+      q.rotation = req.rot
+      q.scaleX = q.scaleY = req.scale
+      q.color = packColor(req.tint, req.alpha)
     }
+    b.end()
     // clear:false -> accumulate onto whatever is already stained.
-    this.renderer.render({ container: this.batch, target: this.rt, clear: false })
+    this.renderer.render({ container: b.view, target: this.rt, clear: false })
     this.stampCount = 0
-  }
-
-  private getStampSprite(i: number): Sprite {
-    let s = this.stampSprites[i]
-    if (!s) {
-      s = new Sprite()
-      s.anchor.set(0.5)
-      this.stampSprites[i] = s
-    }
-    return s
   }
 
   /** Wipe all stains (run restart). Leak-free: reuses the same texture. */

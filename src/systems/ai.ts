@@ -8,7 +8,6 @@ import { bossStep } from './bossAI.ts'
 import { spawnEnemy } from './spawn.ts'
 import type { Enemy } from '../game/enemy.ts'
 import type { World } from '../game/world.ts'
-import { setTint } from '../render/textures.ts'
 
 const SEPARATION = 0.9
 /** Total gravity-well drag on the player, units/sec, hard-capped well below
@@ -219,7 +218,6 @@ export function aiSystem(world: World, dt: number): void {
           if (e.submerged) {
             e.submerged = false
             e.stateTimer = def.burrow.surfaceTime
-            e.sprite.visible = true
             spawnPoof(world, e.x, e.y, def.gibColor, 8)
           } else {
             e.submerged = true
@@ -442,12 +440,11 @@ function fireEnemyShot(world: World, e: Enemy, ux: number, uy: number): void {
   p.leavesAcid = def.leavesAcid ?? false
   p.ownerIdx = def.idx
 
-  const s = p.sprite
-  s.visible = true
-  s.alpha = 1
+  const q = p.quad
+  q.alpha = 1
   // Hazard projectiles wear the ARENA's hazard color (acid green / magma
   // orange); others keep their body tint. Presentation only.
-  setTint(s, def.leavesAcid ? world.arenaTheme.hazardTint : def.tint)
-  s.scale.set(1)
+  q.tint = def.leavesAcid ? world.arenaTheme.hazardTint : def.tint
+  q.scaleX = q.scaleY = 1
   world.feel.emit(FeelKind.EnemyShot, 0, p.x, p.y, p.facing, 0, def)
 }

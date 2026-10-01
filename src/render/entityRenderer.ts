@@ -4,8 +4,9 @@ import { lerpHex } from '../core/color.ts'
 import { lerp, lerpAngle } from '../core/vec.ts'
 import { WEAPONS } from '../content/weapons.ts'
 import type { World } from '../game/world.ts'
+import { packColor } from './quads.ts'
 import { SegRing } from './segRing.ts'
-import { WHITE, setTint } from './textures.ts'
+import { WHITE } from './textures.ts'
 
 /** Section 6.4: a struck enemy shows its white silhouette at this scale. */
 const HIT_PULSE = 1.12
@@ -20,13 +21,12 @@ const baseTex: (Texture | undefined)[] = []
 const whiteTex: (Texture | undefined)[] = []
 
 /**
- * Pushes simulation state onto Pixi sprites each rendered frame: interpolation
- * (prev -> current by alpha), rotate-to-face, procedural squash/wobble (so one
- * still illustration reads as a living creature), and hit-flash via tint. Pure
- * presentation, no simulation here.
- *
- * One function per pool: each loop gets its own optimizer inlining budget, so
- * the Pixi setters inline and no double is boxed per sprite.
+ * Pushes simulation state onto the pools' quads each rendered frame:
+ * interpolation (prev -> current by alpha), rotate-to-face, procedural
+ * squash/wobble (so one still illustration reads as a living creature), and
+ * hit-flash via the white silhouette. Pure presentation, no simulation here.
+ * Quads are plain fields drawn by ParticleContainers, so nothing here goes
+ * through a Pixi setter or the scene-graph transform update.
  */
 export function renderEntities(world: World, alpha: number): void {
   const t = world.time + alpha * FIXED_DT
@@ -44,14 +44,15 @@ function renderEnemies(world: World, alpha: number, t: number): void {
   const enemies = world.enemies.active
   for (let i = 0; i < enemies.length; i++) {
     const e = enemies[i]!
-    const s = e.sprite
-    s.position.set(lerp(e.prevX, e.x, alpha), lerp(e.prevY, e.y, alpha))
-    s.rotation = lerpAngle(e.prevFacing, e.facing, alpha)
+    const q = e.quad
+    q.x = lerp(e.prevX, e.x, alpha)
+    q.y = lerp(e.prevY, e.y, alpha)
+    q.rotation = lerpAngle(e.prevFacing, e.facing, alpha)
     if (e.submerged && !e.def.boss) {
       // A faint burrow mound while underground (intangible).
-      s.scale.set(e.def.scale * 0.6)
-      s.alpha = 0.28
-      setTint(s, 0x2a1d10)
+      q.scaleX = q.scaleY = e.def.scale * 0.6
+      q.alpha = 0.28
+      q.color = packColor(0x2a1d10, 0.28)
       continue
     }
     // Emerge: fade/scale in over the first beat after spawn so enemies never
@@ -60,7 +61,6 @@ function renderEnemies(world: World, alpha: number, t: number): void {
     // mid-screen by design. Pure presentation (reads sim time, mutates nothing).
     // A boss is untargetable for its whole BOSS_EMERGE, so it fades in over that.
     const emerge = Math.min(1, Math.max(0, (t - e.bornAt) / (e.def.boss ? BOSS_EMERGE : ENEMY_EMERGE)))
-    s.alpha = emerge
     const idx = e.def.idx
     let base0 = baseTex[idx]
     if (!base0) {
@@ -68,36 +68,39 @@ function renderEnemies(world: World, alpha: number, t: number): void {
       whiteTex[idx] = world.texReg.getTexture(e.def.sprite + WHITE)
     }
     const hit = e.flash > 0
-    const tex = hit ? whiteTex[idx]! : base0
-    if (s.texture !== tex) s.texture = tex
+    q.texture = hit ? whiteTex[idx]! : base0
     const base = e.def.scale * (e.buffed > 0 ? 1.08 : 1) * (0.55 + 0.45 * emerge) * (hit ? HIT_PULSE : 1)
     // FREEZE skips the AI step of every non-boss enemy, so a charger's windup
     // or dash waits for the thaw: it holds its pose, with no flicker or wobble.
     const iced = frozen && !e.def.boss
     const wob = iced ? 0 : Math.sin(t * 14 + e.animPhase)
+    let tint: number
     if (hit) {
-      s.scale.set(base)
-      setTint(s, 0xffffff)
+      q.scaleX = q.scaleY = base
+      tint = 0xffffff
     } else if (e.phase === 1) {
       // Charger windup telegraph: coil (squash along the locked heading, sprite
       // rotation IS the heading) + a fast white flicker. Read-only cosmetics.
-      s.scale.set(base * 0.78, base * 1.22)
-      setTint(s, iced ? ICE_TINT : Math.sin(t * 42) > 0 ? 0xffffff : e.tint)
+      q.scaleX = base * 0.78
+      q.scaleY = base * 1.22
+      tint = iced ? ICE_TINT : Math.sin(t * 42) > 0 ? 0xffffff : e.tint
     } else if (e.phase === 2) {
       // Dash: stretch along the line.
-      s.scale.set(base * 1.35, base * 0.72)
-      setTint(s, iced ? ICE_TINT : e.tint)
+      q.scaleX = base * 1.35
+      q.scaleY = base * 0.72
+      tint = iced ? ICE_TINT : e.tint
     } else {
-      s.scale.set(base * (1 + wob * 0.1), base * (1 - wob * 0.1))
-      setTint(
-        s,
+      q.scaleX = base * (1 + wob * 0.1)
+      q.scaleY = base * (1 - wob * 0.1)
+      tint =
         e.slow > 0 || iced
           ? ICE_TINT
           : e.def.boss && frenzy
             ? lerpHex(e.tint, FRENZY_TINT, 0.3 + 0.25 * Math.sin(t * 8))
-            : e.tint,
-      )
+            : e.tint
     }
+    q.alpha = emerge
+    q.color = packColor(tint, emerge)
   }
 }
 
@@ -105,9 +108,11 @@ function renderProjectiles(world: World, alpha: number): void {
   const projs = world.projectiles.active
   for (let i = 0; i < projs.length; i++) {
     const p = projs[i]!
-    const s = p.sprite
-    s.position.set(lerp(p.prevX, p.x, alpha), lerp(p.prevY, p.y, alpha))
-    s.rotation = p.facing
+    const q = p.quad
+    q.x = lerp(p.prevX, p.x, alpha)
+    q.y = lerp(p.prevY, p.y, alpha)
+    q.rotation = p.facing
+    q.paint()
   }
 }
 
@@ -115,43 +120,45 @@ function renderEnemyShots(world: World, alpha: number, t: number): void {
   const eps = world.enemyProjectiles.active
   for (let i = 0; i < eps.length; i++) {
     const p = eps[i]!
-    const s = p.sprite
-    s.position.set(lerp(p.prevX, p.x, alpha), lerp(p.prevY, p.y, alpha))
-    s.rotation = p.facing
+    const q = p.quad
+    q.x = lerp(p.prevX, p.x, alpha)
+    q.y = lerp(p.prevY, p.y, alpha)
+    q.rotation = p.facing
     // gentle pulse on the acid glob
-    s.scale.set(1 + Math.sin(t * 12 + p.facing) * 0.12)
+    q.scaleX = q.scaleY = 1 + Math.sin(t * 12 + p.facing) * 0.12
+    q.paint()
   }
 }
 
+/** Particles go to the layer of their blend, refilled in pool order each frame. */
 function renderParticles(world: World, alpha: number): void {
+  const normal = world.particleQuads
+  const add = world.particleAddQuads
+  normal.begin()
+  add.begin()
   const parts = world.particles.active
   for (let i = 0; i < parts.length; i++) {
     const p = parts[i]!
-    const s = p.sprite
-    // Emitted since the last frame (the pool hides a freed sprite): the
-    // emitter recorded the look, and its Pixi setters stay out of the sim tick.
-    if (!s.visible) {
-      s.texture = p.tex!
-      s.blendMode = p.additive ? 'add' : 'normal'
-      setTint(s, p.tint)
-      s.visible = true
-    }
-    s.position.set(lerp(p.prevX, p.x, alpha), lerp(p.prevY, p.y, alpha))
-    s.rotation = p.rotation
-    s.alpha = p.life / p.maxLife
-    s.scale.set(p.size)
+    const tex = p.tex!
+    const q = p.additive ? add.next(tex) : normal.next(tex)
+    q.texture = tex
+    q.x = lerp(p.prevX, p.x, alpha)
+    q.y = lerp(p.prevY, p.y, alpha)
+    q.rotation = p.rotation
+    q.scaleX = q.scaleY = p.size
+    q.color = packColor(p.tint, p.life / p.maxLife)
   }
+  normal.end()
+  add.end()
 }
 
 function renderPickups(world: World, alpha: number, t: number): void {
   const pickups = world.pickups.active
   for (let i = 0; i < pickups.length; i++) {
     const p = pickups[i]!
-    const s = p.sprite
+    const q = p.quad
     const x = lerp(p.prevX, p.x, alpha)
     let y = lerp(p.prevY, p.y, alpha)
-    // One call per property below: few call sites keep every Pixi setter
-    // inlined, so no double is boxed per pickup.
     let rot: number
     let scale: number
     let a = p.life < 1.5 ? p.life / 1.5 : 1
@@ -188,10 +195,12 @@ function renderPickups(world: World, alpha: number, t: number): void {
       scale = (1 + Math.sin(t * 5 + p.phase) * 0.12) * (1 + 0.2 * p.hold)
       a = p.life < PODS.blinkLast && Math.floor(t * POD_BLINK_HZ * 2) % 2 === 1 ? POD_BLINK_ALPHA : 1
     }
-    s.rotation = rot
-    s.scale.set(scale)
-    s.position.set(x, y)
-    s.alpha = a
+    q.rotation = rot
+    q.scaleX = q.scaleY = scale
+    q.x = x
+    q.y = y
+    q.alpha = a
+    q.paint()
   }
 }
 
@@ -200,7 +209,9 @@ function renderAcid(world: World, t: number): void {
   for (let i = 0; i < acid.length; i++) {
     const ap = acid[i]!
     const k = ap.life / ap.maxLife
-    ap.sprite.alpha = (0.26 + 0.22 * k) * (0.9 + Math.sin(t * 7 + ap.x) * 0.1)
+    const q = ap.quad
+    q.alpha = (0.26 + 0.22 * k) * (0.9 + Math.sin(t * 7 + ap.x) * 0.1)
+    q.paint()
   }
 }
 

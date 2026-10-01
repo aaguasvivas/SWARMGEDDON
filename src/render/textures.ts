@@ -1,9 +1,13 @@
-import { ColorMatrixFilter, Graphics, Sprite, Texture, type Renderer } from 'pixi.js'
+import { ColorMatrixFilter, Container, Graphics, Rectangle, RenderTexture, Sprite, Texture, type Renderer } from 'pixi.js'
 import { PLACEHOLDER_SPRITES } from '../content/assets.ts'
 import { ENEMIES } from '../content/enemies.ts'
+import { Quad } from './quads.ts'
 
 /** Bake resolution: the camera zooms up to 3x, so textures carry 3x detail. */
 const BAKE_RES = 3
+/** Atlas width (683 world units) and gutter, in pixels. */
+const ATLAS_W = 2049
+const ATLAS_PAD = 3
 /** Suffix of a sprite's hit-flash silhouette key (`swarmer@white`). */
 export const WHITE = '@white'
 
@@ -99,6 +103,41 @@ export class TextureRegistry {
     g.destroy()
   }
 
+  /**
+   * Moves every texture baked at BAKE_RES except the two large hazard decals
+   * into one atlas and repoints their keys at its frames: a ParticleContainer
+   * draws from one source, and a sprite whose frame changes within one source
+   * keeps its batch. Run after both bakes.
+   */
+  packAtlas(): void {
+    const keys: string[] = []
+    for (const [key, b] of this.map) {
+      if (b.texture.source.resolution === BAKE_RES && key !== 'hzLane' && key !== 'hzSector') keys.push(key)
+    }
+    const old = keys.map((k) => this.map.get(k)!)
+    const packed = packTextures(this.renderer, old.map((b) => b.texture), BAKE_RES, ATLAS_W)
+    for (let i = 0; i < keys.length; i++) {
+      old[i]!.texture.destroy(true)
+      this.map.set(keys[i]!, { texture: packed[i]!, anchorX: old[i]!.anchorX, anchorY: old[i]!.anchorY })
+    }
+  }
+
+  /** A quad for `key`, origin-anchored like makeSprite's sprites. */
+  makeQuad(key: string): Quad {
+    const q = new Quad(this.getTexture(key))
+    this.applyQuad(q, key)
+    return q
+  }
+
+  /** Repoint a pooled quad at `key`'s frame and origin anchor. */
+  applyQuad(q: Quad, key: string): void {
+    const baked = this.map.get(key)
+    if (!baked) throw new Error('missing texture: ' + key)
+    q.texture = baked.texture
+    q.anchorX = baked.anchorX
+    q.anchorY = baked.anchorY
+  }
+
   /** Raw texture for `key` (e.g. for swapping a pooled particle's frame). */
   getTexture(key: string): Texture {
     const baked = this.map.get(key)
@@ -123,4 +162,44 @@ export class TextureRegistry {
     sprite.texture = baked.texture
     sprite.anchor.set(baked.anchorX, baked.anchorY)
   }
+}
+
+/**
+ * Copies `textures` (one resolution) pixel for pixel into one render texture
+ * `widthPx` wide, packed in shelves with transparent gutters against filtering
+ * bleed, and returns a frame of it for each, in order. The sources stay alive.
+ */
+export function packTextures(renderer: Renderer, textures: readonly Texture[], resolution: number, widthPx: number): Texture[] {
+  const order = textures.map((_, i) => i).sort((a, b) => {
+    const ta = textures[a]!.source
+    const tb = textures[b]!.source
+    return tb.pixelHeight - ta.pixelHeight || tb.pixelWidth - ta.pixelWidth
+  })
+  const px = new Float64Array(textures.length)
+  const py = new Float64Array(textures.length)
+  let x = ATLAS_PAD
+  let y = ATLAS_PAD
+  let rowH = 0
+  for (const i of order) {
+    const src = textures[i]!.source
+    if (x + src.pixelWidth + ATLAS_PAD > widthPx) {
+      x = ATLAS_PAD
+      y += rowH + ATLAS_PAD
+      rowH = 0
+    }
+    px[i] = x
+    py[i] = y
+    x += src.pixelWidth + ATLAS_PAD
+    rowH = Math.max(rowH, src.pixelHeight)
+  }
+  const atlas = RenderTexture.create({ width: widthPx / resolution, height: Math.ceil((y + rowH + ATLAS_PAD) / resolution), resolution })
+  const holder = new Container()
+  for (let i = 0; i < textures.length; i++) {
+    const s = new Sprite(textures[i]!)
+    s.position.set(px[i]! / resolution, py[i]! / resolution)
+    holder.addChild(s)
+  }
+  renderer.render({ container: holder, target: atlas, clear: true })
+  holder.destroy({ children: true })
+  return textures.map((t, i) => new Texture({ source: atlas.source, frame: new Rectangle(px[i]! / resolution, py[i]! / resolution, t.frame.width, t.frame.height) }))
 }

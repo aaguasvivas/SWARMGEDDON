@@ -120,7 +120,7 @@ const HELPERS = `(() => {
     p.chain = o.chain ?? 0
     p.chainRange = o.chainRange ?? 0
     p.hitN = 0
-    p.sprite.visible = true
+    p.quad.scaleX = p.quad.scaleY = 1
     return p
   }
   const near = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps
@@ -635,7 +635,7 @@ function fusionChecks() {
   sh.life = 3
   sh.leavesAcid = false
   sh.ownerIdx = -1
-  sh.sprite.visible = true
+  sh.quad.scaleX = sh.quad.scaleY = 1
   const hits0 = w.hits
   w.pendingLevelUps = 0
   S.step(1)

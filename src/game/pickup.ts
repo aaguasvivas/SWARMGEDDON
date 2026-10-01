@@ -1,6 +1,6 @@
-import type { Sprite } from 'pixi.js'
 import { doubleFields } from '../core/fields.ts'
 import type { Poolable } from '../core/pool.ts'
+import type { Quad } from '../render/quads.ts'
 
 export type PickupKind = 'xp' | 'bank' | 'weapon' | 'health' | 'shard' | 'core' | 'bonus'
 
@@ -12,7 +12,7 @@ export const PICKUP_SLOTS = 6
 /**
  * Field pickup: an XP crystal or medkit (magnetized), a weapon pod (hold to
  * take), or a core shard, Hive Core or bonus (contact only). One pool serves
- * all of them; the sprite and tint are set per kind on spawn.
+ * all of them; the quad's frame and tint are set per kind on spawn.
  */
 export class Pickup implements Poolable {
   alive = false
@@ -44,7 +44,7 @@ export class Pickup implements Poolable {
   /** Bonuses: the BONUSES index. Hive Cores: the CORES.table row (0 mid1, 1 mid2, 2 overtime). */
   sub = 0
 
-  constructor(readonly sprite: Sprite) {
+  constructor(readonly quad: Quad) {
     doubleFields(this)
   }
 }

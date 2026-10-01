@@ -42,9 +42,14 @@
 //   --perks=a,b,...    build taken at run start ('' for none)
 //   --scope=game       apply --budget to gameMBs instead of the total
 //   --interval=B       sampling interval in bytes (default 8192)
-//   --growth=S         instead of profiling: flood Hive, warm 20 s, force GC,
-//                      read the heap, run S seconds, force GC, read it again;
-//                      keptTop lists what the window allocated and still holds
+//   --growth=S         instead of profiling: flood Hive, warm 20 s (--warm sets
+//                      it), force GC, read the heap, run S seconds, force GC,
+//                      read it again; keptTop lists what the window allocated and
+//                      still holds. V8 installs optimized code for minutes into a
+//                      run (code space is in the heap), and the sampler books it
+//                      to the frame on the stack when the code lands, the
+//                      requestAnimationFrame callback: a longer --warm separates
+//                      that tier-up from steady-state growth.
 //   --gc               instead of profiling: a 10 s trace of the perf-final
 //                      scene (FINAL SWARM, no top-up) and every GC pause in it
 //                      (A16: none over 2 ms). Timing-sensitive: run it alone.
@@ -406,7 +411,7 @@ try {
       return (await cdp.send('Runtime.getHeapUsage')).usedSize
     }
     const setup = await page.evaluate((p) => window.__PA.setup('flood', 'hive', p), PERKS)
-    await sleep(20000)
+    await sleep((flags.warm === undefined ? 20 : WARM) * 1000)
     const before = await heap()
     const s0 = await page.evaluate(() => window.__PA.status())
     // Sampled without the GC'd objects: what the profile holds at the end is

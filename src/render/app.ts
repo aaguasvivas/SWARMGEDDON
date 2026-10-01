@@ -63,19 +63,7 @@ export async function createRenderer(mount: HTMLElement): Promise<GameRenderer> 
   // so it never double-renders or steps anything on its own schedule.
   app.ticker.stop()
 
-  const layers: Layers = {
-    world: new Container(),
-    scene: new Container(),
-    warpHost: new Container(),
-    floor: new Container(),
-    ichor: new Container(),
-    backdrop: new Container(),
-    entities: new Container(),
-    fx: new Container(),
-    atmosphere: new Container(),
-    overlay: new Container(),
-    ui: new Container(),
-  }
+  const layers = makeLayers()
   // scene (bloom, screen-space) -> world (camera/shake) -> warpHost (warp) -> content.
   // The bloom sits ABOVE the camera/shake translate (on `scene`, an identity child
   // of the stage), so its screen-space filterArea is never dragged off-screen by
@@ -85,6 +73,12 @@ export async function createRenderer(mount: HTMLElement): Promise<GameRenderer> 
   // a direct child of `scene`, so it is graded + bloomed with the world (god-rays
   // get their glow for free) but never dragged by the camera.
   layers.warpHost.addChild(layers.floor, layers.ichor, layers.backdrop, layers.entities, layers.fx)
+  // The camera moves `world` and `overlay` every frame. As render groups, the
+  // world content and the number overlay keep their own transforms and draw
+  // lists: a camera move is one matrix, and a child shown or hidden rebuilds
+  // only its own group.
+  layers.warpHost.isRenderGroup = true
+  layers.overlay.isRenderGroup = true
   layers.world.addChild(layers.warpHost)
   layers.scene.addChild(layers.world, layers.atmosphere)
   app.stage.addChild(layers.scene, layers.overlay, layers.ui)
@@ -98,4 +92,22 @@ export async function createRenderer(mount: HTMLElement): Promise<GameRenderer> 
   layers.overlay.eventMode = 'none'
 
   return { app, layers }
+}
+
+/** A fresh, unattached set of layer containers (the scratch World of the
+ *  boot warm-up draws into these, and nothing shows them). */
+export function makeLayers(): Layers {
+  return {
+    world: new Container(),
+    scene: new Container(),
+    warpHost: new Container(),
+    floor: new Container(),
+    ichor: new Container(),
+    backdrop: new Container(),
+    entities: new Container(),
+    fx: new Container(),
+    atmosphere: new Container(),
+    overlay: new Container(),
+    ui: new Container(),
+  }
 }

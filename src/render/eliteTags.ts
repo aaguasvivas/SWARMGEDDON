@@ -53,7 +53,7 @@ export class EliteTags {
     }
   }
 
-  /** After renderEntities (it places the sprites this reads). A tag that would
+  /** After renderEntities (it places the quads this reads). A tag that would
    *  rise above world y `topY` (under the HUD rows) hangs below its elite instead;
    *  a tag under the callout showing now (`lane`, screen x0, y0, x1, y1) dims so
    *  the two lines never read as one. */
@@ -80,9 +80,9 @@ export class EliteTags {
           this.assign(slot, e.uid, e.def.idx, e.affix)
         }
         this.seen[slot] = 1
-        const sx = e.sprite.x
-        const sy = e.sprite.y
-        const alpha = e.submerged ? SUBMERGED_ALPHA : e.sprite.alpha
+        const sx = e.quad.x
+        const sy = e.quad.y
+        const alpha = e.submerged ? SUBMERGED_ALPHA : e.quad.alpha
         const sub = this.subs[slot]!
         const title = this.titles[slot]!
         title.scale.set(inv)
@@ -117,7 +117,7 @@ export class EliteTags {
         if (ring.visible) {
           ring.position.set(sx, sy)
           ring.scale.set((e.radius + RING_PAD) / RING_TEX_R)
-          ring.alpha = RING_ALPHA * e.sprite.alpha
+          ring.alpha = RING_ALPHA * e.quad.alpha
         }
       }
     }

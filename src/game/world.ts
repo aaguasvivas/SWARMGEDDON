@@ -1,5 +1,5 @@
 import type { Texture } from 'pixi.js'
-import { DASH, GRACE, HASH_CELL, MAX_HAZARDS, PODS, XP } from '../config.ts'
+import { DASH, GRACE, HASH_CELL, MAX_ENEMY_PROJECTILES, MAX_HAZARDS, MAX_PARTICLES, PODS, XP } from '../config.ts'
 import { doubleFields } from '../core/fields.ts'
 import { Pool } from '../core/pool.ts'
 import { RunRngs, SALT, hash32 } from '../core/rng.ts'
@@ -21,6 +21,7 @@ import { CoreState } from '../systems/cores.ts'
 import type { Layers } from '../render/app.ts'
 import type { IchorLayer } from '../render/ichorLayer.ts'
 import type { TextureRegistry } from '../render/textures.ts'
+import { QuadLayer } from '../render/quads.ts'
 import type { Arena } from './arena.ts'
 import { AcidPool } from './acidPool.ts'
 import { Enemy } from './enemy.ts'
@@ -289,6 +290,18 @@ export class World {
   aliveMul = 1
   speedMul = 1
 
+  // PB: render-side zero allocation
+  /** The quads the pools draw with, one ParticleContainer each (section 3.2).
+   *  Presentation only: the sim writes a quad's look at spawn and never reads it. */
+  readonly acidQuads = new QuadLayer()
+  readonly shotQuads = new QuadLayer()
+  readonly enemyShotQuads = new QuadLayer()
+  readonly enemyQuads = new QuadLayer()
+  readonly pickupQuads = new QuadLayer()
+  /** Particles by blend, refilled each frame by the renderer. */
+  readonly particleQuads = new QuadLayer()
+  readonly particleAddQuads = new QuadLayer('add')
+
   constructor(
     readonly arena: Arena,
     readonly player: Player,
@@ -301,34 +314,37 @@ export class World {
     this.ringTex = texReg.getTexture('ring')
     this.flashTex = texReg.getTexture('flash')
 
+    layers.ichor.addChild(this.acidQuads.view)
+    layers.entities.addChild(this.shotQuads.view, this.enemyShotQuads.view, this.enemyQuads.view)
+    layers.fx.addChild(this.pickupQuads.view, this.particleQuads.view, this.particleAddQuads.view)
     this.enemies = new Pool<Enemy>(
-      () => { const s = texReg.makeSprite('swarmer'); layers.entities.addChild(s); return new Enemy(s) },
-      (e) => { e.sprite.visible = false; e.flash = 0; e.submerged = false },
+      () => { const q = texReg.makeQuad('swarmer'); this.enemyQuads.add(q); return new Enemy(q) },
+      (e) => { e.quad.hide(); e.flash = 0; e.submerged = false },
       64,
     )
     this.projectiles = new Pool<Projectile>(
-      () => { const s = texReg.makeSprite('bullet'); layers.entities.addChild(s); return new Projectile(s) },
-      (p) => { p.sprite.visible = false; p.pierce = 0; p.leavesAcid = false; p.bounces = 0; p.explodeRadius = 0; p.chain = 0; p.hitN = 0 },
+      () => { const q = texReg.makeQuad('bullet'); this.shotQuads.add(q); return new Projectile(q) },
+      (p) => { p.quad.hide(); p.pierce = 0; p.leavesAcid = false; p.bounces = 0; p.explodeRadius = 0; p.chain = 0; p.hitN = 0 },
       512,
     )
     this.enemyProjectiles = new Pool<Projectile>(
-      () => { const s = texReg.makeSprite('acidGlob'); layers.entities.addChild(s); return new Projectile(s) },
-      (p) => { p.sprite.visible = false; p.leavesAcid = false; p.ownerIdx = -1 },
-      64,
+      () => { const q = texReg.makeQuad('acidGlob'); this.enemyShotQuads.add(q); return new Projectile(q) },
+      (p) => { p.quad.hide(); p.leavesAcid = false; p.ownerIdx = -1 },
+      MAX_ENEMY_PROJECTILES,
     )
-    this.particles = new Pool<Particle>(
-      () => { const s = texReg.makeSprite('particle'); layers.fx.addChild(s); return new Particle(s) },
-      (p) => { p.sprite.visible = false },
-      256,
-    )
+    // Prewarmed to the cap, like the enemy shots: they peak in bursts, and a
+    // pool that grows mid-run is heap growth (section 3.2).
+    this.particles = new Pool<Particle>(() => new Particle(), () => {}, MAX_PARTICLES)
+    this.particleQuads.reserve(MAX_PARTICLES, this.sparkTex)
+    this.particleAddQuads.reserve(MAX_PARTICLES, this.sparkTex)
     this.pickups = new Pool<Pickup>(
-      () => { const s = texReg.makeSprite('gem'); layers.fx.addChild(s); return new Pickup(s) },
-      (p) => { p.sprite.visible = false; this.pickupN[PICKUP_SLOT[p.kind]]!-- },
+      () => { const q = texReg.makeQuad('gem'); this.pickupQuads.add(q); return new Pickup(q) },
+      (p) => { p.quad.hide(); this.pickupN[PICKUP_SLOT[p.kind]]!-- },
       256,
     )
     this.acid = new Pool<AcidPool>(
-      () => { const s = texReg.makeSprite('acidPool'); layers.ichor.addChild(s); return new AcidPool(s) },
-      (a) => { a.sprite.visible = false },
+      () => { const q = texReg.makeQuad('acidPool'); this.acidQuads.add(q); return new AcidPool(q) },
+      (a) => { a.quad.hide() },
       16,
     )
     doubleFields(this)

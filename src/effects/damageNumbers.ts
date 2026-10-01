@@ -1,7 +1,7 @@
-import { Container, Sprite, Text } from 'pixi.js'
-import { CH_BANG, CH_K, CH_PLUS, layoutGlyphs, numGlyphs, writeInt } from '../ui/digits.ts'
+import { Container, Text } from 'pixi.js'
+import { CH_BANG, CH_K, CH_PLUS, numGlyphs, writeInt } from '../ui/digits.ts'
 import { FONT, INK, T, ensureContrast } from '../ui/tokens.ts'
-import { setTint } from '../render/textures.ts'
+import { QuadLayer, packColor } from '../render/quads.ts'
 
 export type DamageNumberMode = 'all' | 'big' | 'off'
 
@@ -35,7 +35,7 @@ const LABEL_RISE_PX = 14
 
 /**
  * Damage numbers (section 6.4, tiers in A18): 64 pooled numbers of 6 glyph
- * sprites from the numMono atlas, drawn in the unbloomed world-space overlay at
+ * quads from the numMono atlas, drawn in the unbloomed world-space overlay at
  * a constant screen size. Hits on one enemy within 150 ms add into the number
  * already rising over it. In mode `big` a smaller hit opens a hidden number
  * that collects every hit on that enemy for up to 450 ms and shows once its
@@ -47,8 +47,13 @@ const LABEL_RISE_PX = 14
 export class DamageNumbers {
   readonly view = new Container()
   mode: DamageNumberMode = 'big'
-  private readonly boxes: Container[] = []
-  private readonly glyphs: Sprite[][] = []
+  /** Every shown number's glyphs, refilled in slot order each frame. */
+  private readonly glyphs = new QuadLayer()
+  /** Per slot: glyph char codes and x offsets in font units, and the tint. */
+  private readonly glyphCode = new Uint8Array(CAP * GLYPHS)
+  private readonly glyphX = new Float32Array(CAP * GLYPHS)
+  private readonly glyphN = new Uint8Array(CAP)
+  private readonly tint = new Int32Array(CAP)
   private readonly live = new Uint8Array(CAP)
   private readonly kind = new Uint8Array(CAP)
   private readonly x = new Float32Array(CAP)
@@ -73,23 +78,9 @@ export class DamageNumbers {
   private readonly em: number
 
   constructor() {
-    const g = numGlyphs()
-    this.em = g.em
-    for (let i = 0; i < CAP; i++) {
-      const box = new Container()
-      box.visible = false
-      const row: Sprite[] = []
-      for (let j = 0; j < GLYPHS; j++) {
-        const s = new Sprite(g.tex[48]!)
-        s.anchor.set(0, 0.5)
-        s.visible = false
-        row.push(s)
-        box.addChild(s)
-      }
-      this.boxes.push(box)
-      this.glyphs.push(row)
-      this.view.addChild(box)
-    }
+    this.em = numGlyphs().em
+    this.glyphs.reserve(CAP * GLYPHS, numGlyphs().tex[48]!)
+    this.view.addChild(this.glyphs.view)
     for (let i = 0; i < LABEL_CAP; i++) {
       const t = new Text({
         text: '',
@@ -160,6 +151,9 @@ export class DamageNumbers {
   update(nowMs: number, zoom: number): void {
     this.now = nowMs
     const inv = 1 / zoom
+    const tex = numGlyphs().tex
+    const layer = this.glyphs
+    layer.begin()
     for (let i = 0; i < CAP; i++) {
       if (!this.live[i]) continue
       const age = nowMs - this.born[i]!
@@ -168,10 +162,8 @@ export class DamageNumbers {
         continue
       }
       const left = this.life[i]! - age
-      const box = this.boxes[i]!
       if (left <= 0) {
         this.live[i] = 0
-        box.visible = false
         continue
       }
       const k = age < RISE_MS ? age / RISE_MS : 1
@@ -180,10 +172,25 @@ export class DamageNumbers {
       const pa = nowMs - this.popAt[i]!
       const pop = pa < POP_MS ? POP_FROM + (1 - POP_FROM) * (pa / POP_MS) : 1
       const shake = this.kind[i] === KIND_CRIT && pa < CRIT_SHAKE_MS ? CRIT_SHAKE_PX * Math.sin(pa * 0.35) : 0
-      box.position.set(this.x[i]! + shake * inv, this.y[i]! - (LIFT_PX + rise) * inv)
-      box.scale.set((this.size[i]! / this.em) * pop * inv)
-      box.alpha = left < FADE_MS ? left / FADE_MS : 1
+      const bx = this.x[i]! + shake * inv
+      const by = this.y[i]! - (LIFT_PX + rise) * inv
+      const sc = (this.size[i]! / this.em) * pop * inv
+      const color = packColor(this.tint[i]!, left < FADE_MS ? left / FADE_MS : 1)
+      const n = this.glyphN[i]!
+      for (let j = 0; j < n; j++) {
+        const t = tex[this.glyphCode[i * GLYPHS + j]!]
+        if (!t) continue
+        const q = layer.next(t)
+        q.texture = t
+        q.anchorX = 0
+        q.anchorY = 0.5
+        q.x = bx + sc * this.glyphX[i * GLYPHS + j]!
+        q.y = by
+        q.scaleX = q.scaleY = sc
+        q.color = color
+      }
     }
+    layer.end()
     for (let i = 0; i < LABEL_CAP; i++) {
       const t = this.labels[i]!
       if (!t.visible) continue
@@ -205,8 +212,9 @@ export class DamageNumbers {
     for (let i = 0; i < CAP; i++) {
       this.live[i] = 0
       this.shown[i] = 0
-      this.boxes[i]!.visible = false
     }
+    this.glyphs.begin()
+    this.glyphs.end()
     for (const t of this.labels) t.visible = false
   }
 
@@ -229,7 +237,6 @@ export class DamageNumbers {
     this.lastHit[i] = this.now
     this.born[i] = this.now
     this.shown[i] = 0
-    this.boxes[i]!.visible = false
     if (show) this.reveal(i, x, y)
   }
 
@@ -240,7 +247,6 @@ export class DamageNumbers {
     this.y[i] = y
     this.born[i] = this.now
     this.popAt[i] = this.now
-    this.boxes[i]!.visible = true
     this.draw(i)
   }
 
@@ -276,9 +282,19 @@ export class DamageNumbers {
       tint = T.textHi
       size = 13
     }
-    const row = this.glyphs[i]!
-    layoutGlyphs(row, c, n, 0.5)
-    for (let j = 0; j < GLYPHS; j++) setTint(row[j]!, tint)
+    // Centered layout, as layoutGlyphs places a DigitStrip's sprites.
+    const g = numGlyphs()
+    let pen = 0
+    for (let j = 0; j < n; j++) pen += g.adv[c[j]!]!
+    let gx = -pen * 0.5
+    for (let j = 0; j < n; j++) {
+      const code = c[j]!
+      this.glyphCode[i * GLYPHS + j] = code
+      this.glyphX[i * GLYPHS + j] = gx + g.xOff[code]!
+      gx += g.adv[code]!
+    }
+    this.glyphN[i] = n
+    this.tint[i] = tint
     this.size[i] = size
     this.life[i] = kind === KIND_CRIT ? CRIT_LIFE_MS : LIFE_MS
   }

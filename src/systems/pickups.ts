@@ -8,7 +8,6 @@ import type { World } from '../game/world.ts'
 import { takeBonus } from './bonuses.ts'
 import { takeHiveCore, takeShard } from './cores.ts'
 import { healPlayer } from './damage.ts'
-import { setTint } from '../render/textures.ts'
 
 const R = PICKUP_RESERVE
 /** Guaranteed slots per PICKUP_SLOT index. */
@@ -90,12 +89,8 @@ export function dropGem(world: World, x: number, y: number, xp: number): void {
   p.life = Infinity
   p.phase = world.rngs.fx.angle()
 
-  world.texReg.applySprite(p.sprite, 'gem')
-  const s = p.sprite
-  s.visible = true
-  setTint(s, COLORS.gem)
-  s.alpha = 1
-  s.scale.set(1.15)
+  world.texReg.applyQuad(p.quad, 'gem')
+  p.quad.tint = COLORS.gem
 }
 
 /** The live, uncaptured XP gem farthest from the player (first on ties), or null. */
@@ -150,11 +145,8 @@ function bankXp(world: World, x: number, y: number, xp: number): void {
     b.radius = 7
     b.life = Infinity
     b.phase = world.rngs.fx.angle()
-    world.texReg.applySprite(b.sprite, 'gem')
-    const s = b.sprite
-    s.visible = true
-    setTint(s, BANK_TINT)
-    s.alpha = 1
+    world.texReg.applyQuad(b.quad, 'gem')
+    b.quad.tint = BANK_TINT
   }
   b.xp += xp
 }
@@ -177,12 +169,8 @@ export function dropHealth(world: World, x: number, y: number, heal: number): vo
   p.life = XP.medkitLife
   p.phase = world.rngs.fx.angle()
 
-  world.texReg.applySprite(p.sprite, 'health')
-  const s = p.sprite
-  s.visible = true
-  setTint(s, COLORS.health)
-  s.alpha = 1
-  s.scale.set(1)
+  world.texReg.applyQuad(p.quad, 'health')
+  p.quad.tint = COLORS.health
 }
 
 // --- weapon pods (docs/NEXT-LEVEL.md 4.5, A5.1) -------------------------------
@@ -309,12 +297,8 @@ function spawnPod(world: World, x: number, y: number, weaponId: string, timer: b
   p.life = PODS.life + world.mods.podLifeBonus
   p.phase = 0
 
-  world.texReg.applySprite(p.sprite, 'crate')
-  const s = p.sprite
-  s.visible = true
-  setTint(s, WEAPONS[weaponId]!.tint)
-  s.alpha = 1
-  s.scale.set(1)
+  world.texReg.applyQuad(p.quad, 'crate')
+  p.quad.tint = WEAPONS[weaponId]!.tint
   world.feel.emit(FeelKind.PodSpawn, 0, p.x, p.y, 0, weaponIndex(weaponId))
 }
 
@@ -327,12 +311,8 @@ function contactPickup(world: World, kind: PickupKind, x: number, y: number, rad
   p.radius = radius
   p.life = life
   p.phase = 0
-  world.texReg.applySprite(p.sprite, key)
-  const s = p.sprite
-  s.visible = true
-  setTint(s, tint)
-  s.alpha = 1
-  s.scale.set(1)
+  world.texReg.applyQuad(p.quad, key)
+  p.quad.tint = tint
   return p
 }
 
