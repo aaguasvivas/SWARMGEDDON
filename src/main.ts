@@ -7,7 +7,7 @@ import { initSafeArea, getInsets } from './platform/safeArea.ts'
 import { setHapticsEnabled } from './platform/haptics.ts'
 import { initNative, registerBackButton } from './platform/native.ts'
 import { onBackground } from './platform/lifecycle.ts'
-import { createRenderer } from './render/app.ts'
+import { createRenderer, makeLayers } from './render/app.ts'
 import { Camera } from './render/camera.ts'
 import { loadFonts } from './render/fonts.ts'
 import { TextureRegistry } from './render/textures.ts'
@@ -27,6 +27,8 @@ import { DEATH_BEAT_MS, DEATH_RECAP_MS, DEATH_SKIP_MS, TimePreset } from './effe
 import { Arena, type DecorSpeck } from './game/arena.ts'
 import { Player } from './game/player.ts'
 import { World, type RunConfig, type RunMode } from './game/world.ts'
+import { warmSystems } from './game/warmup.ts'
+import { runSystems, sweepPools } from './game/step.ts'
 import { InputManager, PAD_B, PAD_START } from './input/input.ts'
 import { DebugOverlay } from './ui/debugOverlay.ts'
 import { Hud } from './ui/hud.ts'
@@ -81,20 +83,11 @@ import { PICKUP_WEAPON_IDS, WEAPONS } from './content/weapons.ts'
 import { PERKS } from './content/perks.ts'
 import { grant, isOwned, ownedPaintIds, resolvePools } from './state/unlocks.ts'
 import { spawnEnemy, debugFloodSwarmers } from './systems/spawn.ts'
-import { clampPlayerToCage, directorJumpTo, directorTick } from './systems/director.ts'
-import { hazardsTick } from './systems/hazards.ts'
+import { directorJumpTo } from './systems/director.ts'
 import { aiSystem, buildEnemyHash } from './systems/ai.ts'
-import { weaponSystem } from './systems/weapons.ts'
-import { projectileSystem, enemyProjectileSystem } from './systems/projectiles.ts'
-import { dropHiveCore, pickupSystem } from './systems/pickups.ts'
-import { bonusSystem } from './systems/bonuses.ts'
+import { dropHiveCore } from './systems/pickups.ts'
 import { grantPrimeCore, resolveCore } from './systems/cores.ts'
-import { collisionSystem } from './systems/collision.ts'
-import { acidSystem } from './systems/acid.ts'
-import { dashSystem } from './systems/dash.ts'
-import { healPlayer, playerSpeedMul } from './systems/damage.ts'
 import { banishCard, canReroll, draftDue, openDraft as dealDraft, pickCard, pickPerkId, rerollDraft, skipDraft } from './systems/draft.ts'
-import { scoreStep } from './game/scoring.ts'
 import { particleSystem } from './systems/particles.ts'
 
 type Screen = 'menu' | 'playing' | 'gameover' | 'leaderboard' | 'records'
@@ -154,6 +147,7 @@ async function boot(): Promise<void> {
   const texReg = new TextureRegistry(app.renderer)
   texReg.bakePlaceholders()
   texReg.bakeHazards()
+  texReg.packAtlas()
   bakeIcons(app.renderer)
 
   const audio = new AudioEngine()
@@ -1033,16 +1027,6 @@ async function boot(): Promise<void> {
     camera.update(fd, sx, sy, playing ? input.aimDir.x : 0, playing ? input.aimDir.y : 0, touchPortrait, boss, world.arena.bounds)
   }
 
-  function sweepPools(): void {
-    world.enemies.sweep()
-    world.projectiles.sweep()
-    world.enemyProjectiles.sweep()
-    world.particles.sweep()
-    world.pickups.sweep()
-    world.acid.sweep()
-    world.hazards.sweep()
-  }
-
   // One fixed simulation step (extracted so dev tooling can drive it).
   function stepSim(dt: number): void {
     if (screen !== 'playing' || world.paused) return
@@ -1053,7 +1037,7 @@ async function boot(): Promise<void> {
       buildEnemyHash(world)
       aiSystem(world, dt)
       particleSystem(world, dt)
-      sweepPools()
+      sweepPools(world)
       return
     }
 
@@ -1072,25 +1056,7 @@ async function boot(): Promise<void> {
       }
       gateOpen = true
     }
-    directorTick(world, dt)
-    buildEnemyHash(world)
-    aiSystem(world, dt)
-    dashSystem(world, input, dt)
-    weaponSystem(world, dt, input)
-    projectileSystem(world, dt)
-    enemyProjectileSystem(world, dt)
-    pickupSystem(world, dt)
-    bonusSystem(world, dt)
-    collisionSystem(world, dt)
-    hazardsTick(world, dt)
-    acidSystem(world, dt)
-    scoreStep(world, dt)
-    particleSystem(world, dt)
-    player.update(dt, input.move, input.aimDir, arena.bounds, playerSpeedMul(world), world.pullX, world.pullY)
-    clampPlayerToCage(world)
-    if (world.mods.regenPerSec > 0) healPlayer(world, world.mods.regenPerSec * dt)
-
-    sweepPools()
+    runSystems(world, input, dt)
 
     // Hand-offs, in rank order: death (next tick), the stalemate, the win, a
     // core reveal, then a draft (DRAFT.minGap apart). A pick is never applied
@@ -1424,6 +1390,10 @@ async function boot(): Promise<void> {
     app.stage.removeChild(warm)
     warm.destroy({ children: true })
   }
+
+  // PB: run the boss, event and hit code paths once on a scratch World.
+  const scratch = new World(new Arena(), new Player(), new IchorLayer(app.renderer, new Rng(1)), makeLayers(), texReg)
+  warmSystems(scratch, buildRunConfig('endless', todayUtc()), input, (w) => renderEntities(w, 0))
 
   loop.start()
 

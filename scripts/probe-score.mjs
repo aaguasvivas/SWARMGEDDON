@@ -79,7 +79,7 @@ try {
     p.radius = 7
     p.life = 3
     p.ownerIdx = ENEMIES.spitter.idx
-    p.sprite.visible = true
+    p.quad.scaleX = p.quad.scaleY = 1
     let hits = w.hits
     S.step(1)
     out.projectile = { chainBefore: 64, chainAfter: w.chain, hits: w.hits - hits, lastHitBy: w.lastHitBy === ENEMIES.spitter.idx ? 'spitter' : w.lastHitBy, pass: w.chain === 32 }

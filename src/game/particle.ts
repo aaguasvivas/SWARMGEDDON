@@ -1,4 +1,4 @@
-import type { Sprite, Texture } from 'pixi.js'
+import type { Texture } from 'pixi.js'
 import { doubleFields } from '../core/fields.ts'
 import type { Poolable } from '../core/pool.ts'
 
@@ -27,10 +27,10 @@ export class Particle implements Poolable {
   /** 'normal' for chunky gibs, 'add' for glowing sparks. */
   additive = false
   /** The frame it is drawn with. The emitter only records the look (texture,
-   *  blend, tint); the renderer applies it to the sprite when it first shows. */
+   *  blend, tint); the renderer draws it. */
   tex: Texture | null = null
 
-  constructor(readonly sprite: Sprite) {
+  constructor() {
     doubleFields(this)
   }
 }

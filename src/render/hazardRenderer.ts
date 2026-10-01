@@ -132,7 +132,7 @@ export class HazardRenderer {
       if (!e.alive || e.phase !== 1 || !c) continue
       const lane = this.lanes[nc++]!
       lane.visible = true
-      lane.position.set(e.sprite.x, e.sprite.y)
+      lane.position.set(e.quad.x, e.quad.y)
       lane.rotation = e.phaseDir
       lane.scale.set((c.dashSpeed * c.dashTime) / HZ_TEX.laneLen, e.radius / HZ_TEX.laneHalf)
       setTint(lane, laneTint)

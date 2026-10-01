@@ -4,7 +4,6 @@ import { clamp } from '../core/vec.ts'
 import { ENEMIES } from '../content/enemies.ts'
 import type { Enemy } from '../game/enemy.ts'
 import type { World } from '../game/world.ts'
-import { setTint } from '../render/textures.ts'
 
 export interface RingHalf {
   readonly halfW: number
@@ -131,12 +130,7 @@ export function spawnEnemy(world: World, defId: string, x: number, y: number): E
   }
   e.fireTimer = def.fireCooldown ? rng.range(0.4, def.fireCooldown) : 0
 
-  world.texReg.applySprite(e.sprite, def.sprite)
-  const s = e.sprite
-  s.visible = true
-  s.alpha = 1
-  setTint(s, def.tint)
-  s.scale.set(def.scale)
+  world.texReg.applyQuad(e.quad, def.sprite)
   return e
 }
 

@@ -1,11 +1,11 @@
-import type { Sprite } from 'pixi.js'
 import type { EnemyDef } from '../content/enemies.ts'
 import { ENEMIES } from '../content/enemies.ts'
 import { doubleFields } from '../core/fields.ts'
 import type { Poolable } from '../core/pool.ts'
+import type { Quad } from '../render/quads.ts'
 
 /**
- * A hive creature. Pure data + a persistent Sprite (texture swapped per type on
+ * A hive creature. Pure data + a persistent Quad (texture swapped per type on
  * spawn). `def` points at the registry entry the AI/render/death code reads, so
  * one pool serves every enemy type. Systems mutate the live fields.
  */
@@ -94,7 +94,7 @@ export class Enemy implements Poolable {
   wobFreq = 0
   wobPhase = 0
 
-  constructor(readonly sprite: Sprite) {
+  constructor(readonly quad: Quad) {
     doubleFields(this)
   }
 }

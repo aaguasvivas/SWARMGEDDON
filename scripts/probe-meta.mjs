@@ -269,12 +269,12 @@ try {
       }
       S.step(30)
       let tint = null
-      for (const p of w.projectiles.active) if (p.alive) tint = p.sprite.tint
+      for (const p of w.projectiles.active) if (p.alive) tint = p.quad.tint
       S.give('smg')
       S.step(3)
       inp.update = real
       const shots = w.projectiles.active.filter((p) => p.alive)
-      const pickupTint = shots.length ? shots[shots.length - 1].sprite.tint : null
+      const pickupTint = shots.length ? shots[shots.length - 1].quad.tint : null
       S.endRun('quit')
       return { runPaint: S.runPaint, bullet: w.baseBulletTint, shotTint: tint, smgTint: pickupTint, resultPaint: S.lastResult.paint }
     })

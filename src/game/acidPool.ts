@@ -1,6 +1,6 @@
-import type { Sprite } from 'pixi.js'
 import { doubleFields } from '../core/fields.ts'
 import type { Poolable } from '../core/pool.ts'
+import type { Quad } from '../render/quads.ts'
 
 /**
  * Lingering acid pool left by spitters: a ground hazard that damages the
@@ -17,7 +17,7 @@ export class AcidPool implements Poolable {
   life = 0
   maxLife = 1
 
-  constructor(readonly sprite: Sprite) {
+  constructor(readonly quad: Quad) {
     doubleFields(this)
   }
 }

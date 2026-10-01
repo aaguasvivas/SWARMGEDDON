@@ -45,7 +45,6 @@ import { hurtPlayer } from './damage.ts'
 import { closeCall, closeCallArmed } from './dash.ts'
 import { spawnHazard } from './hazards.ts'
 import { spawnEnemy } from './spawn.ts'
-import { setTint } from '../render/textures.ts'
 
 export const BS_EMERGE = 0
 export const BS_IDLE = 1
@@ -684,11 +683,10 @@ function bossShot(w: World, e: Enemy, a: number, speed: number, damage: number, 
   p.pierce = 0
   p.leavesAcid = false
   p.ownerIdx = e.def.idx
-  const s = p.sprite
-  s.visible = true
-  s.alpha = 1
-  setTint(s, tint)
-  s.scale.set(radius / 7)
+  const q = p.quad
+  q.alpha = 1
+  q.tint = tint
+  q.scaleX = q.scaleY = radius / 7
 }
 
 /** One ring of spore globs; the first flies at `aim`. */

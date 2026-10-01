@@ -3,7 +3,6 @@ import { distSq } from '../core/vec.ts'
 import { spawnAcidSplash } from '../effects/fx.ts'
 import type { World } from '../game/world.ts'
 import { hurtPlayer } from './damage.ts'
-import { setTint } from '../render/textures.ts'
 
 /** Drop a lingering acid pool (spitter projectile landed). Also stamps the
  *  ichor terrain so the hazard reads as part of the floor. */
@@ -20,13 +19,12 @@ export function spawnAcidPool(world: World, x: number, y: number): void {
   world.ichor.queueStamp(x, y, world.rngs.fx)
   spawnAcidSplash(world, x, y)
 
-  const s = ap.sprite
-  s.visible = true
-  setTint(s, world.arenaTheme.hazardTint) // acid green / magma orange per world
-  s.x = x
-  s.y = y
-  s.scale.set(ap.radius / 14)
-  s.alpha = 0.5
+  const q = ap.quad
+  q.tint = world.arenaTheme.hazardTint // acid green / magma orange per world
+  q.x = x
+  q.y = y
+  q.scaleX = q.scaleY = ap.radius / 14
+  q.alpha = 0.5
 }
 
 /** Tick acid pools (fade by lifetime) and apply damage to a standing player. */

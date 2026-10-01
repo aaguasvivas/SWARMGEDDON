@@ -19,6 +19,9 @@ export class ScreenFx {
   readonly view = new Container()
   private readonly red = new Vignette()
   private readonly edge = new Sprite(edgeTexture())
+  /** The edge glow is parked off screen at alpha 0 rather than hidden: a
+   *  visibility toggle rebuilds the UI's draw list. */
+  private edgeOn = true
   private w = 1
   private h = 1
 
@@ -29,6 +32,13 @@ export class ScreenFx {
     this.edge.alpha = 0
     this.view.addChild(this.red.view, this.edge)
     this.view.eventMode = 'none'
+    this.parkEdge()
+  }
+
+  private parkEdge(): void {
+    this.edgeOn = false
+    this.edge.alpha = 0
+    this.edge.position.set(-1e4, -1e4)
   }
 
   layout(w: number, h: number): void {
@@ -45,8 +55,11 @@ export class ScreenFx {
   update(flash: number, lowHp: boolean, pulse: number, edge: number, dx: number, dy: number, sx: number, sy: number): void {
     const low = lowHp ? LOW_HP_BASE + LOW_HP_BEAT * pulse : 0
     this.red.view.alpha = Math.min(1, flash * HURT_GAIN + low)
-    this.edge.visible = edge > 0.01
-    if (!this.edge.visible) return
+    if (edge <= 0.01) {
+      if (this.edgeOn) this.parkEdge()
+      return
+    }
+    this.edgeOn = true
     let k = 1e6
     if (dx > 1e-6) k = Math.min(k, (this.w - sx) / dx)
     else if (dx < -1e-6) k = Math.min(k, -sx / dx)
