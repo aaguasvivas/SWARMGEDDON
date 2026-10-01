@@ -382,8 +382,20 @@ async function ckpt(browser) {
     !!toast && day && day.ranked && day.ranked.end === 'interrupted' && (await store(b.page, 'daily:ckpt')) === null && stats.dailyRanked === 1,
     { toast: toast && toast.text, ranked: day && day.ranked && { end: day.ranked.end, time: day.ranked.time }, dailyRanked: stats && stats.dailyRanked })
   await b.page.screenshot({ path: path.join(OUT, 'ckpt-toast-375x667.png') })
+  // P17's Daily card: the title reads DAILY #N and its button PRACTICE (PLAY RANKED before the ranked run).
   const label = await findText(b.page, 'DAILY #')
-  check('the menu then offers practice', !!label && label.text.includes('PRACTICE'), label && label.text)
+  const ranked = await findText(b.page, 'PLAY RANKED')
+  const practice = await b.page.evaluate(() => {
+    let hit = false
+    const walk = (o) => {
+      if (!o.visible || hit) return
+      if (o.style && o.text === 'PRACTICE') hit = true
+      else for (const c of o.children) walk(c)
+    }
+    walk(window.__SWARM.app.stage)
+    return hit
+  })
+  check('the menu then offers practice', !!label && !ranked && practice, label && { daily: label.text, practiceButton: practice, rankedButton: !!ranked })
   check('ckpt: no page errors', a.st.pageErrors.length + b.st.pageErrors.length === 0, [...a.st.pageErrors, ...b.st.pageErrors])
   await b.ctx.close()
 

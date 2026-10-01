@@ -780,7 +780,8 @@ export function buildRecapModel(r: RunResult, before: RecapBefore, unlocks: read
     bosses,
     build: buildTiles(r.perks),
     weapons: names.length > 0 ? `Weapons: ${names.join(' · ')}` : '',
-    unlocks: unlocks.map((u) => (u.fresh ? u.line : `${u.feat.name} · ${u.line}`)),
+    // New rewards first, so the card's visible rows never go to `Already yours`.
+    unlocks: [...unlocks].sort((a, b) => Number(b.fresh) - Number(a.fresh)).map((u) => (u.fresh ? u.line : `${u.feat.name} · ${u.line}`)),
     unlockHead: fresh ? 'UNLOCKED' : unlocks.length > 1 ? 'FEATS DONE' : 'FEAT DONE',
     goals,
     primary: r.mode === 'daily' ? (r.ranked ? 'PRACTICE' : 'PRACTICE AGAIN') : 'RETRY',

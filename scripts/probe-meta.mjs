@@ -182,7 +182,7 @@ try {
         stats: S.loadJSON('stats', null),
       }
     })
-    // The toast never covers a menu element, and stays inside the safe area.
+    // The toast covers no menu element but the title (its slot), and stays inside the safe area.
     const cdp = await page.createCDPSession()
     out.toastPlacement = []
     for (const sz of TOAST_SIZES) {
@@ -219,10 +219,11 @@ try {
       const hits = r.items.filter((b) => p.x < b.x + b.w - 0.5 && b.x < p.x + p.w - 0.5 && p.y < b.y + b.h - 0.5 && b.y < p.y + p.h - 0.5)
       assert.equal(r.visible, true, `${sz.w}x${sz.h}: toast shown`)
       assert.equal(r.W, sz.w)
-      assert.deepEqual(hits.map((b) => b.label), [], `${sz.w}x${sz.h}: the toast covers menu items`)
+      // P17: the menu's toast slot is the band over the title, so the title is the one item it may cover.
+      assert.deepEqual(hits.map((b) => b.label).filter((l) => l !== 'SWARMGEDDON'), [], `${sz.w}x${sz.h}: the toast covers menu items`)
       assert.ok(p.x >= sz.insets.left + 16 - 0.5 && p.x + p.w <= sz.w - sz.insets.right - 16 + 0.5, `${sz.w}x${sz.h}: toast inside the side gutters`)
       assert.ok(p.y >= sz.insets.top + 8 - 0.5 && p.y + p.h <= sz.h - sz.insets.bottom, `${sz.w}x${sz.h}: toast inside the safe area`)
-      out.toastPlacement.push({ size: `${sz.w}x${sz.h}`, plate: p, items: r.items.length })
+      out.toastPlacement.push({ size: `${sz.w}x${sz.h}`, plate: p, items: r.items.length, covers: hits.map((b) => b.label) })
     }
     await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: TOAST_SIZES[0].insets })
     await page.setViewport({ width: 375, height: 667, deviceScaleFactor: 1 })
@@ -287,7 +288,7 @@ try {
     await ctx.close()
   }
 
-  // 5. The recap banner names and counts only the new items. The save already
+  // 5. The recap's unlock card shows the new rewards first. The save already
   //    owns the rewards of FIRST CONTACT and SWATTER; a 12 s run with 1,200
   //    kills, Lv 9 and peak x5 finishes 7 feats, 5 of them with new rewards.
   {
@@ -311,22 +312,20 @@ try {
       const before = new Set(S.loadJSON('unlocks', []))
       S.endRun('quit')
       const feats = S.loadJSON('feats', { done: {} })
-      let banner = null
-      const find = (o) => {
-        for (const c of o.children ?? []) {
-          if (banner) return
-          if (c.visible && typeof c.text === 'string' && /^★ (UNLOCKED|FEATS? DONE):/.test(c.text)) banner = c.text
-          else find(c)
-        }
-      }
-      find(S.app.stage)
+      // P16's recap unlock card: a head, up to 3 rows, then `+N more in RECORDS`.
+      const m = S.recap.model
+      const rows = S.recap.unlockRows.filter((t) => t.visible).map((t) => t.text)
+      const more = S.recap.unlockMore.visible ? S.recap.unlockMore.text : ''
       const owned = S.loadJSON('unlocks', [])
-      return { done: Object.keys(feats.done), fresh: owned.filter((id) => !before.has(id)), banner, screen: S.screen }
+      return { done: Object.keys(feats.done), fresh: owned.filter((id) => !before.has(id)), head: m.unlockHead, lines: m.unlocks, rows, more, screen: S.screen }
     })
     assert.equal(out.banner.screen, 'gameover')
     assert.equal(out.banner.done.length, 7, 'feats done')
     assert.equal(out.banner.fresh.length, 5, 'new rewards')
-    assert.ok(/^★ UNLOCKED: .+ \+ .+ (\+3 MORE ★|★\n\+3 MORE)$/.test(out.banner.banner), `banner counts only new items: ${out.banner.banner}`)
+    const already = out.banner.lines.map((l) => / · Already yours$/.test(l))
+    assert.equal(out.banner.head, 'UNLOCKED', 'card head')
+    assert.deepEqual(already, [false, false, false, false, false, true, true], `new rewards first, then the owned ones: ${JSON.stringify(out.banner.lines)}`)
+    assert.ok(out.banner.rows.length === 3 && out.banner.rows.every((r) => !/Already yours/.test(r)) && out.banner.more === '+4 more in RECORDS', `card rows: ${JSON.stringify([out.banner.rows, out.banner.more])}`)
     console.log('PASS 5 recap banner', JSON.stringify(out.banner))
     await ctx.close()
   }

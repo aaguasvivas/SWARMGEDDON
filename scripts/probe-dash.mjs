@@ -85,6 +85,9 @@ function simChecks() {
     const e = w.enemies.active[w.enemies.active.length - 1]
     e.x = e.prevX = x
     e.y = e.prevY = y
+    // Past its emerge (P15: no bite for ENEMY_EMERGE, a boss untargetable for
+    // BOSS_EMERGE), so the checks below see grown enemies.
+    e.bornAt = w.time - 2
     return e
   }
   const shotAt = (x, y, dmg = 14) => {
