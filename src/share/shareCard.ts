@@ -1,6 +1,18 @@
 import type { RunResult } from '../state/runResult.ts'
 import { characterById } from '../content/characters.ts'
 import { arenaById } from '../content/arenas.ts'
+import { FONT, T } from '../ui/tokens.ts'
+
+const SEP = ' \u00b7 '
+const TAGLINE = 'hold the line \u00b7 drown the hive in ichor'
+
+function hex(c: number): string {
+  return '#' + c.toString(16).padStart(6, '0')
+}
+
+function group(v: number): string {
+  return Math.floor(v).toLocaleString('en-US')
+}
 
 function fmtTime(s: number): string {
   const m = Math.floor(s / 60)
@@ -23,7 +35,9 @@ export async function shareRunCard(result: RunResult): Promise<void> {
       await navigator.share({
         files: [file],
         title: 'SWARMGEDDON',
-        text: `I survived ${fmtTime(result.time)} and scored ${result.score} in SWARMGEDDON!`,
+        text: result.mode === 'daily'
+          ? `I scored ${group(result.score)} on SWARMGEDDON Daily #${result.dailyNumber}.`
+          : `I survived ${fmtTime(result.time)} and scored ${group(result.score)} in SWARMGEDDON.`,
       })
       return
     } catch {
@@ -47,85 +61,77 @@ function renderCard(result: RunResult): Promise<Blob | null> {
   canvas.width = S
   canvas.height = S
   const ctx = canvas.getContext('2d')!
+  const world = arenaById(result.arena)
+  const mono = (px: number, weight = 500): string => `${weight} ${px}px ${FONT.mono}`
+  const display = (px: number): string => `900 ${px}px ${FONT.display}`
 
-  // Background.
-  ctx.fillStyle = '#06080f'
+  ctx.fillStyle = hex(T.bgVoid)
   ctx.fillRect(0, 0, S, S)
 
-  // Ichor blotches (denser toward the bottom: the floor drowned in gore).
+  // Ichor blotches in the run's world colors, denser toward the bottom.
   for (let i = 0; i < 90; i++) {
     const x = Math.random() * S
     const y = S * 0.35 + Math.random() * S * 0.65
     const r = 20 + Math.random() * 90
     ctx.globalAlpha = 0.05 + Math.random() * 0.1
-    ctx.fillStyle = Math.random() < 0.82 ? '#4ecb3a' : '#7a2fd6'
+    ctx.fillStyle = hex(Math.random() < 0.82 ? world.ichorA : world.ichorB)
     ctx.beginPath()
     ctx.arc(x, y, r, 0, Math.PI * 2)
     ctx.fill()
   }
   ctx.globalAlpha = 1
 
-  // Border glow.
-  ctx.strokeStyle = 'rgba(61,240,192,0.35)'
+  ctx.strokeStyle = hex(T.accentPlayer)
+  ctx.globalAlpha = 0.35
   ctx.lineWidth = 6
   ctx.strokeRect(24, 24, S - 48, S - 48)
-
+  ctx.globalAlpha = 1
   ctx.textAlign = 'center'
 
-  // Title.
-  ctx.fillStyle = '#1ce8b5'
-  ctx.font = 'bold 92px ui-monospace, Menlo, monospace'
-  ctx.fillText('SWARMGEDDON', S / 2, 170)
+  ctx.fillStyle = hex(T.accentPlayer)
+  ctx.font = display(88)
+  ctx.fillText('SWARMGEDDON', S / 2, 170, S - 120)
 
-  ctx.fillStyle = '#7dffd6'
-  ctx.font = '30px ui-monospace, Menlo, monospace'
-  ctx.fillText(`${result.mode === 'daily' ? 'DAILY CHALLENGE' : 'ENDLESS'}  ·  ${result.date}`, S / 2, 226)
-  ctx.fillStyle = '#5f8f83'
-  ctx.font = '24px ui-monospace, Menlo, monospace'
-  ctx.fillText(`${characterById(result.character).name}  ·  ${arenaById(result.arena).name}`, S / 2, 262)
+  const daily = result.mode === 'daily'
+  ctx.fillStyle = hex(daily ? T.accentGold : T.textPrimary)
+  ctx.font = mono(32, 800)
+  ctx.fillText(daily ? `DAILY #${result.dailyNumber}${SEP}${result.ranked ? 'RANKED' : 'PRACTICE'}` : 'STANDARD', S / 2, 236)
+  ctx.fillStyle = hex(T.textMuted)
+  ctx.font = mono(28)
+  const threat = result.threat > 0 ? `${SEP}T${result.threat}` : ''
+  ctx.fillText(`${characterById(result.character).name}${SEP}${world.name}${threat}${SEP}LV ${result.level}`, S / 2, 284)
+  if (result.cleared) {
+    ctx.fillStyle = hex(T.accentGold)
+    ctx.font = mono(28, 800)
+    ctx.fillText(`CLEARED IN ${fmtTime(result.clearMs / 1000)}`, S / 2, 330)
+  }
 
-  // Survivor glyph.
-  ctx.fillStyle = '#1ce8b5'
-  ctx.beginPath()
-  ctx.arc(S / 2, 360, 56, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.fillStyle = '#06231d'
-  ctx.beginPath()
-  ctx.arc(S / 2 + 18, 360, 24, 0, Math.PI * 2)
-  ctx.fill()
+  ctx.fillStyle = hex(T.accentXp)
+  ctx.font = mono(140, 800)
+  ctx.fillText(group(result.score), S / 2, 560, S - 120)
+  ctx.fillStyle = hex(T.textMuted)
+  ctx.font = mono(28, 800)
+  ctx.fillText('SCORE', S / 2, 606)
 
-  // Score (the hero number).
-  ctx.fillStyle = '#57c8ff'
-  ctx.font = 'bold 150px ui-monospace, Menlo, monospace'
-  ctx.fillText(String(result.score), S / 2, 560)
-  ctx.fillStyle = '#3a5a52'
-  ctx.font = '28px ui-monospace, Menlo, monospace'
-  ctx.fillText('SCORE', S / 2, 600)
-
-  // Stat trio.
   const stats: [string, string][] = [
     ['TIME', fmtTime(result.time)],
-    ['KILLS', String(result.kills)],
-    ['LEVEL', String(result.level)],
+    ['KILLS', group(result.kills)],
+    ['PEAK', 'x' + Math.max(1, result.peakTier)],
   ]
   const colW = S / 3
   stats.forEach(([label, val], i) => {
     const cx = colW * i + colW / 2
-    ctx.fillStyle = '#eafff0'
-    ctx.font = 'bold 64px ui-monospace, Menlo, monospace'
-    ctx.fillText(val, cx, 760)
-    ctx.fillStyle = '#3a5a52'
-    ctx.font = '26px ui-monospace, Menlo, monospace'
-    ctx.fillText(label, cx, 800)
+    ctx.fillStyle = hex(T.textHi)
+    ctx.font = mono(64, 800)
+    ctx.fillText(val, cx, 770, colW - 40)
+    ctx.fillStyle = hex(T.textMuted)
+    ctx.font = mono(26, 800)
+    ctx.fillText(label, cx, 812)
   })
 
-  // Footer.
-  ctx.fillStyle = '#3a5a52'
-  ctx.font = '24px ui-monospace, Menlo, monospace'
-  ctx.fillText(`seed ${result.seed >>> 0}`, S / 2, S - 70)
-  ctx.fillStyle = '#7dffd6'
-  ctx.font = '26px ui-monospace, Menlo, monospace'
-  ctx.fillText('survive the brood', S / 2, S - 36)
+  ctx.fillStyle = hex(T.textPrimary)
+  ctx.font = mono(26)
+  ctx.fillText(TAGLINE, S / 2, S - 48)
 
   return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'))
 }

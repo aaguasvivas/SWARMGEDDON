@@ -142,13 +142,20 @@ export class Callouts {
     this.qSub[slot] = sub
   }
 
+  /** No line shows and none waits (a hint may start). */
+  idle(): boolean {
+    if (this.prio >= 0) return false
+    for (let i = 0; i < QUEUE; i++) if (this.qPrio[i]! >= 0) return false
+    return true
+  }
+
   /** Screen box of the line showing now, into `out` (x0, y0, x1, y1); false when none shows. */
   bounds(out: Float32Array): boolean {
     if (this.prio < 0 || !this.box.visible) return false
     const k = this.base
-    const hw = (Math.max(this.title.width, this.sub.visible ? this.sub.width : 0) / 2) * k
+    const hw = (Math.max(this.title.visible ? this.title.width : 0, this.sub.visible ? this.sub.width : 0) / 2) * k
     out[0] = this.cx - hw
-    out[1] = this.laneY + ((this.sub.visible ? TITLE_DY : 0) - TITLE_PX / 2 - 4) * k
+    out[1] = this.laneY + (this.title.visible ? (this.sub.visible ? TITLE_DY : 0) - TITLE_PX / 2 - 4 : this.sub.y - this.sub.height / 2 - 4) * k
     out[2] = this.cx + hw
     out[3] = this.laneY + ((this.sub.visible ? this.sub.y + this.sub.height / 2 : TITLE_PX / 2) + 4) * k
     return true
@@ -215,8 +222,10 @@ export class Callouts {
     const c = ensureContrast(color, INK)
     this.title.text = title
     this.title.style.fill = c
+    // A hint line (A15) has no title: its sub sits on the lane center.
+    this.title.visible = title !== ''
     this.subText = sub
-    this.sub.style.fill = lerpHex(c, T.textHi, SUB_LIGHTEN)
+    this.sub.style.fill = this.title.visible ? lerpHex(c, T.textHi, SUB_LIGHTEN) : c
     this.sub.visible = sub !== ''
     this.title.y = sub ? TITLE_DY : 0
     this.fit()
@@ -235,7 +244,7 @@ export class Callouts {
       fitWidth(sub, this.maxW, minK)
     }
     // A second line grows downward, so the title keeps its place.
-    sub.y = SUB_DY + (sub.text.indexOf('\n') >= 0 ? (SUB_LINE_PX * sub.scale.y) / 2 : 0)
+    sub.y = this.title.visible ? SUB_DY + (sub.text.indexOf('\n') >= 0 ? (SUB_LINE_PX * sub.scale.y) / 2 : 0) : 0
   }
 }
 

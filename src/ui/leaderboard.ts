@@ -3,27 +3,158 @@ import { COLORS } from '../config.ts'
 import type { Insets } from '../platform/safeArea.ts'
 import { KNOWN_WORLDS, dailySpec } from '../core/rules.ts'
 import { arenaById } from '../content/arenas.ts'
+import { characterById } from '../content/characters.ts'
+import { paintById } from '../content/paints.ts'
 import { todayUtc } from '../state/daily.ts'
-import { Button } from './button.ts'
-import { FONT, T } from './tokens.ts'
+import { Button, Segmented } from './button.ts'
+import { clip } from './goalsPanel.ts'
+import { IconButton } from './iconButton.ts'
+import { ScrollView, type ScrollRow } from './scroll.ts'
+import { FONT, INK, RADIUS, T, TARGET, uiScale } from './tokens.ts'
 import { fetchBoard, getPlayerName, optInState, type BoardResult, type BoardRow } from '../net/leaderboard.ts'
 
-const ROWS = 12
-const ROW_MIN = 24
-const TAB_W = 104
-const GAP = 8
-const JOIN_W = 96
+const LIMIT = 50
+/** Two lines: the name, then the THREAT chip and the country under it. */
+const ROW_H = 36
+const LINE1_Y = 11
+const LINE2_Y = 27
+const BAR_H = 52
+const HEAD_H = 18
+const LEFT_W = 260
+/** Design widths of the row columns (12 px text). */
+const C_RANK = 30
+const C_GLYPH = 16
+const C_TIME = 40
+const C_KILLS = 44
+const C_SCORE = 76
+const THREAT_W = 26
+/** The list never grows wider than this (design px); a wide screen centers it. */
+const LIST_MAX_W = 620
+const GAP = 6
+/** Room kept right of the rows for the scroll thumb. */
+const THUMB_ROOM = 8
+/** Below this screen width (design px) the KILLS column hides. */
+const KILLS_MIN_W = 360
+/** Top-3 rank chips; every chip takes INK ink. */
+const PODIUM = [T.accentGold, T.textHi, T.rarityEvolution] as const
 
 type Tab = 'daily' | 'week' | 'all'
-const TABS: { key: Tab; label: string }[] = [
-  { key: 'daily', label: 'DAILY' },
-  { key: 'week', label: 'THIS WEEK' },
-  { key: 'all', label: 'ALL TIME' },
-]
+const TABS: readonly Tab[] = ['daily', 'week', 'all']
+const SEP = ' · '
 
-/** Leaderboard screen: the Daily board and the Standard boards of one world
- *  (this week, all time), the player's own row, and the opt-in bar. Every
- *  failure shows as an offline line; nothing retries on its own. */
+function group(v: number): string {
+  return Math.floor(v).toLocaleString('en-US')
+}
+
+function clock(ms: number): string {
+  const s = Math.floor(ms / 1000)
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0')
+}
+
+/** One board row: rank chip, pilot glyph in the row's paint, the name over the
+ *  THREAT chip and the country, TIME, KILLS and SCORE. Pooled; filled at event rate. */
+class RowView {
+  readonly view = new Container()
+  private readonly chip = new Graphics()
+  private readonly rank: Text
+  private readonly glyph = new Graphics()
+  private readonly name: Text
+  private readonly country: Text
+  private readonly threatBg = new Graphics()
+  private readonly threat: Text
+  private readonly time: Text
+  private readonly kills: Text
+  private readonly score: Text
+
+  constructor() {
+    const t = (size: number, fill: number, weight: '500' | '800'): Text => new Text({ text: '', style: { fontFamily: FONT.mono, fontWeight: weight, fontSize: size, fill } })
+    this.rank = t(12, T.textHi, '800')
+    this.rank.anchor.set(0.5)
+    this.name = t(13, T.textHi, '800')
+    this.name.anchor.set(0, 0.5)
+    this.country = t(12, T.textMuted, '500')
+    this.country.anchor.set(0, 0.5)
+    this.threat = t(12, INK, '800')
+    this.threat.anchor.set(0.5)
+    this.time = t(12, T.textMuted, '500')
+    this.time.anchor.set(1, 0.5)
+    this.kills = t(12, T.textMuted, '500')
+    this.kills.anchor.set(1, 0.5)
+    this.score = t(13, T.accentGold, '800')
+    this.score.anchor.set(1, 0.5)
+    this.view.addChild(this.chip, this.rank, this.glyph, this.name, this.country, this.threatBg, this.threat, this.time, this.kills, this.score)
+  }
+
+  fill(e: BoardRow, w: number, kills: boolean): void {
+    const cy = ROW_H / 2
+    const podium = e.rank <= 3 ? PODIUM[e.rank - 1]! : -1
+    this.chip.clear()
+    this.chip.roundRect(0, cy - 10, C_RANK, 20, RADIUS.chip).fill(podium >= 0 ? podium : T.surfaceRaised)
+    this.rank.text = String(e.rank)
+    this.rank.style.fill = podium >= 0 ? INK : T.textHi
+    this.rank.position.set(C_RANK / 2, cy)
+    drawGlyph(this.glyph, e.pilot, e.paint)
+    this.glyph.position.set(C_RANK + GAP + C_GLYPH / 2, cy)
+
+    let x = w
+    this.score.text = group(e.score)
+    this.score.position.set(x, cy)
+    x -= C_SCORE + GAP
+    this.kills.visible = kills
+    if (kills) {
+      this.kills.text = group(e.kills)
+      this.kills.position.set(x, cy)
+      x -= C_KILLS + GAP
+    }
+    this.time.text = clock(e.timeMs)
+    this.time.position.set(x, cy)
+    x -= C_TIME + GAP
+
+    // The name takes the whole width left of the TIME column; the THREAT chip
+    // and the country sit on the line under it.
+    const nx = C_RANK + GAP + C_GLYPH + GAP
+    const right = x
+    this.name.text = e.name
+    this.name.position.set(nx, LINE1_Y)
+    clip(this.name, right - nx)
+    let cx = nx
+    this.threatBg.clear()
+    this.threat.visible = e.threat > 0
+    if (e.threat > 0) {
+      this.threat.text = 'T' + e.threat
+      this.threatBg.roundRect(cx, LINE2_Y - 8, THREAT_W, 16, RADIUS.chip).fill(T.accentDanger)
+      this.threat.position.set(cx + THREAT_W / 2, LINE2_Y)
+      cx += THREAT_W + 6
+    }
+    this.country.text = e.country ?? ''
+    this.country.position.set(cx, LINE2_Y)
+    this.country.visible = !!e.country
+  }
+}
+
+/** A small hull per pilot (NOVA round, EMBER wedge, VESPER hex) in the row's paint. */
+function drawGlyph(g: Graphics, pilot: string, paintId: string): void {
+  const c = characterById(pilot)
+  const p = paintById(paintId)
+  const body = p ? p.body : c.colors.body
+  const outline = p ? p.outline : c.colors.outline
+  const r = 7
+  g.clear()
+  if (c.shape === 'dart') g.poly([r * 1.2, 0, -r, -r * 0.85, -r * 0.5, 0, -r, r * 0.85])
+  else if (c.shape === 'heavy') {
+    const pts: number[] = []
+    for (let i = 0; i < 6; i++) pts.push(Math.cos((Math.PI / 3) * i) * r, Math.sin((Math.PI / 3) * i) * r)
+    g.poly(pts)
+  } else g.circle(0, 0, r)
+  g.fill(body).stroke({ width: 1.5, color: outline === INK ? T.lineStrong : outline })
+}
+
+/**
+ * The leaderboard (section 8.5): DAILY, THIS WEEK and ALL TIME, world chips
+ * under the Standard views, a scrolling list, the pinned YOU row, and the
+ * opt-in bar with JOIN. Every failure (no network, a server still on v1, a
+ * client too old) shows one plain line; nothing retries on its own.
+ */
 export class Leaderboard {
   readonly view = new Container()
   onBack: () => void = () => {}
@@ -33,145 +164,153 @@ export class Leaderboard {
   /** Tap on the name while posting: edit it; resolves when done. */
   onEditName: () => Promise<void> = async () => {}
 
-  private backdrop = new Graphics()
-  private title: Text
-  private nameLabel: Text
-  private nameHit = new Container()
-  private subhead: Text
-  private status: Text
-  private me: Text
-  private tabBtns: Button[] = []
-  private underline = new Graphics()
-  private rows: { left: Text; right: Text }[] = []
-  private world: Button
-  private join: Button
-  private back: Button
+  private readonly root = new Container()
+  private readonly backdrop = new Graphics()
+  private readonly title: Text
+  private readonly close = new IconButton('close')
+  private readonly nameLabel: Text
+  private readonly nameHit = new Container()
+  private tabs: Segmented
+  private worlds: Segmented
+  private readonly subhead: Text
+  private readonly head: Text[]
+  private readonly scroll = new ScrollView()
+  private readonly rows: RowView[] = []
+  private readonly status: Text
+  private readonly retry: Button
+  private readonly bar = new Graphics()
+  private readonly me: Text
+  private readonly join: Button
   private tab: Tab = 'daily'
   private worldId = KNOWN_WORLDS[0]!
   private reqId = 0
   /** The posts a JOIN started: a board loads after they land, so it shows them. */
   private posting: Promise<unknown> = Promise.resolve()
-  /** Top of the world row, the list column and the rows that fit. */
-  private worldY = 0
-  private listX = 0
+  private last: BoardResult | null = null
+  private readonly barRect = new Rectangle()
   private listW = 0
-  private meY = 0
-  private shownRows = ROWS
+  private showKills = true
+  private segW = 0
+  private w = 0
+  private h = 0
+  private insets: Insets = { top: 0, right: 0, bottom: 0, left: 0 }
 
   constructor() {
-    this.title = new Text({ text: 'LEADERBOARD', style: { fontFamily: FONT.display, fontSize: 28, fontWeight: '900', fill: COLORS.player, letterSpacing: 2 } })
-    this.title.anchor.set(0.5)
+    this.backdrop.eventMode = 'static'
+    this.title = new Text({ text: 'LEADERBOARD', style: { fontFamily: FONT.display, fontSize: 22, fontWeight: '900', fill: COLORS.player, letterSpacing: 2 } })
+    this.title.anchor.set(0, 0.5)
+    this.close.onClick = () => this.onBack()
 
-    this.nameLabel = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 13, fill: T.textPrimary } })
+    this.nameLabel = new Text({ text: '', style: { fontFamily: FONT.mono, fontWeight: '800', fontSize: 13, fill: T.textPrimary } })
     this.nameLabel.anchor.set(0.5)
     this.nameHit.addChild(this.nameLabel)
     this.nameHit.eventMode = 'static'
     this.nameHit.cursor = 'pointer'
     this.nameHit.on('pointertap', () => void this.onEditName().then(() => this.refreshName()))
 
-    this.subhead = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 12, fill: T.textMuted, letterSpacing: 1 } })
+    this.tabs = this.makeTabs(343)
+    this.worlds = this.makeWorlds(343)
+    this.subhead = new Text({ text: '', style: { fontFamily: FONT.mono, fontWeight: '800', fontSize: 13, letterSpacing: 1, fill: T.accentGold } })
     this.subhead.anchor.set(0.5)
-    this.status = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 14, fill: T.textMuted, align: 'center', wordWrap: true, wordWrapWidth: 320 } })
-    this.status.anchor.set(0.5)
-    this.me = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 14, fontWeight: '800', fill: COLORS.player } })
-    this.me.anchor.set(0.5)
-
-    for (const t of TABS) {
-      const b = new Button(t.label, TAB_W, 44, 'secondary', 13)
-      b.onClick = () => this.select(t.key)
-      this.tabBtns.push(b)
+    this.head = ['#', 'PILOT', 'TIME', 'KILLS', 'SCORE'].map(
+      (s) => new Text({ text: s, style: { fontFamily: FONT.mono, fontWeight: '800', fontSize: 12, letterSpacing: 1, fill: T.textMuted } }),
+    )
+    for (let i = 0; i < LIMIT; i++) {
+      const r = new RowView()
+      r.view.visible = false
+      this.rows.push(r)
+      this.scroll.content.addChild(r.view)
     }
-    this.world = new Button('', 200, 44, 'secondary', 13)
-    this.world.onClick = () => {
-      const i = KNOWN_WORLDS.indexOf(this.worldId)
-      this.worldId = KNOWN_WORLDS[(i + 1) % KNOWN_WORLDS.length]!
-      void this.load()
-    }
+    this.status = new Text({ text: '', style: { fontFamily: FONT.mono, fontWeight: '500', fontSize: 14, lineHeight: 20, fill: T.textHi, align: 'center', wordWrap: true } })
+    this.status.anchor.set(0.5, 0)
+    this.retry = new Button('TRY AGAIN', 160, TARGET.compact, 'secondary', 14)
+    this.retry.onClick = () => void this.load()
+    this.me = new Text({ text: '', style: { fontFamily: FONT.mono, fontWeight: '800', fontSize: 13, fill: COLORS.player, wordWrap: true } })
+    this.me.anchor.set(0, 0.5)
+    this.join = new Button('JOIN', 96, TARGET.compact, 'primary', 15)
+    this.join.onClick = () =>
+      void this.onJoin().then((joined) => {
+        if (!joined) return
+        this.posting = joined.posts
+        this.refreshName()
+        this.layout(this.w, this.h, this.insets)
+        void this.load()
+      })
 
-    for (let i = 0; i < ROWS; i++) {
-      const left = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 14, fill: COLORS.hudText } })
-      left.anchor.set(0, 0.5)
-      const right = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 14, fontWeight: 'bold', fill: 0xffe066 } })
-      right.anchor.set(1, 0.5)
-      this.rows.push({ left, right })
-    }
-
-    this.join = new Button('JOIN', JOIN_W, 44, 'primary', 14)
-    this.join.onClick = () => void this.onJoin().then((joined) => {
-      if (!joined) return
-      this.posting = joined.posts
-      this.refreshName()
-      void this.load()
-    })
-    this.back = new Button('BACK', 160, 46, 'secondary', 16)
-    this.back.onClick = () => this.onBack()
-
-    this.view.addChild(this.backdrop, this.title, this.nameHit, this.subhead, this.underline, this.world.view)
-    for (const b of this.tabBtns) this.view.addChild(b.view)
-    for (const r of this.rows) this.view.addChild(r.left, r.right)
-    this.view.addChild(this.status, this.me, this.join.view, this.back.view)
+    this.root.addChild(this.backdrop, this.title, this.close.view, this.nameHit, this.tabs.view, this.worlds.view, this.subhead, ...this.head)
+    this.root.addChild(this.scroll.view, this.status, this.retry.view, this.bar, this.me, this.join.view)
+    this.view.addChild(this.root)
     this.view.visible = false
   }
 
-  /** Portrait: one centered column. Short screens: the header, tabs and BACK
-   *  in a left column, the rows and the YOU line in a right one. */
   layout(w: number, h: number, insets: Insets): void {
+    this.w = w
+    this.h = h
+    this.insets = insets
+    if (!this.view.visible) return
+    const s = uiScale(w, h)
+    this.root.scale.set(s)
+    const W = w / s
+    const H = h / s
+    const L = insets.left / s
+    const R = insets.right / s
+    const top = insets.top / s
+    const bottom = H - insets.bottom / s
+    const landscape = W > H
     this.backdrop.clear()
-    this.backdrop.rect(0, 0, w, h).fill({ color: 0x05070d, alpha: 0.9 })
-    const short = h < 560
-    const left = insets.left + 16
-    const right = w - insets.right - 16
-    const colW = TABS.length * TAB_W + (TABS.length - 1) * GAP
-    const hx = short ? left + colW / 2 : (left + right) / 2
-    let y = short ? insets.top + 28 : Math.max(insets.top + 40, h * 0.5 - 270)
-    this.title.scale.set(1)
-    if (this.title.width > colW) this.title.scale.set(colW / this.title.width)
-    this.title.position.set(hx, y)
-    y += 30
-    this.nameHit.position.set(hx, y)
-    this.nameHit.hitArea = new Rectangle(-colW / 2, -22, colW, 44)
-    y += 26
-    let tx = hx - colW / 2
-    for (const b of this.tabBtns) {
-      b.position(tx, y)
-      tx += TAB_W + GAP
-    }
-    y += 52
-    this.worldY = y
-    this.world.position(hx - 100, y)
-    this.subhead.position.x = hx
-    y += 44 + 32
+    this.backdrop.rect(0, 0, W, H).fill(T.bgVoid)
+    this.backdrop.hitArea = new Rectangle(0, 0, W, H)
+    const x0 = L + 16
+    const cw = W - L - R - 32
+    this.title.position.set(x0, top + 12 + TARGET.compact / 2)
+    this.close.position(W - R - 16 - TARGET.compact, top + 12)
+    this.showKills = W >= KILLS_MIN_W
 
-    const backY = h - insets.bottom - 16 - 46
-    this.back.position(hx - 80, backY)
-    let listTop: number
-    let listBottom: number
-    if (short) {
-      this.listX = left + colW + 24
-      this.listW = right - this.listX
-      listTop = insets.top + 16
-      listBottom = h - insets.bottom - 16 - 44 - 8
-    } else {
-      this.listW = Math.min(440, right - left)
-      this.listX = (left + right - this.listW) / 2
-      listTop = y
-      listBottom = backY - 16 - 44 - 8
+    // The controls column: one centered column in portrait, the left one in landscape.
+    const colW = landscape ? Math.min(LEFT_W, cw * 0.42) : Math.min(cw, 420)
+    const ccx = landscape ? x0 + colW / 2 : x0 + cw / 2
+    let y = top + 12 + TARGET.compact + 8
+    const posting = optInState() === true
+    this.nameHit.visible = posting
+    if (posting) {
+      this.nameHit.position.set(ccx, y + 12)
+      this.nameHit.hitArea = new Rectangle(-colW / 2, -TARGET.compact / 2, colW, TARGET.compact)
+      y += 32
     }
-    this.meY = listBottom + 8 + 22
-    this.shownRows = Math.max(1, Math.min(ROWS, Math.floor((listBottom - listTop) / ROW_MIN)))
-    const rowH = Math.min(28, (listBottom - listTop) / this.shownRows)
-    for (let i = 0; i < ROWS; i++) {
-      const ry = listTop + rowH * (i + 0.5)
-      this.rows[i]!.left.position.set(this.listX, ry)
-      this.rows[i]!.right.position.set(this.listX + this.listW, ry)
-      this.rows[i]!.left.visible = this.rows[i]!.right.visible = i < this.shownRows
+    if (Math.round(colW) !== this.segW) {
+      this.segW = Math.round(colW)
+      this.rebuildSegments(colW)
     }
-    this.status.style.wordWrapWidth = this.listW
-    this.status.position.set(this.listX + this.listW / 2, listTop + rowH * 3)
-    this.join.position(this.listX + this.listW - JOIN_W, this.meY - 22)
-    this.drawUnderline()
-    this.placeMe()
-    this.placeSubhead()
+    this.tabs.view.position.set(ccx - colW / 2, y)
+    y += Segmented.H + 8
+    this.worlds.view.position.set(ccx - colW / 2, y)
+    this.subhead.position.set(ccx, y + Segmented.H / 2)
+    y += Segmented.H + 12
+
+    // The YOU / JOIN bar: under the list in portrait, at the left column's foot in landscape.
+    const barW = landscape ? colW : Math.min(cw, 520)
+    const barX = landscape ? x0 : x0 + (cw - barW) / 2
+    const barY = bottom - 16 - BAR_H
+    this.barRect.x = barX
+    this.barRect.y = barY
+    this.barRect.width = barW
+    this.me.position.set(barX + 12, barY + BAR_H / 2)
+    this.join.position(barX + barW - 12 - 96, barY + (BAR_H - TARGET.compact) / 2)
+
+    const areaX = landscape ? x0 + colW + 24 : barX
+    const areaW = landscape ? W - R - 16 - areaX : barW
+    this.listW = Math.min(areaW, LIST_MAX_W)
+    const listX = areaX + (areaW - this.listW) / 2
+    const listTop = (landscape ? top + 12 + TARGET.compact + 8 : y) + HEAD_H + 4
+    const listBottom = landscape ? bottom - 12 : barY - 8
+    this.placeHead(listX, listTop - HEAD_H - 4)
+    const rowsFit = Math.max(1, Math.floor((listBottom - listTop) / ROW_H))
+    this.scroll.setViewport(listX, listTop, this.listW, rowsFit * ROW_H)
+    this.status.style.wordWrapWidth = this.listW - 24
+    this.status.position.set(listX + this.listW / 2, listTop + ROW_H)
+    this.retry.position(listX + this.listW / 2 - 80, listTop + ROW_H + 52)
+    if (this.last) this.show(this.last)
+    this.placeBar()
   }
 
   /** Open on `worldId`'s Standard boards (the Daily tab first). */
@@ -179,11 +318,69 @@ export class Leaderboard {
     if (KNOWN_WORLDS.includes(worldId)) this.worldId = worldId
     this.view.visible = true
     this.refreshName()
-    this.select('daily')
+    this.tab = 'daily'
+    this.tabs.set(0)
+    this.worlds.set(Math.max(0, KNOWN_WORLDS.indexOf(this.worldId)))
+    this.layout(this.w, this.h, this.insets)
+    void this.load()
   }
 
   hide(): void {
     this.view.visible = false
+  }
+
+  isOpen(): boolean {
+    return this.view.visible
+  }
+
+  private makeTabs(w: number): Segmented {
+    const s = new Segmented(['DAILY', 'THIS WEEK', 'ALL TIME'], w, 13)
+    s.onChange = (i) => {
+      this.tab = TABS[i]!
+      void this.load()
+    }
+    return s
+  }
+
+  private makeWorlds(w: number): Segmented {
+    const s = new Segmented(KNOWN_WORLDS.map((id) => id.toUpperCase()), w, 13)
+    s.onChange = (i) => {
+      this.worldId = KNOWN_WORLDS[i]!
+      void this.load()
+    }
+    return s
+  }
+
+  private rebuildSegments(w: number): void {
+    for (const [old, make] of [
+      [this.tabs, (x: number) => (this.tabs = this.makeTabs(x))],
+      [this.worlds, (x: number) => (this.worlds = this.makeWorlds(x))],
+    ] as const) {
+      const i = this.root.getChildIndex(old.view)
+      old.view.destroy({ children: true })
+      const s = make(w)
+      this.root.addChildAt(s.view, i)
+    }
+    this.tabs.set(TABS.indexOf(this.tab))
+    this.worlds.set(Math.max(0, KNOWN_WORLDS.indexOf(this.worldId)))
+  }
+
+  private placeHead(x: number, y: number): void {
+    const [rank, pilot, time, kills, score] = this.head as [Text, Text, Text, Text, Text]
+    rank.anchor.set(0.5, 0)
+    rank.position.set(x + C_RANK / 2, y)
+    pilot.position.set(x + C_RANK + GAP, y)
+    let rx = x + this.listW - THUMB_ROOM
+    score.anchor.set(1, 0)
+    score.position.set(rx, y)
+    rx -= C_SCORE + GAP
+    kills.anchor.set(1, 0)
+    if (this.showKills) {
+      kills.position.set(rx, y)
+      rx -= C_KILLS + GAP
+    }
+    time.anchor.set(1, 0)
+    time.position.set(rx, y)
   }
 
   private refreshName(): void {
@@ -192,98 +389,74 @@ export class Leaderboard {
     this.nameLabel.text = posting ? `NAME: ${getPlayerName()}  (TAP TO EDIT)` : ''
   }
 
-  private select(tab: Tab): void {
-    this.tab = tab
-    this.drawUnderline()
-    void this.load()
-  }
-
-  private drawUnderline(): void {
-    this.underline.clear()
-    const idx = TABS.findIndex((t) => t.key === this.tab)
-    const btn = this.tabBtns[idx]
-    if (!btn) return
-    const x = btn.view.position.x
-    const yb = btn.view.position.y + 46
-    this.underline.roundRect(x + 12, yb, TAB_W - 24, 3, 1.5).fill(COLORS.player)
-  }
-
   private async load(): Promise<void> {
     const daily = this.tab === 'daily'
     const spec = dailySpec(todayUtc())
-    const worldName = arenaById(daily ? spec.world : this.worldId).name
-    this.world.view.visible = !daily
-    this.world.setText(worldName)
-    this.subhead.text = daily ? `DAILY #${spec.number} · ${worldName}` : 'TAP THE WORLD TO SWITCH IT'
-    this.placeSubhead()
-    for (const r of this.rows) {
-      r.left.text = ''
-      r.right.text = ''
-    }
-    this.me.text = ''
+    this.worlds.view.visible = !daily
+    this.subhead.visible = daily
+    this.subhead.text = `DAILY #${spec.number}${SEP}${arenaById(spec.world).name}`
+    this.last = null
+    for (const r of this.rows) r.view.visible = false
+    this.scroll.setRows([], 0)
+    this.scroll.scrollTo(0)
     this.status.text = 'LOADING'
-    this.placeMe()
+    this.status.visible = true
+    for (const t of this.head) t.visible = false
+    this.retry.view.visible = false
+    this.placeBar()
     const id = ++this.reqId
     await this.posting
     if (id !== this.reqId || !this.view.visible) return
     this.refreshName() // a post can come back renamed
-    const res = await fetchBoard(daily ? { board: 'daily', day: spec.date, limit: ROWS } : { board: 'endless', world: this.worldId, period: this.tab === 'week' ? 'week' : 'all', limit: ROWS })
+    const res = await fetchBoard(daily ? { board: 'daily', day: spec.date, limit: LIMIT } : { board: 'endless', world: this.worldId, period: this.tab === 'week' ? 'week' : 'all', limit: LIMIT })
     if (id !== this.reqId || !this.view.visible) return // a newer tab switch superseded this fetch
+    this.last = res
     this.show(res)
+    this.placeBar()
   }
 
   private show(res: BoardResult): void {
+    for (const t of this.head) t.visible = res.ok && res.rows.length > 0
+    if (!this.showKills) this.head[3]!.visible = false
     if (!res.ok) {
       this.status.text =
         res.reason === 'gone' ? 'The leaderboard is offline.' : res.reason === 'outdated' ? 'Update the game to see the leaderboard.' : 'Could not reach the leaderboard.'
-      this.placeMe()
+      this.status.visible = true
+      this.retry.view.visible = res.reason === 'offline'
       return
     }
+    this.retry.view.visible = false
+    this.status.visible = res.rows.length === 0
     this.status.text = res.rows.length === 0 ? 'No scores yet. Be the first.' : ''
-    res.rows.slice(0, this.shownRows).forEach((e, i) => this.fillRow(i, e))
-    if (optInState() === true) {
-      this.me.text = res.me
-        ? `YOU  #${res.me.rank.toLocaleString('en-US')} OF ${res.me.of.toLocaleString('en-US')} · TOP ${res.me.pct}%`
-        : 'YOU  no score on this board yet'
-    }
-    this.placeMe()
-  }
-
-  /** The Daily's subhead takes the world button's place; a Standard one sits under it. */
-  private placeSubhead(): void {
-    this.subhead.position.y = this.tab === 'daily' ? this.worldY + 22 : this.worldY + 44 + 16
+    const shown: ScrollRow[] = []
+    res.rows.slice(0, LIMIT).forEach((e, i) => {
+      const r = this.rows[i]!
+      r.fill(e, this.listW - THUMB_ROOM, this.showKills)
+      r.view.y = i * ROW_H
+      shown.push({ view: r.view, h: ROW_H })
+    })
+    for (let i = res.rows.length; i < this.rows.length; i++) this.rows[i]!.view.visible = false
+    this.scroll.setRows(shown, shown.length * ROW_H)
   }
 
   /** The YOU line while posting; the opt-in bar with JOIN otherwise. */
-  private placeMe(): void {
+  private placeBar(): void {
     const posting = optInState() === true
     this.join.view.visible = !posting
-    this.me.position.y = this.meY
+    const b = this.barRect
+    this.bar.clear()
+    this.bar.roundRect(b.x, b.y, b.width, BAR_H, RADIUS.card).fill(T.surfaceRaised).stroke({ width: 2, color: posting ? T.accentPlayer : T.lineStrong })
+    this.me.style.wordWrapWidth = b.width - 24 - (posting ? 0 : 96 + 8)
+    const res = this.last
     if (!posting) {
       this.me.text = 'You are not posting scores.'
-      this.me.style.fill = T.textMuted
-      this.me.style.wordWrap = true
-      this.me.style.wordWrapWidth = this.listW - JOIN_W - 12
-      this.me.anchor.set(0, 0.5)
-      this.me.position.x = this.listX
-    } else {
-      this.me.style.fill = COLORS.player
-      this.me.style.wordWrap = false
-      this.me.anchor.set(0.5)
-      this.me.position.x = this.listX + this.listW / 2
+      this.me.style.fill = T.textHi
+    } else if (res && res.ok) {
+      this.me.text = res.me ? `YOU  #${group(res.me.rank)} OF ${group(res.me.of)}${SEP}TOP ${res.me.pct}%` : 'YOU  no score on this board yet'
+      this.me.style.fill = res.me ? COLORS.player : T.textMuted
     }
-  }
-
-  private fillRow(i: number, e: BoardRow): void {
-    const row = this.rows[i]
-    if (!row) return
-    const loc = e.country ? ` ${e.country}` : ''
-    const threat = e.threat > 0 ? ` T${e.threat}` : ''
-    row.right.text = e.score.toLocaleString('en-US')
-    row.left.text = `${String(e.rank).padStart(2)}  ${e.name}${loc}${threat}`
-    // A narrow column drops the country and threat before a row runs into its score.
-    if (row.left.width + 12 + row.right.width > this.listW) row.left.text = `${String(e.rank).padStart(2)}  ${e.name}`
-    row.left.style.fill = i === 0 ? 0xffe066 : COLORS.hudText
-    row.right.style.fill = 0xffe066
+    // Posting with no board to rank against: the bar has nothing to say.
+    const empty = posting && !(res && res.ok)
+    this.bar.visible = this.me.visible = !empty
   }
 }

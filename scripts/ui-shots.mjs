@@ -262,9 +262,17 @@ async function runSize(browser, size) {
   }
 
   await step('01-menu-fresh', () => shot('01-menu-fresh'))
+  // P17: a fresh save shows the first-launch menu (TAP TO PLAY); one counted run
+  // brings the full menu with the Daily card and SETTINGS.
+  await page.evaluate(() => {
+    const S = window.__SWARM
+    S.saveJSON('stats', { ...S.loadJSON('stats', {}), runs: 1 })
+    S.toMenu()
+  })
+  await sleep(400)
   // P13: the ranked Daily asks first (a fresh save has today's ranked attempt).
   await step('03b-daily-confirm', async () => {
-    await tap(page, size, 'DAILY #')
+    await tap(page, size, 'PLAY RANKED')
     await sleep(400)
     await shot('03b-daily-confirm')
     await tap(page, size, 'BACK')
@@ -274,7 +282,7 @@ async function runSize(browser, size) {
     await tap(page, size, 'SETTINGS')
     await sleep(400)
     await shot('03-settings')
-    await tap(page, size, 'BACK')
+    await page.keyboard.press('Escape')
     await sleep(300)
   })
   await step('06-run-start', async () => {
@@ -603,7 +611,7 @@ async function runSize(browser, size) {
     await tap(page, size, 'ALL TIME')
     await sleep(600)
     await shot('20-leaderboard-all')
-    await tap(page, size, 'BACK')
+    await page.keyboard.press('Escape')
     await sleep(300)
   })
   // JOIN on LEADERS posts today's ranked Daily; the board reloads after the post lands.
@@ -626,7 +634,7 @@ async function runSize(browser, size) {
     const posted = calls.indexOf('run:done')
     const board = calls.lastIndexOf('board')
     if (posted < 0 || board < posted) throw new Error('22: the board loaded before the post landed: ' + calls.join(','))
-    await tap(page, size, 'BACK')
+    await page.keyboard.press('Escape')
     await sleep(300)
   })
   // NO THANKS on the recap's opt-in card: the toast names a control that exists
@@ -651,7 +659,7 @@ async function runSize(browser, size) {
     await sleep(400)
     await shot('23-recap-nothanks')
     const d = meta.shots['23-recap-nothanks']
-    const t = d.texts.find((x) => x.t.includes('You can join later from LEADERS.'))
+    const t = d.texts.find((x) => x.t.includes('You can turn this on in Settings.'))
     if (!t || t.y < 0 || t.y + t.h > d.H) throw new Error('23: the NO THANKS toast is missing or off screen')
   })
 

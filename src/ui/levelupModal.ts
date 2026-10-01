@@ -43,6 +43,8 @@ const L_PAD = 12
 const BTN_W_L = 140
 const BTN_W_P = 109
 const BTN_H = 48
+/** One line under the controls (the subtitle, the controls hint). */
+const HINT_LINE = 18
 
 // Section 6.5 ceremony (ms after open).
 const DEAL_FULL = [160, 230, 300] as const
@@ -120,6 +122,10 @@ export interface DraftOpen {
   level: number
   /** The full ceremony (a run's first DRAFT.fullCeremonies drafts) or the short one. */
   full: boolean
+  /** The ceremony's white flash (the Flashes setting and its limiter allow it). */
+  flash: boolean
+  /** The first-drafts subtitle (section 9.10 `draft` hint), or ''. */
+  sub: string
   /** The controls hint shows (the first drafts per install). */
   hint: boolean
   /** The ship's screen position (the ring starts there). */
@@ -153,6 +159,7 @@ export class LevelUpModal {
   private readonly title: Text
   private readonly level: Text
   private readonly hint: Text
+  private readonly sub: Text
   private readonly cardLayer = new Container()
   private readonly views: CardView[] = []
   private readonly controls = new Container()
@@ -164,7 +171,7 @@ export class LevelUpModal {
   private readonly skipBtnL: Button
   private draft: DraftState | null = null
   private banishMode = false
-  private opts: DraftOpen = { touch: false, pad: false, level: 1, full: false, hint: false, shipX: 0, shipY: 0 }
+  private opts: DraftOpen = { touch: false, pad: false, level: 1, full: false, flash: false, sub: '', hint: false, shipX: 0, shipY: 0 }
   private open_ = false
   /** performance.now() at open, and when input starts to count. */
   private openAt = 0
@@ -187,10 +194,12 @@ export class LevelUpModal {
     this.level.anchor.set(0.5)
     this.hint = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 13, fontWeight: '500', fill: T.textMuted, align: 'center' } })
     this.hint.anchor.set(0.5)
+    this.sub = new Text({ text: '', style: { fontFamily: FONT.mono, fontSize: 13, fontWeight: '500', fill: T.textHi, align: 'center' } })
+    this.sub.anchor.set(0.5)
     this.scrim.eventMode = 'static' // swallow taps behind the modal
     this.ring.eventMode = 'none'
     this.flash.eventMode = 'none'
-    this.view.addChild(this.scrim, this.ring, this.title, this.level, this.cardLayer, this.controls, this.hint, this.flash)
+    this.view.addChild(this.scrim, this.ring, this.title, this.level, this.cardLayer, this.controls, this.sub, this.hint, this.flash)
     this.view.visible = false
     for (let i = 0; i < 3; i++) this.views.push(this.makeCard(i))
     const btn = (label: string, w: number, fn: () => void): Button => {
@@ -369,7 +378,7 @@ export class LevelUpModal {
       tweens.to(v.root, Prop.Y, y, DEAL_MS, Ease.OutCubic, deal[i])
     }
     this.ring.visible = full && !this.reduceMotion
-    this.flash.visible = full && !this.reduceMotion
+    this.flash.visible = this.opts.flash && !this.reduceMotion
     this.level.scale.set(1)
     if (!full) return
     if (!this.reduceMotion) {
@@ -378,8 +387,10 @@ export class LevelUpModal {
       this.ring.alpha = 1
       tweens.to(this.ring, Prop.Scale, 1, RING_MS, Ease.OutCubic)
       tweens.to(this.ring, Prop.Alpha, 0, RING_MS, Ease.Linear, RING_MS / 3)
-      this.flash.alpha = FLASH_PEAK
-      tweens.to(this.flash, Prop.Alpha, 0, FLASH_MS, Ease.OutCubic)
+      if (this.opts.flash) {
+        this.flash.alpha = FLASH_PEAK
+        tweens.to(this.flash, Prop.Alpha, 0, FLASH_MS, Ease.OutCubic)
+      }
     }
     this.level.scale.set(1.6)
     tweens.to(this.level, Prop.Scale, 1, MOTION.stampMs, Ease.OutBack, 90)
@@ -489,7 +500,8 @@ export class LevelUpModal {
     bb.setText(this.banishMode ? 'CANCEL' : `BANISH (${d.banishes})`)
     bb.setEnabled(canBanish(d))
     this.refreshHint()
-    const hintH = this.hint.visible ? 26 : 0
+    const lines = (this.sub.visible ? 1 : 0) + (this.hint.visible ? 1 : 0)
+    const hintH = lines > 0 ? 8 + HINT_LINE * lines : 0
 
     let cardW: number
     let cardH: number
@@ -500,7 +512,7 @@ export class LevelUpModal {
       // Title row, then the cards side by side, then the controls row.
       const rowW = Math.min(availW - 32, L_MAX_ROW_W)
       cardW = (rowW - GAP * (n - 1)) / n
-      cardH = Math.min(L_CARD_MAX_H, availH - 132)
+      cardH = Math.min(L_CARD_MAX_H, availH - 106 - Math.max(26, hintH))
       const block = 44 + cardH + 14 + BTN_H + hintH
       top = insets.top + Math.max(0, (availH - block) / 2)
       cardsY = top + 44
@@ -551,7 +563,8 @@ export class LevelUpModal {
     rb.position(bx, ctrlY)
     bb.position(bx + bw + 8, ctrlY)
     sb.position(bx + (bw + 8) * 2, ctrlY)
-    this.hint.position.set(cx, ctrlY + BTN_H + 16)
+    this.sub.position.set(cx, ctrlY + BTN_H + 16)
+    this.hint.position.set(cx, ctrlY + BTN_H + 16 + (this.sub.visible ? HINT_LINE : 0))
   }
 
   private refreshHint(): void {
@@ -569,6 +582,8 @@ export class LevelUpModal {
     this.hint.text = t
     this.hint.style.fill = fill
     this.hint.visible = t !== ''
+    this.sub.text = this.banishMode ? '' : o.sub
+    this.sub.visible = this.sub.text !== ''
   }
 
   private drawCard(v: CardView, c: DraftCard, cw: number, ch: number): void {

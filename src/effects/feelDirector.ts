@@ -92,6 +92,11 @@ const EDGE_DISCRETE = 0.9
 const EDGE_BITE = 0.45
 const EDGE_DECAY = 2.5
 const SHIP_FLASH_S = 0.12
+/** Section 9.8 flash limiter: at most FLASH_MAX full-screen flash starts per window. */
+const FLASH_MAX = 3
+const FLASH_WINDOW_MS = 1000
+/** The boss-kill bloom pulse fades out at this rate (1/s). */
+const BLOOM_PULSE_DECAY = 2.5
 /** The heartbeat's two thumps (the SFX's second lands 0.14 s after the first). */
 const THUMP2_S = 0.14
 const THUMP_DECAY = 10
@@ -114,6 +119,10 @@ export class FeelDirector {
   /** Low HP and its heartbeat envelope (0..1), which drives the HP bar and the red vignette. */
   lowHp = false
   pulse = 0
+  /** The Flashes setting: full-screen flashes and the bloom pulse. */
+  flashes = true
+  /** The boss-kill bloom pulse (0..1), on the real clock. */
+  bloomPulse = 0
   readonly shake = new Shake()
   readonly time = new TimeDirector()
   /** World-space cues on the ship (the LIVING ARMOR ring). */
@@ -125,6 +134,9 @@ export class FeelDirector {
   /** Real-clock ms of a pending success haptic, or -1. */
   private successAt = -1
   private draftsOpened = 0
+  /** Real-clock ms of the last FLASH_MAX flash starts (a ring). */
+  private readonly flashStarts = new Float64Array(FLASH_MAX).fill(-Infinity)
+  private flashSlot = 0
   /** Current multiplier tier (from MultUp / MultDown); drives the kill ladder. */
   private tier = 1
   private gemStep = 0
@@ -159,6 +171,7 @@ export class FeelDirector {
     this.hurtFlash = 0
     this.edge = 0
     this.shipFlash = 0
+    this.bloomPulse = 0
     this.shake.reset()
     this.time.reset()
     this.biteAt = -Infinity
@@ -324,6 +337,7 @@ export class FeelDirector {
           this.heavyThenSuccess(nowMs)
           this.shake.add(0.85, 1)
           this.time.play(TimePreset.BossKill)
+          if (this.tryFlash(nowMs)) this.bloomPulse = 1
           if (!won) this.bossSlain(false)
           break
         case FeelKind.ChargerWindup:
@@ -429,6 +443,7 @@ export class FeelDirector {
     this.hurtFlash = Math.max(0, this.hurtFlash - fd * HURT_DECAY)
     this.edge = Math.max(0, this.edge - fd * EDGE_DECAY)
     this.shipFlash = Math.max(0, this.shipFlash - fd)
+    this.bloomPulse = Math.max(0, this.bloomPulse - fd * BLOOM_PULSE_DECAY)
     const w = this.world
     const pl = w.player
     const alive = playing && !w.pendingGameOver && pl.hp > 0
@@ -458,6 +473,15 @@ export class FeelDirector {
       this.callouts.show(CALLOUT.newBest, 'NEW BEST', group(w.score), T.accentGold)
     }
     this.shipFx.update(w, fd)
+  }
+
+  /** Start a full-screen flash: false when Flashes is off or FLASH_MAX
+   *  flashes already started in the last FLASH_WINDOW_MS. */
+  tryFlash(nowMs: number): boolean {
+    if (!this.flashes || nowMs - this.flashStarts[this.flashSlot]! < FLASH_WINDOW_MS) return false
+    this.flashStarts[this.flashSlot] = nowMs
+    this.flashSlot = (this.flashSlot + 1) % FLASH_MAX
+    return true
   }
 
   /** The run's opening line: the world, or the Daily. */

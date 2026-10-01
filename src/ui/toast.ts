@@ -19,7 +19,7 @@ export interface ToastSlot {
  *  screen, or in the menu's slot when the top holds the title. */
 export class Toast {
   readonly view = new Container()
-  private readonly plate = new Plate(10, 10, T.surfaceRaised, 0.96)
+  private readonly plate = new Plate(10, 10, T.surfaceRaised, 1)
   private readonly label: Text
   private left = 0
   private w = 0
