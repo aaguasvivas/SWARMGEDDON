@@ -315,7 +315,8 @@ export class World {
     this.flashTex = texReg.getTexture('flash')
 
     layers.ichor.addChild(this.acidQuads.view)
-    layers.entities.addChild(this.shotQuads.view, this.enemyShotQuads.view, this.enemyQuads.view)
+    // Enemy shots draw last: a shot to dodge stays readable inside the swarm.
+    layers.entities.addChild(this.enemyQuads.view, this.shotQuads.view, this.enemyShotQuads.view)
     layers.fx.addChild(this.pickupQuads.view, this.particleQuads.view, this.particleAddQuads.view)
     this.enemies = new Pool<Enemy>(
       () => { const q = texReg.makeQuad('swarmer'); this.enemyQuads.add(q); return new Enemy(q) },

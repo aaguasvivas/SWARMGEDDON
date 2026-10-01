@@ -27,6 +27,7 @@ import { Arena, type DecorSpeck } from './game/arena.ts'
 import { Player } from './game/player.ts'
 import { World, type RunConfig, type RunMode } from './game/world.ts'
 import { warmSystems } from './game/warmup.ts'
+import { runSystems, sweepPools } from './game/step.ts'
 import { InputManager } from './input/input.ts'
 import { DebugOverlay } from './ui/debugOverlay.ts'
 import { Hud } from './ui/hud.ts'
@@ -70,20 +71,11 @@ import { PICKUP_WEAPON_IDS, WEAPONS } from './content/weapons.ts'
 import { PERKS } from './content/perks.ts'
 import { grant, isOwned, ownedPaintIds, resolvePools } from './state/unlocks.ts'
 import { spawnEnemy, debugFloodSwarmers } from './systems/spawn.ts'
-import { clampPlayerToCage, directorJumpTo, directorTick } from './systems/director.ts'
-import { hazardsTick } from './systems/hazards.ts'
+import { directorJumpTo } from './systems/director.ts'
 import { aiSystem, buildEnemyHash } from './systems/ai.ts'
-import { weaponSystem } from './systems/weapons.ts'
-import { projectileSystem, enemyProjectileSystem } from './systems/projectiles.ts'
-import { dropHiveCore, pickupSystem } from './systems/pickups.ts'
-import { bonusSystem } from './systems/bonuses.ts'
+import { dropHiveCore } from './systems/pickups.ts'
 import { grantPrimeCore, resolveCore } from './systems/cores.ts'
-import { collisionSystem } from './systems/collision.ts'
-import { acidSystem } from './systems/acid.ts'
-import { dashSystem } from './systems/dash.ts'
-import { healPlayer, playerSpeedMul } from './systems/damage.ts'
 import { banishCard, canReroll, draftDue, openDraft as dealDraft, pickCard, pickPerkId, rerollDraft, skipDraft } from './systems/draft.ts'
-import { scoreStep } from './game/scoring.ts'
 import { particleSystem } from './systems/particles.ts'
 
 type Screen = 'menu' | 'playing' | 'gameover' | 'leaderboard'
@@ -824,16 +816,6 @@ async function boot(): Promise<void> {
     camera.update(fd, sx, sy, playing ? input.aimDir.x : 0, playing ? input.aimDir.y : 0, touchPortrait, boss, world.arena.bounds)
   }
 
-  function sweepPools(): void {
-    world.enemies.sweep()
-    world.projectiles.sweep()
-    world.enemyProjectiles.sweep()
-    world.particles.sweep()
-    world.pickups.sweep()
-    world.acid.sweep()
-    world.hazards.sweep()
-  }
-
   // One fixed simulation step (extracted so dev tooling can drive it).
   function stepSim(dt: number): void {
     if (screen !== 'playing' || world.paused) return
@@ -844,7 +826,7 @@ async function boot(): Promise<void> {
       buildEnemyHash(world)
       aiSystem(world, dt)
       particleSystem(world, dt)
-      sweepPools()
+      sweepPools(world)
       return
     }
 
@@ -853,25 +835,7 @@ async function boot(): Promise<void> {
     // from the last rendered frame (exactly what the player saw and aimed at).
     // The camera itself is recomputed each render from the interpolated position.
     input.update(camera.worldToScreenX(player.x), camera.worldToScreenY(player.y))
-    directorTick(world, dt)
-    buildEnemyHash(world)
-    aiSystem(world, dt)
-    dashSystem(world, input, dt)
-    weaponSystem(world, dt, input)
-    projectileSystem(world, dt)
-    enemyProjectileSystem(world, dt)
-    pickupSystem(world, dt)
-    bonusSystem(world, dt)
-    collisionSystem(world, dt)
-    hazardsTick(world, dt)
-    acidSystem(world, dt)
-    scoreStep(world, dt)
-    particleSystem(world, dt)
-    player.update(dt, input.move, input.aimDir, arena.bounds, playerSpeedMul(world), world.pullX, world.pullY)
-    clampPlayerToCage(world)
-    if (world.mods.regenPerSec > 0) healPlayer(world, world.mods.regenPerSec * dt)
-
-    sweepPools()
+    runSystems(world, input, dt)
 
     // Hand-offs, in rank order: death (next tick), the stalemate, the win, a
     // core reveal, then a draft (DRAFT.minGap apart). A pick is never applied

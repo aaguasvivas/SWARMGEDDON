@@ -5,19 +5,10 @@ import { CHARACTERS } from '../content/characters.ts'
 import { FUSIONS, PERKS } from '../content/perks.ts'
 import { WEAPON_LIST } from '../content/weapons.ts'
 import type { InputManager } from '../input/input.ts'
-import { acidSystem } from '../systems/acid.ts'
-import { aiSystem, buildEnemyHash } from '../systems/ai.ts'
-import { bonusSystem } from '../systems/bonuses.ts'
-import { blastHit, collisionSystem } from '../systems/collision.ts'
-import { healPlayer, playerSpeedMul } from '../systems/damage.ts'
-import { dashSystem } from '../systems/dash.ts'
-import { clampPlayerToCage, directorJumpTo, directorTick } from '../systems/director.ts'
-import { hazardsTick } from '../systems/hazards.ts'
-import { particleSystem } from '../systems/particles.ts'
-import { dropBonus, dropGem, dropHealth, dropPod, dropShard, pickupSystem } from '../systems/pickups.ts'
-import { enemyProjectileSystem, projectileSystem } from '../systems/projectiles.ts'
-import { weaponSystem } from '../systems/weapons.ts'
-import { scoreStep } from './scoring.ts'
+import { blastHit } from '../systems/collision.ts'
+import { directorJumpTo } from '../systems/director.ts'
+import { dropBonus, dropGem, dropHealth, dropPod, dropShard } from '../systems/pickups.ts'
+import { runSystems } from './step.ts'
 import type { RunConfig, World } from './world.ts'
 
 /** Sim seconds per warm-up step in a boss fight: its states and attacks cycle
@@ -35,7 +26,10 @@ const WEAPON_STEPS = 6
 const OVERTIME_STEPS = 200
 /** Fewer ambient enemies: the beats bring every unit kind anyway. */
 const WARM_ALIVE_MUL = 0.15
-/** THREAT per world pass, so mirrored events and the extra elites run too. */
+/** One THREAT per world pass, so each THREAT rule (A11) runs both off and on
+ *  across the three passes. The rules act only in code every world shares
+ *  (the script, the director, the boss cadence, kill drops), and a mirror
+ *  copy only turns its event's angles. */
 const WARM_THREAT = [0, 2, 4] as const
 
 /**
@@ -44,13 +38,13 @@ const WARM_THREAT = [0, 2, 4] as const
  * optimizing tier; it then boxes numbers for many frames until it is optimized
  * again (the first brood unit in a cage, the first slowed enemy, the first
  * stream unit, the first affixed elite, the first boss call). At boot this runs
- * every event, elite and boss beat of each world (at THREAT 0, 2 and 4), the
- * start of OVERTIME, every weapon, bonus and pickup kind, the full build and
- * dashes on `w`, a scratch World that shares no state with the real one, so a
- * real run meets none of those branches for the first time. The system order
- * is stepSim's, and `draw` runs after each step, so the render pass over the
- * pools meets the same states. `input` is the real input manager (disabled at
- * boot): its fire, aim and move fields are restored after.
+ * every event, elite and boss beat of each world (Hive at THREAT 0, Depths at
+ * 2, Wastes at 4), the start of OVERTIME, every weapon, bonus and pickup kind,
+ * the full build and dashes on `w`, a scratch World that shares no state with
+ * the real one, so a real run meets none of those branches for the first time.
+ * Each step runs stepSim's `runSystems`, and `draw` runs after it, so the
+ * render pass over the pools meets the same states. `input` is the real input
+ * manager (disabled at boot): its fire, aim and move fields are restored after.
  */
 export function warmSystems(w: World, cfg: RunConfig, input: InputManager, draw: (w: World) => void): void {
   const firing = input.firing
@@ -128,8 +122,8 @@ function begin(w: World, run: RunConfig): void {
   w.aliveMul = WARM_ALIVE_MUL
 }
 
-/** `n` sim steps of `dt` in stepSim's order, the ship circling, dashing and
- *  firing at the nearest enemy. */
+/** `n` sim steps of `dt`, the ship circling, dashing and firing at the
+ *  nearest enemy. */
 function steps(w: World, input: InputManager, draw: (w: World) => void, n: number, dt: number): void {
   const pl = w.player
   for (let i = 0; i < n; i++) {
@@ -154,30 +148,7 @@ function steps(w: World, input: InputManager, draw: (w: World) => void, n: numbe
     }
     if (i % 20 === 0) input.pressDash()
     w.time += dt
-    directorTick(w, dt)
-    buildEnemyHash(w)
-    aiSystem(w, dt)
-    dashSystem(w, input, dt)
-    weaponSystem(w, dt, input)
-    projectileSystem(w, dt)
-    enemyProjectileSystem(w, dt)
-    pickupSystem(w, dt)
-    bonusSystem(w, dt)
-    collisionSystem(w, dt)
-    hazardsTick(w, dt)
-    acidSystem(w, dt)
-    scoreStep(w, dt)
-    particleSystem(w, dt)
-    pl.update(dt, input.move, input.aimDir, w.arena.bounds, playerSpeedMul(w), w.pullX, w.pullY)
-    clampPlayerToCage(w)
-    if (w.mods.regenPerSec > 0) healPlayer(w, w.mods.regenPerSec * dt)
-    w.enemies.sweep()
-    w.projectiles.sweep()
-    w.enemyProjectiles.sweep()
-    w.particles.sweep()
-    w.pickups.sweep()
-    w.acid.sweep()
-    w.hazards.sweep()
+    runSystems(w, input, dt)
     draw(w)
     // Nothing drains the scratch run's queue or opens its hand-offs.
     w.feel.clear()

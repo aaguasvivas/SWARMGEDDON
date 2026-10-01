@@ -40,6 +40,7 @@
 //                      add --trace-generalization to get PA_MARK window lines)
 //   --top=N            functions listed per run (default 12)
 //   --perks=a,b,...    build taken at run start ('' for none)
+//   --threat=N         Standard runs at THREAT N (0, default; unlocked first)
 //   --scope=game       apply --budget to gameMBs instead of the total
 //   --interval=B       sampling interval in bytes (default 8192)
 //   --growth=S         instead of profiling: flood Hive, warm 20 s (--warm sets
@@ -85,6 +86,7 @@ const TOP = parseInt(flags.top ?? '12')
 const WARM = parseFloat(flags.warm ?? '15')
 const BUDGET = parseFloat(flags.budget ?? '0.5')
 const FN_BUDGET = parseFloat(flags.fnBudget ?? '0.1')
+const THREAT = parseInt(flags.threat ?? '0')
 const PERKS = flags.perks === undefined
   ? ['piercing', 'cryo_rounds', 'explosive_rounds', 'arc_rounds', 'incendiary', 'ricochet', 'f_shatter', 'f_firestorm']
   : String(flags.perks).split(',').filter(Boolean)
@@ -156,9 +158,10 @@ const DRIVER = `(async () => {
   const eventLive = () => emitting() || eventUnits() > 0
   window.__PA = {
     eventLive,
-    setup(scenario, arena, perks, warm) {
+    setup(scenario, arena, perks, warm, threat) {
       st.scenario = ''
       S.setLoadout('nova', arena)
+      S.setThreat(arena, threat)
       S.startRun('endless')
       for (const id of perks) w.choosePerk(id)
       w.player.maxHp = 1e9
@@ -182,7 +185,7 @@ const DRIVER = `(async () => {
         S.jumpTo(Math.max(0, beat.at - warm - 1))
       } else if (scenario === 'final' || scenario === 'gc') S.jumpTo(600)
       st.scenario = scenario
-      return { time: +w.time.toFixed(2), boss: w.bossAlive, event: eventLive() }
+      return { time: +w.time.toFixed(2), threat: w.threat, boss: w.bossAlive, event: eventLive() }
     },
     status() {
       return {
@@ -410,7 +413,7 @@ try {
       for (let i = 0; i < 2; i++) await cdp.send('HeapProfiler.collectGarbage')
       return (await cdp.send('Runtime.getHeapUsage')).usedSize
     }
-    const setup = await page.evaluate((p) => window.__PA.setup('flood', 'hive', p), PERKS)
+    const setup = await page.evaluate((p, t) => window.__PA.setup('flood', 'hive', p, 0, t), PERKS, THREAT)
     await sleep((flags.warm === undefined ? 20 : WARM) * 1000)
     const before = await heap()
     const s0 = await page.evaluate(() => window.__PA.status())
@@ -430,7 +433,7 @@ try {
   } else if (flags.shapes) {
     // runShapes after the other modes; nothing to profile here.
   } else if (flags.gc) {
-    const setup = await page.evaluate((p) => window.__PA.setup('gc', 'hive', p), PERKS)
+    const setup = await page.evaluate((p, t) => window.__PA.setup('gc', 'hive', p, 0, t), PERKS, THREAT)
     await sleep(1000)
     await page.tracing.start({ categories: ['devtools.timeline', 'disabled-by-default-devtools.timeline', 'v8', 'disabled-by-default-v8.gc'] })
     const s0 = await page.evaluate(() => window.__PA.status())
@@ -466,7 +469,7 @@ try {
     for (const arena of ARENAS) {
       for (const scen of SCEN) {
         const isEvent = scen === 'event'
-        const setup = await page.evaluate((s, a, p, wm) => window.__PA.setup(s, a, p, wm), scen, arena, PERKS, WARM)
+        const setup = await page.evaluate((s, a, p, wm, t) => window.__PA.setup(s, a, p, wm, t), scen, arena, PERKS, WARM, THREAT)
         if (isEvent) await page.waitForFunction(() => window.__PA.eventLive(), { polling: 'raf', timeout: (WARM + 90) * 1000 })
         else await sleep(WARM * 1000)
         const s0 = await page.evaluate(() => window.__PA.status())
