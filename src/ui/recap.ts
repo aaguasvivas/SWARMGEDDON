@@ -15,7 +15,7 @@ import { BuildGrid, buildTiles, type BuildTile } from './buildGrid.ts'
 import { Button } from './button.ts'
 import { DigitStrip } from './digits.ts'
 import { OptInCard } from './optInCard.ts'
-import type { ToastSlot } from './toast.ts'
+import { toastHeight, type ToastSlot } from './toast.ts'
 import { setSeparated } from './textFit.ts'
 import { FONT, GUTTER, INK, MOTION, RADIUS, T, TARGET } from './tokens.ts'
 import { Ease, Prop, tweens } from './tween.ts'
@@ -85,6 +85,13 @@ interface Fit {
   tight: boolean
   unlockRows: number
 }
+/** Where the meta column ends, and the opt-in card's place in it (cardH 0: none). */
+interface MetaBox {
+  bottom: number
+  cardY: number
+  cardH: number
+}
+
 const FITS: readonly Fit[] = [
   { build: true, goals: 3, tileH: TILE_H, tight: false, unlockRows: UNLOCK_ROWS },
   { build: false, goals: 3, tileH: TILE_H, tight: false, unlockRows: UNLOCK_ROWS },
@@ -171,6 +178,9 @@ export class Recap {
   /** The opt-in card showed on this recap: its area stays (a toast takes it after a choice). */
   private cardKept = false
   private cardKeptH = 0
+  /** A toast this recap makes room for under the meta column, kept for the
+   *  rest of the recap so its expiry moves nothing ('' = none). */
+  private toastText = ''
   private readyAt = 0
   private downAt = 0
   private shownAt = 0
@@ -278,6 +288,7 @@ export class Recap {
     this.optIn.view.visible = false
     this.cardKept = false
     this.cardKeptH = 0
+    this.toastText = ''
     this.focus = -1
     this.header.text = m.head
     this.header.style.fill = m.headColor
@@ -360,6 +371,14 @@ export class Recap {
     this.relayout()
   }
 
+  /** A toast of `text` is about to show: the layout makes room for it under
+   *  the meta column (section 9.6 overflow order) before `toastSlot` is read.
+   *  When no fit leaves that room, the toast takes the top band. */
+  reserveToast(text: string): void {
+    this.toastText = text
+    this.relayout()
+  }
+
   layout(w: number, h: number, insets: Insets): void {
     this.w = w
     this.h = h
@@ -430,8 +449,15 @@ export class Recap {
     this.scrim.rect(0, 0, w, h).fill({ color: T.scrim, alpha: T.scrimAlpha })
     this.scrim.hitArea = new Rectangle(0, 0, w, h)
     if (w > h) return this.placeLandscape(m)
-    for (const fit of FITS) if (this.placePortrait(m, fit)) return true
+    for (const fit of FITS) if (this.placePortrait(m, fit, true)) return true
+    if (this.toastText) for (const fit of FITS) if (this.placePortrait(m, fit, false)) return true
     return false
+  }
+
+  /** The height a reserved toast takes under a meta column `colW` wide, with
+   *  its gap above the buttons; 0 when no toast is reserved. */
+  private toastRoom(colW: number): number {
+    return this.toastText ? toastHeight(this.toastText, colW) + TOAST_GAP : 0
   }
 
   private gap(fit: Fit, n: number): number {
@@ -518,7 +544,7 @@ export class Recap {
 
   /** The meta block (rank, unlocks, goals, opt-in card) from `y`. Returns its
    *  bottom and where the opt-in card sits. */
-  private placeMeta(m: RecapModel, fit: Fit, cx: number, colW: number, y: number): { bottom: number; cardY: number; cardH: number } {
+  private placeMeta(m: RecapModel, fit: Fit, cx: number, colW: number, y: number): MetaBox {
     const left = cx - colW / 2
     const rankRow = this.rankText !== '' || this.rankPending
     this.rank.visible = this.rankText !== ''
@@ -597,7 +623,8 @@ export class Recap {
     return { bottom: y, cardY, cardH }
   }
 
-  private placePortrait(m: RecapModel, fit: Fit): boolean {
+  /** One portrait fit; `withToast` keeps the reserved toast's room above RETRY. */
+  private placePortrait(m: RecapModel, fit: Fit, withToast: boolean): boolean {
     const { w, h, insets } = this
     const availW = w - insets.left - insets.right
     const colW = Math.min(availW - GUTTER * 2, COL_MAX_W)
@@ -610,7 +637,7 @@ export class Recap {
     let y = this.placeRun(m, fit, cx, colW, top, true)
     y += this.gap(fit, 12)
     const meta = this.placeMeta(m, fit, cx, colW, y)
-    const fits = meta.bottom <= retryY - 12
+    const fits = meta.bottom + Math.max(12, withToast ? this.toastRoom(colW) : 0) <= retryY
     const showBoard = leaderboardEnabled()
     const small = showBoard ? Math.min(SMALL_W, Math.floor((colW - BTN_ROW_GAP * 2) / 3)) : Math.floor((colW - BTN_ROW_GAP) / 2)
     this.ensureButtons(colW, small, m.primary)
@@ -639,15 +666,10 @@ export class Recap {
         break
       }
     }
-    let rightOk = false
-    let meta = { bottom: 0, cardY: 0, cardH: 0 }
-    for (const fit of FITS) {
-      meta = this.placeMeta(m, fit, rx, colW, top + 4)
-      if (meta.bottom <= btnY - 4) {
-        rightOk = true
-        break
-      }
-    }
+    const room = this.toastRoom(colW)
+    let right = this.fitMeta(m, rx, colW, top + 4, btnY, Math.max(4, room))
+    if (!right.ok && room > 0) right = this.fitMeta(m, rx, colW, top + 4, btnY, 4)
+    const { meta, ok: rightOk } = right
     const showBoard = leaderboardEnabled()
     const rowW = Math.min(availW - GUTTER * 2, L_ROW_MAX_W)
     const nSmall = showBoard ? 3 : 2
@@ -667,6 +689,17 @@ export class Recap {
     return leftOk && rightOk
   }
 
+  /** The meta column at its first fit that keeps `need` px free above `limit`
+   *  (ok false: the tightest fit, which does not). */
+  private fitMeta(m: RecapModel, cx: number, colW: number, y: number, limit: number, need: number): { meta: MetaBox; ok: boolean } {
+    let meta: MetaBox = { bottom: 0, cardY: 0, cardH: 0 }
+    for (const fit of FITS) {
+      meta = this.placeMeta(m, fit, cx, colW, y)
+      if (meta.bottom + need <= limit) return { meta, ok: true }
+    }
+    return { meta, ok: false }
+  }
+
   private placeRow(cx: number, y: number, small: number, showBoard: boolean): void {
     const list = showBoard ? [this.menu!, this.share!, this.board!] : [this.menu!, this.share!]
     this.board!.view.visible = showBoard
@@ -681,7 +714,7 @@ export class Recap {
 
   /** A toast takes the opt-in card's place (the toasts here follow a choice
    *  on that card), else free room above the buttons, else the top band. */
-  private freeSlot(x: number, colW: number, meta: { bottom: number; cardY: number; cardH: number }, limit: number): ToastSlot {
+  private freeSlot(x: number, colW: number, meta: MetaBox, limit: number): ToastSlot {
     if (meta.cardH > 0) return { x, y: meta.cardY, w: colW, h: meta.cardH }
     if (limit - meta.bottom >= TOAST_ROOM) return { x, y: meta.bottom, w: colW, h: limit - meta.bottom - TOAST_GAP }
     return { x, y: this.insets.top + 8, w: colW }

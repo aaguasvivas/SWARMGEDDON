@@ -7,6 +7,17 @@ const PAD_X = 16
 const PAD_Y = 10
 const MAX_W = 420
 const FADE_S = 0.3
+const STYLE = { fontFamily: FONT.mono, fontWeight: '500', fontSize: 14, lineHeight: 20, fill: T.textHi, align: 'center', wordWrap: true } as const
+
+let measure: Text | null = null
+
+/** The plate height a toast of `text` takes in a slot `w` wide. */
+export function toastHeight(text: string, w: number): number {
+  if (!measure) measure = new Text({ text: '', style: { ...STYLE } })
+  measure.text = text
+  measure.style.wordWrapWidth = Math.min(w, MAX_W) - PAD_X * 2
+  return measure.height + PAD_Y * 2
+}
 
 /** A column a screen keeps free for the toast: left edge, top and width, and
  *  the height free under its top when it is bounded (a taller toast, such as a
@@ -30,7 +41,7 @@ export class Toast {
   private slot: ToastSlot | null = null
 
   constructor() {
-    this.label = new Text({ text: '', style: { fontFamily: FONT.mono, fontWeight: '500', fontSize: 14, lineHeight: 20, fill: T.textHi, align: 'center', wordWrap: true } })
+    this.label = new Text({ text: '', style: { ...STYLE } })
     this.label.anchor.set(0.5, 0)
     this.view.addChild(this.plate.view, this.label)
     this.view.visible = false

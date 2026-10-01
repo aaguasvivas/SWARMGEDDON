@@ -363,6 +363,10 @@ async function runSize(browser, size) {
     await page.keyboard.press('b')
     await sleep(300)
     await shot('08c-levelup-banish')
+    // Arming BANISH swaps the lines under the controls in place: nothing moves.
+    const lv = (id) => meta.shots[id].texts.find((t) => /^LEVEL \d+$/.test(t.t))
+    const [a, b] = [lv('08b-levelup-build'), lv('08c-levelup-banish')]
+    if (!a || !b || a.y !== b.y) throw new Error(`08c: arming BANISH moved the draft (LEVEL line y ${a?.y} to ${b?.y})`)
     await page.keyboard.press('b')
     await page.evaluate(() => window.__SWARM.pickCard(0))
     await sleep(300)
@@ -737,6 +741,22 @@ async function runSize(browser, size) {
     await shot('26-recap-first')
     const d = meta.shots['26-recap-first']
     if (d.texts.some((t) => /NEW BEST/.test(t.t))) throw new Error('26: a first run celebrates a best')
+    // The feats toast (a first run finishes FIRST CONTACT) gets room under the
+    // recap's meta column, so its plate covers no recap text.
+    const plate = await page.evaluate(() => {
+      const v = window.__SWARM.toast.view
+      if (!v.visible) return null
+      const b = v.getBounds()
+      return { x: b.minX, y: b.minY, w: b.width, h: b.height }
+    })
+    if (!plate) throw new Error('26: the feats toast did not show')
+    const under = d.texts.filter((t) => {
+      if (t.t.startsWith('Feats unlock')) return false
+      const ox = Math.min(plate.x + plate.w, t.x + t.w) - Math.max(plate.x, t.x)
+      const oy = Math.min(plate.y + plate.h, t.y + t.h) - Math.max(plate.y, t.y)
+      return ox > 2 && oy > 2
+    })
+    if (under.length) throw new Error('26: the feats toast covers ' + under.map((t) => t.t).join(', '))
   })
   await step('27-recap-unlocks-rank', async () => {
     await page.evaluate(() => {

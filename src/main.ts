@@ -555,10 +555,14 @@ async function boot(): Promise<void> {
     input.setEnabled(false)
     void postRun(result, true)
     // Last, so the toast takes the recap's free slot in its final layout (the
-    // opt-in card and the rank row placed). It waits for a recap with no opt-in
-    // card: the card's area is the toast slot, and it would cover its buttons.
+    // opt-in card and the rank row placed), after the recap makes room for it.
+    // It waits for a recap with no opt-in card: the card's area is the toast
+    // slot, and it would cover its buttons.
     const featsHint = done.length > 0 && !ask ? hints.once('feats') : null
-    if (featsHint) showToast(featsHint)
+    if (featsHint) {
+      recap.reserveToast(featsHint)
+      showToast(featsHint)
+    }
     flushUpdatePrompt() // a parked "new version" toast may show now
   }
 
@@ -573,6 +577,7 @@ async function boot(): Promise<void> {
     if (!onRecap || token !== submitToken || screen !== 'gameover') return
     const line = rankLine(r, out)
     recap.setRankLine(line ? line[0] : '', line ? line[1] : 'muted')
+    toast.layout(app.screen.width, getInsets(), toastSlot()) // the rank line may move the recap's slot
   }
 
   /** A Daily day's best score before a practice run: its ranked run or a practice best. */

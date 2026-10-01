@@ -171,6 +171,10 @@ export class LevelUpModal {
   private readonly skipBtnL: Button
   private draft: DraftState | null = null
   private banishMode = false
+  /** The rows under the controls this draft keeps (the subtitle, the hint
+   *  line), so arming BANISH swaps their text without moving the block. */
+  private subRow = false
+  private hintRow = false
   private opts: DraftOpen = { touch: false, pad: false, level: 1, full: false, flash: false, sub: '', hint: false, shipX: 0, shipY: 0 }
   private open_ = false
   /** performance.now() at open, and when input starts to count. */
@@ -243,6 +247,8 @@ export class LevelUpModal {
     this.draft = draft
     this.opts = opts
     this.banishMode = false
+    this.subRow = opts.sub !== ''
+    this.hintRow = false
     this.focusIdx = 0
     this.hoverIdx = -1
     // A draft can open while the last pick's delayed fade and card pop are
@@ -500,7 +506,10 @@ export class LevelUpModal {
     bb.setText(this.banishMode ? 'CANCEL' : `BANISH (${d.banishes})`)
     bb.setEnabled(canBanish(d))
     this.refreshHint()
-    const lines = (this.sub.visible ? 1 : 0) + (this.hint.visible ? 1 : 0)
+    // The hint row is kept from the first layout on when BANISH can be armed:
+    // its prompt shows there.
+    this.hintRow = this.hintRow || this.hint.visible || canBanish(d)
+    const lines = (this.subRow ? 1 : 0) + (this.hintRow ? 1 : 0)
     const hintH = lines > 0 ? 8 + HINT_LINE * lines : 0
 
     let cardW: number
@@ -564,7 +573,7 @@ export class LevelUpModal {
     bb.position(bx + bw + 8, ctrlY)
     sb.position(bx + (bw + 8) * 2, ctrlY)
     this.sub.position.set(cx, ctrlY + BTN_H + 16)
-    this.hint.position.set(cx, ctrlY + BTN_H + 16 + (this.sub.visible ? HINT_LINE : 0))
+    this.hint.position.set(cx, ctrlY + BTN_H + 16 + (this.subRow ? HINT_LINE : 0))
   }
 
   private refreshHint(): void {
