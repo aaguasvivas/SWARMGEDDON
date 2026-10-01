@@ -18,6 +18,8 @@ export interface Settings {
   /** Softer time effects (no hit-stop, gentler slow motion) and no camera punch. */
   reduceMotion: boolean
   damageNumbers: DamageNumberMode
+  /** Full-screen flashes (the level-up flash, the boss-kill bloom pulse). */
+  flashes: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -31,6 +33,7 @@ export const DEFAULT_SETTINGS: Settings = {
   haptics: true,
   reduceMotion: prefersReducedMotion(),
   damageNumbers: 'big',
+  flashes: true,
 }
 
 function prefersReducedMotion(): boolean {

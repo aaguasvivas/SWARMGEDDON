@@ -1,8 +1,8 @@
 import { Container, Graphics, Rectangle, Sprite, Text } from 'pixi.js'
-import { COLORS, DASH, DEFAULT_SEED, FIXED_DT, MAX_FRAME_TIME } from './config.ts'
+import { COLORS, DASH, DEFAULT_SEED, FIXED_DT, MAX_FRAME_TIME, PLAYER_RADIUS } from './config.ts'
 import { GameLoop } from './core/time.ts'
 import { Rng } from './core/rng.ts'
-import { dailySpec, seedFromString } from './core/rules.ts'
+import { dailySpec, dayOf, seedFromString } from './core/rules.ts'
 import { initSafeArea, getInsets } from './platform/safeArea.ts'
 import { setHapticsEnabled } from './platform/haptics.ts'
 import { initNative, onAppPause, registerBackButton } from './platform/native.ts'
@@ -32,15 +32,22 @@ import { Hud } from './ui/hud.ts'
 import { Callouts } from './ui/callouts.ts'
 import { OffscreenArrows } from './ui/offscreenArrows.ts'
 import { LevelUpModal } from './ui/levelupModal.ts'
-import { MainMenu } from './ui/mainMenu.ts'
+import { MainMenu, type MenuModel } from './ui/mainMenu.ts'
 import { GameOver } from './ui/gameOver.ts'
 import { WinPanel } from './ui/winPanel.ts'
 import { CoreReveal } from './ui/coreReveal.ts'
 import { SettingsPanel } from './ui/settingsPanel.ts'
 import { Leaderboard } from './ui/leaderboard.ts'
+import { Records } from './ui/records.ts'
+import { Hints } from './ui/hints.ts'
+import type { LockInfo } from './ui/carousel.ts'
+import { featProgress, featValue, nextGoals } from './ui/goalsPanel.ts'
 import { dismissNamePrompt, namePromptOpen, promptName } from './ui/namePrompt.ts'
 import { ConfirmSheet } from './ui/confirmSheet.ts'
-import { getPlayerName, markAsked, optIn, optInState, optOut, setPlayerName, shouldAskOptIn, submitRun, willPost, type SubmitOutcome } from './net/leaderboard.ts'
+import {
+  deleteMyScores, getPlayerName, leaderboardEnabled, markAsked, optIn, optInState, optOut, setPlayerName, shouldAskOptIn, submitRun, willPost,
+  type SubmitOutcome,
+} from './net/leaderboard.ts'
 import { TouchHint } from './ui/touchHint.ts'
 import { Toast, type ToastSlot } from './ui/toast.ts'
 import { bakeIcons } from './ui/icons.ts'
@@ -52,18 +59,19 @@ import { loadSettings, saveSettings, type Settings } from './state/settings.ts'
 import { recordWorldBest, loadWorldBest } from './state/persistence.ts'
 import { buildRunResult, type RunEnd, type RunMeta, type RunResult } from './state/runResult.ts'
 import {
-  CHECKPOINT_EVERY_S, clearCheckpoint, holdRankedLock, loadDay, lostCheckpoint, markRankedStarted, postable, pruneDays,
+  CHECKPOINT_EVERY_S, clearCheckpoint, holdRankedLock, loadDay, loadStreak, lostCheckpoint, markRankedStarted, postable, pruneDays,
   rankedAvailable, rankedRun, recordDailyEnd, releaseRankedLock, saveCheckpoint, todayUtc,
 } from './state/daily.ts'
-import { updateLifetime } from './state/stats.ts'
-import { evaluateFeats } from './state/feats.ts'
+import { loadStats, updateLifetime } from './state/stats.ts'
+import { evaluateFeats, loadFeats } from './state/feats.ts'
 import { migrateSave } from './state/migrate.ts'
 import { recordThreatClear, selectThreat, selectedThreat, unlockedThreat } from './state/threatLadder.ts'
 import { shareRunCard } from './share/shareCard.ts'
 import { flushUpdatePrompt, setupUpdatePrompt } from './pwa/updatePrompt.ts'
-import { CHARACTERS, DEFAULT_CHARACTER_ID, characterById, type CharacterDef } from './content/characters.ts'
+import { CHARACTERS, DEFAULT_CHARACTER_ID, characterById } from './content/characters.ts'
 import { ARENAS, DEFAULT_ARENA_ID, arenaById } from './content/arenas.ts'
 import { FEATS, featForReward, validateFeats } from './content/feats.ts'
+import { threatLevel } from './content/threat.ts'
 import { FACTORY_PAINT_ID, paintById, type PaintDef } from './content/paints.ts'
 import { PICKUP_WEAPON_IDS, WEAPONS } from './content/weapons.ts'
 import { PERKS } from './content/perks.ts'
@@ -85,7 +93,7 @@ import { banishCard, canReroll, draftDue, openDraft as dealDraft, pickCard, pick
 import { scoreStep } from './game/scoring.ts'
 import { particleSystem } from './systems/particles.ts'
 
-type Screen = 'menu' | 'playing' | 'gameover' | 'leaderboard'
+type Screen = 'menu' | 'playing' | 'gameover' | 'leaderboard' | 'records'
 /** A discrete hit tints the ship this color for FeelDirector.shipFlash (section 6.5). */
 const SHIP_HURT_TINT = 0xff6a6a
 /** Elite tags keep this many screen px below the HUD rows. */
@@ -94,6 +102,9 @@ const TAG_HUD_GAP = 6
  *  landscape below the plate, between the chip and the badge. */
 const HINT_BELOW_ROW_P = 20
 const HINT_BELOW_PLATE_L = 28
+/** The ship's drawn extent (its barrel tip) in units of PLAYER_RADIUS: the menu
+ *  scales the hero ship so this fits the menu's hero radius. */
+const SHIP_EXTENT = 1.5
 /** Where the player goes once a run is recorded. */
 type AfterRun = 'recap' | 'menu' | 'retry'
 
@@ -195,6 +206,8 @@ async function boot(): Promise<void> {
   const coreReveal = new CoreReveal()
   const settingsPanel = new SettingsPanel()
   const leaderboard = new Leaderboard()
+  const records = new Records()
+  const hints = new Hints(callouts)
   const confirm = new ConfirmSheet()
   const touchHint = new TouchHint()
   const toast = new Toast()
@@ -203,8 +216,8 @@ async function boot(): Promise<void> {
   const debug = import.meta.env.DEV ? new DebugOverlay() : null
   // vignette sits at the bottom of the UI (above the world, below the HUD).
   layers.ui.addChild(
-    vignette.view, screenFx.view, arrows.view, hud.view, input.touch.view, flashOverlay, crosshair, callouts.view, pausedLabel,
-    touchHint.view, modal.view, winPanel.view, coreReveal.view, mainMenu.view, gameOver.view, settingsPanel.view, leaderboard.view, confirm.view, toast.view,
+    vignette.view, screenFx.view, arrows.view, hud.view, hints.chip, input.touch.view, flashOverlay, crosshair, callouts.view, pausedLabel,
+    touchHint.view, modal.view, winPanel.view, coreReveal.view, mainMenu.view, gameOver.view, leaderboard.view, records.view, settingsPanel.view, confirm.view, toast.view,
   )
   if (debug) layers.ui.addChild(debug.view)
 
@@ -217,8 +230,6 @@ async function boot(): Promise<void> {
   let touchLearned = loadJSON('seenTouchControls', false)
   let touchMoveUsed = false
   let touchAimUsed = false
-  // One-time "collect for XP" label on the first gem a new player ever sees.
-  let showGemHint = !loadJSON('seenGemHint', false)
   let levelFlash = 0
   // Whether the wreck visuals have landed this death.
   let deathBeat = false
@@ -239,6 +250,7 @@ async function boot(): Promise<void> {
     camera.reduceMotion = s.reduceMotion
     tweens.reduceMotion = s.reduceMotion
     numbers.mode = s.damageNumbers
+    feel.flashes = s.flashes
   }
   applySettings(settings)
 
@@ -250,6 +262,8 @@ async function boot(): Promise<void> {
   let submitToken = 0
   /** Sim time of the next ranked Daily checkpoint. */
   let nextCkptAt = CHECKPOINT_EVERY_S
+  /** Boot is done: the menu may show its own toasts (the boot toast goes first). */
+  let booted = false
 
   // Register the SW + "new version" toast, but never mid-run ("Update"
   // reloads the page, which would destroy an active run). Parked toasts are
@@ -267,51 +281,105 @@ async function boot(): Promise<void> {
     return p && isOwned('paint:' + p.id) ? p : null
   }
 
-  function refreshLoadoutUI(): void {
+  /** The feat that unlocks `key` and its progress, or null when `key` is owned. */
+  function lockInfo(key: string): LockInfo | null {
+    if (isOwned(key)) return null
+    const f = featForReward(key)!
+    const v = featValue(f, loadFeats().prog, loadStats())
+    return { desc: f.desc, progress: featProgress(f, v), frac: Math.min(1, v / f.target) }
+  }
+
+  /** The menu as the save stands now (section 9.7). */
+  function menuModel(): MenuModel {
+    const L = loadStats()
     const c = characterById(selCharId)
     const a = arenaById(selArenaId)
-    const cOpen = isOwned(c.id)
     const aOpen = isOwned(a.id)
     const paint = selectedPaint()
-    // Two SHORT lines (pilot, then arena): a single run-on line wraps
-    // unpredictably on phones and is hard to scan.
-    const cHint = cOpen ? ruleHint(c) : `🔒 ${c.name}: ${featForReward(c.id)!.desc}`
-    const aHint = aOpen ? `${a.name}: vs ${a.broodName}` : `🔒 ${a.name}: ${featForReward(a.id)!.desc}`
-    mainMenu.setLoadout(
-      cOpen ? `▸ ${c.name}` : `🔒 ${c.name}`,
-      aOpen ? `▸ ${a.name}` : `🔒 ${a.name}`,
-      ownedPaintIds().length > 1 ? `▸ ${paint ? paint.name : 'FACTORY'}` : null,
-      `${cHint}\n${aHint}`,
-      (paint ?? c.colors).body,
-    )
+    const best = loadWorldBest(a.id)
+    const unlocked = aOpen ? unlockedThreat(a.id) : 0
+    const sel = threatLevel(selectedThreat(a.id))
+    const counted = L.runs > 0
+    let daily: MenuModel['daily'] = null
+    if (counted) {
+      const date = todayUtc()
+      const spec = dailySpec(date)
+      const streak = loadStreak()
+      const yesterday = dayOf(Date.parse(date + 'T00:00:00Z') - 86_400_000)
+      const ranked = rankedRun(date)
+      daily = {
+        number: spec.number,
+        world: arenaById(spec.world).name,
+        pilot: characterById(spec.pilot).name,
+        threat: spec.threat,
+        threatName: threatLevel(spec.threat).name,
+        rankedOpen: rankedAvailable(date),
+        rankedScore: ranked ? ranked.score : null,
+        practiceBest: loadDay(date).practiceBest ?? 0,
+        played: streak.played,
+        streak: streak.last === date || streak.last === yesterday ? streak.run : 0,
+        pilotFree: !isOwned(spec.pilot),
+      }
+    }
+    return {
+      firstLaunch: !counted && !L.importedV1,
+      touch: isTouchDevice && !input.hasPointer,
+      pilot: { name: c.name, color: c.colors.body, stats: `${c.maxHp} HP \u00b7 ${c.speed} SPD`, ruleName: c.ruleName, ruleDesc: c.ruleDesc, lock: lockInfo(c.id) },
+      pilotArrows: CHARACTERS.filter((p) => isOwned(p.id)).length >= 2,
+      world: {
+        name: a.name,
+        color: a.borderGlow,
+        sub: `vs ${a.broodName.toUpperCase()}` + (best.score > 0 ? ` \u00b7 BEST ${best.score.toLocaleString('en-US')}` : ''),
+        lock: lockInfo(a.id),
+      },
+      worldArrows: ARENAS.filter((w) => isOwned(w.id)).length >= 2,
+      threat: unlocked >= 1 ? { unlocked, selected: sel.level, name: sel.name, rule: sel.rule } : null,
+      paint: ownedPaintIds().length > 1 ? (paint ? paint.name : 'FACTORY') : null,
+      daily,
+      goals: nextGoals(3, L),
+      records: counted,
+      leaders: leaderboardEnabled(),
+    }
+  }
+
+  function refreshLoadoutUI(): void {
+    mainMenu.setModel(menuModel())
     // The ship idling behind the menu previews the pilot and paint.
     if (screen === 'menu') {
-      const ship = cOpen ? c : characterById(DEFAULT_CHARACTER_ID)
-      player.paint(paint ?? ship.colors, ship.shape)
+      const c = characterById(selCharId)
+      player.paint(isOwned(c.id) ? (selectedPaint() ?? c.colors) : c.colors, c.shape)
     }
-    // The selected world's personal best (best time + most kills), shown on the
-    // menu and refreshed each time the arena selector cycles.
-    mainMenu.setWorldBest(a.name, loadWorldBest(a.id))
   }
-  mainMenu.onCyclePilot = () => {
-    const i = CHARACTERS.findIndex((c) => c.id === selCharId)
-    selCharId = CHARACTERS[(i + 1) % CHARACTERS.length]!.id
+  function cycle<T extends { id: string }>(list: readonly T[], id: string, dir: number): string {
+    const i = list.findIndex((x) => x.id === id)
+    return list[(i + dir + list.length) % list.length]!.id
+  }
+  mainMenu.onPilot = (dir) => {
+    selCharId = cycle(CHARACTERS, selCharId, dir)
     saveJSON('sel:char', selCharId)
     refreshLoadoutUI()
   }
-  mainMenu.onCycleArena = () => {
-    const i = ARENAS.findIndex((a) => a.id === selArenaId)
-    selArenaId = ARENAS[(i + 1) % ARENAS.length]!.id
+  mainMenu.onWorld = (dir) => {
+    selArenaId = cycle(ARENAS, selArenaId, dir)
     saveJSON('sel:arena', selArenaId)
     refreshLoadoutUI()
   }
-  mainMenu.onCyclePaint = () => {
+  mainMenu.onPaint = () => {
     const ids = ownedPaintIds()
     selPaintId = ids[(ids.indexOf(selectedPaint()?.id ?? FACTORY_PAINT_ID) + 1) % ids.length]!
     saveJSON('sel:paint', selPaintId)
     refreshLoadoutUI()
   }
+  mainMenu.onThreat = (t) => {
+    selectThreat(selArenaId, t)
+    refreshLoadoutUI()
+  }
   refreshLoadoutUI()
+
+  /** The menu's PLAY: Standard with the shown pilot and world, when both are owned. */
+  function canPlay(): boolean {
+    return isOwned(selCharId) && isOwned(selArenaId)
+  }
 
   /** The config a run starts from. Standard: the selected pilot and world
    *  (locked picks fall back to the default) and the owned pools. The Daily:
@@ -369,6 +437,8 @@ async function boot(): Promise<void> {
     nextCkptAt = CHECKPOINT_EVERY_S
     const theme = cfg.theme
     player.paint(selectedPaint() ?? cfg.character.colors, cfg.character.shape)
+    player.view.scale.set(1)
+    hints.beginRun(input.lastType === 'touch' || (isTouchDevice && !input.hasPointer))
     audio.setTheme(theme.music)
     feel.reset(loadWorldBest(theme.id).score)
     deathBeat = false
@@ -397,6 +467,7 @@ async function boot(): Promise<void> {
     gameOver.hide()
     settingsPanel.hide()
     leaderboard.hide()
+    records.hide()
   }
 
   /** The Daily from the menu or a retry: the ranked attempt asks first. */
@@ -453,6 +524,8 @@ async function boot(): Promise<void> {
     gameOver.show(result, gains)
     feel.runEnded(gains.score, done.length > 0)
     gameOver.setUnlocks(done)
+    const featsHint = done.length > 0 ? hints.once('feats') : null
+    if (featsHint) showToast(featsHint)
     const ask = shouldAskOptIn(lifetime.runs) && gameOver.canShowOptIn()
     if (ask) markAsked()
     gameOver.setOptInVisible(ask)
@@ -514,6 +587,7 @@ async function boot(): Promise<void> {
 
   /** The screen a toast shows over decides where it may sit. */
   function toastSlot(): ToastSlot | null {
+    if (settingsPanel.isOpen()) return settingsPanel.toastSlot
     return screen === 'gameover' ? gameOver.toastSlot : mainMenu.toastSlot
   }
 
@@ -535,10 +609,17 @@ async function boot(): Promise<void> {
     gameOver.hide()
     settingsPanel.hide()
     leaderboard.hide()
+    records.hide()
     confirm.close()
     toast.hide()
+    // A locked selection resets to the default on menu entry (section 9.7).
+    if (!isOwned(selCharId)) saveJSON('sel:char', (selCharId = DEFAULT_CHARACTER_ID))
+    if (!isOwned(selArenaId)) saveJSON('sel:arena', (selArenaId = DEFAULT_ARENA_ID))
+    if (selPaintId !== FACTORY_PAINT_ID && !selectedPaint()) saveJSON('sel:paint', (selPaintId = FACTORY_PAINT_ID))
+    // The hero ship idles at the world center, nose up.
+    player.spawn(arena.bounds.x + arena.bounds.w / 2, arena.bounds.y + arena.bounds.h / 2)
+    player.facing = -Math.PI / 2
     refreshLoadoutUI() // re-read the selected world's best (a run may have set one)
-    refreshDailyLabel()
     mainMenu.show()
     // Reset the whole presentation to the hive home base. The menu idles a live
     // arena behind it (see the player.spawn at world center), so music, floor
@@ -551,12 +632,14 @@ async function boot(): Promise<void> {
     audio.setTheme(home.music)
     backdrop.setTheme(home, arena.glowSpots)
     flushUpdatePrompt()
+    if (booted) dailyHint()
   }
 
-  function refreshDailyLabel(): void {
-    const date = todayUtc()
-    const n = dailySpec(date).number
-    mainMenu.setDailyLabel(rankedAvailable(date) ? `DAILY #${n}` : `DAILY #${n} PRACTICE`)
+  /** The first time the menu shows the Daily card, its hint (section 9.10). */
+  function dailyHint(): void {
+    if (screen !== 'menu' || !mainMenu.view.visible || loadStats().runs === 0) return
+    const line = hints.once('daily')
+    if (line) showToast(line)
   }
 
   function toLeaderboard(): void {
@@ -568,15 +651,40 @@ async function boot(): Promise<void> {
     leaderboard.open(selArenaId)
   }
 
-  mainMenu.onPlay = (mode) => {
-    if (mode === 'daily') playDaily()
-    else startRun(mode)
-  }
-  mainMenu.onSettings = () => {
+  function toRecords(): void {
+    screen = 'records'
+    mainMenu.hide()
     toast.hide()
-    settingsPanel.open(settings)
+    records.open()
   }
+
+  /** Settings over the menu; closing it shows the menu again. */
+  function openSettings(): void {
+    toast.hide()
+    mainMenu.hide()
+    settingsPanel.open(settings, accountState())
+  }
+
+  function closeSettings(): void {
+    settingsPanel.hide()
+    if (screen === 'menu') {
+      refreshLoadoutUI()
+      mainMenu.show()
+    }
+  }
+
+  function accountState(): { posting: boolean; name: string } {
+    return { posting: optInState() === true, name: getPlayerName() }
+  }
+
+  mainMenu.onPlay = () => {
+    if (canPlay()) startRun('endless')
+  }
+  mainMenu.onDaily = playDaily
+  mainMenu.onSettings = openSettings
+  mainMenu.onRecords = toRecords
   mainMenu.onLeaderboard = toLeaderboard
+  records.onBack = toMenu
   gameOver.onRetry = retry
   gameOver.onMenu = toMenu
   gameOver.onLeaderboard = toLeaderboard
@@ -591,8 +699,7 @@ async function boot(): Promise<void> {
   gameOver.optIn.onDecline = () => {
     optOut()
     gameOver.setOptInVisible(false)
-    // Until the Settings ACCOUNT rows ship (P17), JOIN on LEADERS is the way back.
-    showToast('You can join later from LEADERS.')
+    showToast('You can turn this on in Settings.')
   }
   leaderboard.onBack = toMenu
   leaderboard.onJoin = joinLeaderboard
@@ -605,7 +712,39 @@ async function boot(): Promise<void> {
     applySettings(s)
     saveSettings(s)
   }
-  settingsPanel.onClose = () => settingsPanel.hide()
+  settingsPanel.onClose = closeSettings
+  // ACCOUNT (section 8.3): posting starts with a name, and REMOVE MY SCORES asks first.
+  settingsPanel.onPostScores = (on) => {
+    if (!on) {
+      optOut()
+      settingsPanel.setAccount(accountState())
+      return
+    }
+    void promptName(getPlayerName()).then((name) => {
+      if (name !== null) optIn(name)
+      settingsPanel.setAccount(accountState())
+    })
+  }
+  settingsPanel.onEditName = () => {
+    void promptName(getPlayerName()).then((name) => {
+      if (name !== null) setPlayerName(name)
+      settingsPanel.setAccount(accountState())
+    })
+  }
+  settingsPanel.onRemoveScores = () => {
+    confirm.open('REMOVE MY SCORES', 'Remove all your scores from the public board? This cannot be undone.', 'REMOVE', 'CANCEL', () => {
+      void deleteMyScores().then((r) => {
+        settingsPanel.setAccount(accountState())
+        showToast(
+          r === 'ok' ? 'Your scores are removed.' : r === 'gone' ? 'The leaderboard is offline.' : r === 'outdated' ? 'Update the game to see the leaderboard.' : 'Could not reach the leaderboard.',
+        )
+      })
+    }, true)
+  }
+  settingsPanel.onShowTips = () => {
+    hints.reset()
+    touchLearned = false
+  }
   /** The only way a draft opens: its cards are rolled once here and stay
    *  cached on world.draft until the pick. An empty roll clears the pending
    *  levels instead of freezing the run. Picks never chain-open: further
@@ -621,7 +760,7 @@ async function boot(): Promise<void> {
     world.paused = true
     modal.open(world.draft, input.lastType === 'touch')
     feel.draftOpened()
-    levelFlash = 1
+    if (feel.tryFlash(renderClock * 1000)) levelFlash = 1
   }
   function resumeFromDraft(): void {
     modal.close()
@@ -709,24 +848,26 @@ async function boot(): Promise<void> {
     modal.setScreen(w, h, insets)
     winPanel.layout(w, h, insets)
     coreReveal.layout(w, h, insets)
-    mainMenu.layout(w, h)
+    mainMenu.layout(w, h, insets)
     gameOver.layout(w, h, insets)
-    settingsPanel.layout(w, h)
+    settingsPanel.layout(w, h, insets)
     leaderboard.layout(w, h, insets)
+    records.layout(w, h, insets)
+    hints.layoutChip(hud.pauseRect)
     confirm.layout(w, h, insets)
     toast.layout(w, insets, toastSlot())
     // Pin the bloom to the visible window (not the whole 2800x1900 arena).
     layers.scene.filterArea = new Rectangle(0, 0, w, h)
     flashOverlay.clear()
     flashOverlay.rect(0, 0, w, h).fill(0xeafff6)
-    // Idle the player at world center so the menu has a live arena behind it.
-    if (screen === 'menu') player.spawn(arena.bounds.x + arena.bounds.w / 2, arena.bounds.y + arena.bounds.h / 2)
   }
   layout()
   toMenu()
   const recovered = await recoverCheckpoint()
   const bootToast = [recovered, welcome].filter((t) => t !== null).join('\n')
   if (bootToast) showToast(bootToast, 6)
+  else dailyHint()
+  booted = true
   // Bind to the renderer's own resize event (authoritative: it fires exactly when
   // `resizeTo: window` updates app.screen) plus window events as a backstop.
   app.renderer.on('resize', layout)
@@ -744,7 +885,7 @@ async function boot(): Promise<void> {
       return true
     }
     if (settingsPanel.isOpen()) {
-      settingsPanel.hide()
+      closeSettings()
       return true
     }
     if (modal.isOpen() || pauseReason === 'win' || pauseReason === 'core') return true // swallow back while a choice is up
@@ -798,8 +939,14 @@ async function boot(): Promise<void> {
       coreReveal.pressKey(e.key)
       return
     }
+    if (settingsPanel.isOpen()) {
+      if (e.key === 'Escape') closeSettings()
+      return
+    }
     if (debug && e.key === '`') {
       debug.toggle()
+    } else if ((screen === 'records' || screen === 'leaderboard') && e.key === 'Escape') {
+      toMenu()
     } else if (screen === 'playing') {
       if (e.key === 'Escape') quitRun('recap')
       else if (e.key === 'r' || e.key === 'R') quitRun('retry')
@@ -807,7 +954,7 @@ async function boot(): Promise<void> {
     } else if (screen === 'gameover') {
       if (e.key === 'Enter' && gameOver.acceptsInput()) retry()
       else if (e.key === 'Escape' && gameOver.acceptsInput()) toMenu()
-    } else if (screen === 'menu' && e.key === 'Enter' && !settingsPanel.isOpen() && !confirm.isOpen()) {
+    } else if (screen === 'menu' && e.key === 'Enter' && !confirm.isOpen() && canPlay()) {
       startRun('endless')
     }
   })
@@ -817,8 +964,14 @@ async function boot(): Promise<void> {
     const playing = screen === 'playing'
     const touchPortrait = playing && input.lastType === 'touch' && app.screen.height > app.screen.width
     const boss = playing && world.bossAlive && world.boss ? world.boss : null
-    const sx = seed ? player.x : player.view.x
-    const sy = seed ? player.y : player.view.y
+    let sx = seed ? player.x : player.view.x
+    let sy = seed ? player.y : player.view.y
+    if (screen === 'menu' && !seed) {
+      // The menu places the hero ship: offset the view so the ship lands on it.
+      sx += (app.screen.width / 2 - mainMenu.heroX) / camera.baseZoom
+      sy += (app.screen.height / 2 - mainMenu.heroY) / camera.baseZoom
+      player.view.scale.set(mainMenu.heroR / (SHIP_EXTENT * PLAYER_RADIUS * camera.baseZoom))
+    }
     camera.update(fd, sx, sy, playing ? input.aimDir.x : 0, playing ? input.aimDir.y : 0, touchPortrait, boss, world.arena.bounds)
   }
 
@@ -942,7 +1095,7 @@ async function boot(): Promise<void> {
     recordWorldBest(r)
     if (evaluateFeats(r, lifetime).length > 0) refreshLoadoutUI()
     recordDailyEnd(r)
-    refreshDailyLabel()
+    refreshLoadoutUI()
     void postRun(r, false)
     return `Ranked Daily #${r.dailyNumber} saved at ${Math.floor(r.time / 60)}:${String(Math.floor(r.time % 60)).padStart(2, '0')} when the app closed.`
   }
@@ -966,6 +1119,7 @@ async function boot(): Promise<void> {
       // feeds the sim, never the sim step itself.
       const time = feel.time
       time.advance(loop.frameMs)
+      if (screen === 'playing') hints.scan(world.feel, world)
       feel.drain(renderClock * 1000, camera)
       if (screen === 'playing' && world.pendingGameOver) {
         time.startDeath()
@@ -985,11 +1139,7 @@ async function boot(): Promise<void> {
         writeCheckpoint()
       }
 
-      if (playing && showGemHint && world.firstGemAt >= 0) {
-        showGemHint = false
-        numbers.label('COLLECT FOR XP', world.firstGemX, world.firstGemY, 18, COLORS.gem)
-        saveJSON('seenGemHint', true)
-      }
+      hints.update(fd, world, playing)
 
       renderEntities(world, alpha)
       hazardView.update(world, alpha)
@@ -1065,6 +1215,8 @@ async function boot(): Promise<void> {
       }
       tweens.update(renderClock * 1000)
       toast.update(fd)
+      mainMenu.tick(Date.now(), fd)
+      postFX.setPulse(feel.bloomPulse)
 
       // Ambient backdrop (motes + atmosphere). AFTER the camera write above, so
       // camera-bounded mote recycling uses this frame's window (no edge popping).
@@ -1161,6 +1313,14 @@ async function boot(): Promise<void> {
       perfReset: () => loop.resetStats(),
       leaderboard,
       toLeaderboard: () => toLeaderboard(),
+      mainMenu,
+      records,
+      toRecords: () => toRecords(),
+      settingsPanel,
+      openSettings: () => openSettings(),
+      hints,
+      confirm,
+      toMenu: () => toMenu(),
       touchHint,
       setGlow: (v: number) => postFX.setIntensity(v),
       get screen() {
@@ -1259,23 +1419,6 @@ function runSeed(): number {
     return Number.isFinite(n) ? n >>> 0 : seedFromString(SEED_OVERRIDE)
   }
   return (performance.now() * 1000) >>> 0 || DEFAULT_SEED
-}
-
-/** The menu fits one 12 px line per loadout item at 375 px. */
-const RULE_HINT_MAX = 46
-
-/** The pilot's rule for the menu hint: its name and the whole sentences that fit. */
-function ruleHint(c: CharacterDef): string {
-  let out = `${c.name} · ${c.ruleName}:`
-  const head = out.length
-  // No regex lookbehind: WebKit before Safari 16.4 rejects it at parse time (iOS target 13).
-  const parts = c.ruleDesc.split('. ')
-  for (let i = 0; i < parts.length; i++) {
-    const part = i < parts.length - 1 ? parts[i] + '.' : parts[i]!
-    if (out.length > head && out.length + 1 + part.length > RULE_HINT_MAX) break
-    out += ' ' + part
-  }
-  return out
 }
 
 function makeDecor(rng: Rng, count: number): DecorSpeck[] {

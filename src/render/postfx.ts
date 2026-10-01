@@ -13,6 +13,8 @@ export interface GradeSpec {
 
 const BASE_SATURATE = 0.16
 const BASE_CONTRAST = 0.05
+/** The bloom scale a full pulse adds, as a multiple of the intensity. */
+const PULSE_GAIN = 1.5
 
 /**
  * Post-processing for the game world: a threshold bloom (so only the bright
@@ -59,6 +61,12 @@ export class PostFX {
     this.intensity = v
     this.bloom.bloomScale = v
     this.apply()
+  }
+
+  /** A bloom pulse on top of the intensity (0..1, the boss kill). */
+  setPulse(p: number): void {
+    const scale = this.intensity * (1 + PULSE_GAIN * p)
+    if (this.bloom.bloomScale !== scale) this.bloom.bloomScale = scale
   }
 
   /**

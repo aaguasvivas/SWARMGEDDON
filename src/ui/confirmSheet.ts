@@ -24,6 +24,7 @@ export class ConfirmSheet {
   private back: Button | null = null
   private okLabel = ''
   private backLabel = ''
+  private danger = false
   private buttonW = 0
   private onOk: (() => void) | null = null
   private readyAt = 0
@@ -39,13 +40,15 @@ export class ConfirmSheet {
     this.view.visible = false
   }
 
-  open(title: string, body: string, okLabel: string, backLabel: string, onOk: () => void): void {
+  /** `danger` draws the confirm button in the danger color (a destructive action). */
+  open(title: string, body: string, okLabel: string, backLabel: string, onOk: () => void, danger = false): void {
     this.title.text = title
     this.body.text = body
     this.onOk = onOk
-    if (okLabel !== this.okLabel || backLabel !== this.backLabel) {
+    if (okLabel !== this.okLabel || backLabel !== this.backLabel || danger !== this.danger) {
       this.okLabel = okLabel
       this.backLabel = backLabel
+      this.danger = danger
       this.buttonW = 0
     }
     this.view.visible = true
@@ -118,7 +121,7 @@ export class ConfirmSheet {
     this.ok?.view.destroy({ children: true })
     this.back?.view.destroy({ children: true })
     this.buttonW = bw
-    this.ok = new Button(this.okLabel, bw, TARGET.secondary, 'primary', 16)
+    this.ok = new Button(this.okLabel, bw, TARGET.secondary, this.danger ? 'danger' : 'primary', 16)
     this.back = new Button(this.backLabel, bw, TARGET.secondary, 'secondary', 16)
     this.ok.onClick = () => this.confirm()
     this.back.onClick = () => this.cancel()
