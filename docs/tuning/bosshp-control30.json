@@ -1,0 +1,261 @@
+{
+ "meta": {
+  "label": "bosshp-control30",
+  "date": "2026-10-01T12:47:19.681Z",
+  "commit": "56dd2d9",
+  "srcDirty": false,
+  "scriptsDirty": true,
+  "command": "node scripts/playtest/matrix.mjs --seeds=30 --only=A5,A6,A7,A8 --label=bosshp-control30 --runs=/tmp/swg-bosshp/control --out=/tmp/swg-bosshp/reports",
+  "seeds": "1001 x 1..30 per world",
+  "worlds": [
+   "hive",
+   "depths",
+   "wastes"
+  ],
+  "threatSeeds": "1001 x 1..30",
+  "otSets": [
+   1,
+   2
+  ],
+  "only": [
+   "A5",
+   "A6",
+   "A7",
+   "A8"
+  ],
+  "runsDir": "/tmp/swg-bosshp/control",
+  "machineAtEnd": {
+   "load": [
+    3.64,
+    3.31,
+    3.71
+   ],
+   "swap": "total = 6144.00M  used = 5203.94M  free = 940.06M  (encrypted)"
+  },
+  "sets": {
+   "smartP": {
+    "label": "smart+P",
+    "pattern": "smart:SEED:14:nova:priority",
+    "worlds": [
+     "hive",
+     "depths",
+     "wastes"
+    ],
+    "runs": 90
+   },
+   "focus": {
+    "label": "smart+focus+P",
+    "pattern": "smart+focus:SEED:14:nova:priority",
+    "worlds": [
+     "hive",
+     "depths",
+     "wastes"
+    ],
+    "runs": 90
+   },
+   "smart": {
+    "label": "smart",
+    "pattern": "smart:SEED:14",
+    "worlds": [
+     "hive",
+     "depths",
+     "wastes"
+    ],
+    "runs": 90
+   },
+   "crude": {
+    "label": "crude",
+    "pattern": "crude:SEED:14",
+    "worlds": [
+     "hive",
+     "depths",
+     "wastes"
+    ],
+    "runs": 90
+   }
+  },
+  "commands": [
+   "node scripts/playtest/playtest.mjs hive smart:1001:14:nova:priority smart:2002:14:nova:priority smart:3003:14:nova:priority smart:4004:14:nova:priority smart:5005:14:nova:priority smart:6006:14:nova:priority smart:7007:14:nova:priority smart:8008:14:nova:priority smart:9009:14:nova:priority smart:10010:14:nova:priority smart:11011:14:nova:priority smart:12012:14:nova:priority smart:13013:14:nova:priority smart:14014:14:nova:priority smart:15015:14:nova:priority smart:16016:14:nova:priority smart:17017:14:nova:priority smart:18018:14:nova:priority smart:19019:14:nova:priority smart:20020:14:nova:priority smart:21021:14:nova:priority smart:22022:14:nova:priority smart:23023:14:nova:priority smart:24024:14:nova:priority smart:25025:14:nova:priority smart:26026:14:nova:priority smart:27027:14:nova:priority smart:28028:14:nova:priority smart:29029:14:nova:priority smart:30030:14:nova:priority --out=/tmp/swg-bosshp/control",
+   "node scripts/playtest/playtest.mjs depths smart:1001:14:nova:priority smart:2002:14:nova:priority smart:3003:14:nova:priority smart:4004:14:nova:priority smart:5005:14:nova:priority smart:6006:14:nova:priority smart:7007:14:nova:priority smart:8008:14:nova:priority smart:9009:14:nova:priority smart:10010:14:nova:priority smart:11011:14:nova:priority smart:12012:14:nova:priority smart:13013:14:nova:priority smart:14014:14:nova:priority smart:15015:14:nova:priority smart:16016:14:nova:priority smart:17017:14:nova:priority smart:18018:14:nova:priority smart:19019:14:nova:priority smart:20020:14:nova:priority smart:21021:14:nova:priority smart:22022:14:nova:priority smart:23023:14:nova:priority smart:24024:14:nova:priority smart:25025:14:nova:priority smart:26026:14:nova:priority smart:27027:14:nova:priority smart:28028:14:nova:priority smart:29029:14:nova:priority smart:30030:14:nova:priority --out=/tmp/swg-bosshp/control",
+   "node scripts/playtest/playtest.mjs wastes smart:1001:14:nova:priority smart:2002:14:nova:priority smart:3003:14:nova:priority smart:4004:14:nova:priority smart:5005:14:nova:priority smart:6006:14:nova:priority smart:7007:14:nova:priority smart:8008:14:nova:priority smart:9009:14:nova:priority smart:10010:14:nova:priority smart:11011:14:nova:priority smart:12012:14:nova:priority smart:13013:14:nova:priority smart:14014:14:nova:priority smart:15015:14:nova:priority smart:16016:14:nova:priority smart:17017:14:nova:priority smart:18018:14:nova:priority smart:19019:14:nova:priority smart:20020:14:nova:priority smart:21021:14:nova:priority smart:22022:14:nova:priority smart:23023:14:nova:priority smart:24024:14:nova:priority smart:25025:14:nova:priority smart:26026:14:nova:priority smart:27027:14:nova:priority smart:28028:14:nova:priority smart:29029:14:nova:priority smart:30030:14:nova:priority --out=/tmp/swg-bosshp/control",
+   "node scripts/playtest/playtest.mjs hive smart+focus:1001:14:nova:priority smart+focus:2002:14:nova:priority smart+focus:3003:14:nova:priority smart+focus:4004:14:nova:priority smart+focus:5005:14:nova:priority smart+focus:6006:14:nova:priority smart+focus:7007:14:nova:priority smart+focus:8008:14:nova:priority smart+focus:9009:14:nova:priority smart+focus:10010:14:nova:priority smart+focus:11011:14:nova:priority smart+focus:12012:14:nova:priority smart+focus:13013:14:nova:priority smart+focus:14014:14:nova:priority smart+focus:15015:14:nova:priority smart+focus:16016:14:nova:priority smart+focus:17017:14:nova:priority smart+focus:18018:14:nova:priority smart+focus:19019:14:nova:priority smart+focus:20020:14:nova:priority smart+focus:21021:14:nova:priority smart+focus:22022:14:nova:priority smart+focus:23023:14:nova:priority smart+focus:24024:14:nova:priority smart+focus:25025:14:nova:priority smart+focus:26026:14:nova:priority smart+focus:27027:14:nova:priority smart+focus:28028:14:nova:priority smart+focus:29029:14:nova:priority smart+focus:30030:14:nova:priority --out=/tmp/swg-bosshp/control",
+   "node scripts/playtest/playtest.mjs depths smart+focus:1001:14:nova:priority smart+focus:2002:14:nova:priority smart+focus:3003:14:nova:priority smart+focus:4004:14:nova:priority smart+focus:5005:14:nova:priority smart+focus:6006:14:nova:priority smart+focus:7007:14:nova:priority smart+focus:8008:14:nova:priority smart+focus:9009:14:nova:priority smart+focus:10010:14:nova:priority smart+focus:11011:14:nova:priority smart+focus:12012:14:nova:priority smart+focus:13013:14:nova:priority smart+focus:14014:14:nova:priority smart+focus:15015:14:nova:priority smart+focus:16016:14:nova:priority smart+focus:17017:14:nova:priority smart+focus:18018:14:nova:priority smart+focus:19019:14:nova:priority smart+focus:20020:14:nova:priority smart+focus:21021:14:nova:priority smart+focus:22022:14:nova:priority smart+focus:23023:14:nova:priority smart+focus:24024:14:nova:priority smart+focus:25025:14:nova:priority smart+focus:26026:14:nova:priority smart+focus:27027:14:nova:priority smart+focus:28028:14:nova:priority smart+focus:29029:14:nova:priority smart+focus:30030:14:nova:priority --out=/tmp/swg-bosshp/control",
+   "node scripts/playtest/playtest.mjs wastes smart+focus:1001:14:nova:priority smart+focus:2002:14:nova:priority smart+focus:3003:14:nova:priority smart+focus:4004:14:nova:priority smart+focus:5005:14:nova:priority smart+focus:6006:14:nova:priority smart+focus:7007:14:nova:priority smart+focus:8008:14:nova:priority smart+focus:9009:14:nova:priority smart+focus:10010:14:nova:priority smart+focus:11011:14:nova:priority smart+focus:12012:14:nova:priority smart+focus:13013:14:nova:priority smart+focus:14014:14:nova:priority smart+focus:15015:14:nova:priority smart+focus:16016:14:nova:priority smart+focus:17017:14:nova:priority smart+focus:18018:14:nova:priority smart+focus:19019:14:nova:priority smart+focus:20020:14:nova:priority smart+focus:21021:14:nova:priority smart+focus:22022:14:nova:priority smart+focus:23023:14:nova:priority smart+focus:24024:14:nova:priority smart+focus:25025:14:nova:priority smart+focus:26026:14:nova:priority smart+focus:27027:14:nova:priority smart+focus:28028:14:nova:priority smart+focus:29029:14:nova:priority smart+focus:30030:14:nova:priority --out=/tmp/swg-bosshp/control",
+   "node scripts/playtest/playtest.mjs hive smart:1001:14 smart:2002:14 smart:3003:14 smart:4004:14 smart:5005:14 smart:6006:14 smart:7007:14 smart:8008:14 smart:9009:14 smart:10010:14 smart:11011:14 smart:12012:14 smart:13013:14 smart:14014:14 smart:15015:14 smart:16016:14 smart:17017:14 smart:18018:14 smart:19019:14 smart:20020:14 smart:21021:14 smart:22022:14 smart:23023:14 smart:24024:14 smart:25025:14 smart:26026:14 smart:27027:14 smart:28028:14 smart:29029:14 smart:30030:14 --out=/tmp/swg-bosshp/control",
+   "node scripts/playtest/playtest.mjs depths smart:1001:14 smart:2002:14 smart:3003:14 smart:4004:14 smart:5005:14 smart:6006:14 smart:7007:14 smart:8008:14 smart:9009:14 smart:10010:14 smart:11011:14 smart:12012:14 smart:13013:14 smart:14014:14 smart:15015:14 smart:16016:14 smart:17017:14 smart:18018:14 smart:19019:14 smart:20020:14 smart:21021:14 smart:22022:14 smart:23023:14 smart:24024:14 smart:25025:14 smart:26026:14 smart:27027:14 smart:28028:14 smart:29029:14 smart:30030:14 --out=/tmp/swg-bosshp/control",
+   "node scripts/playtest/playtest.mjs wastes smart:1001:14 smart:2002:14 smart:3003:14 smart:4004:14 smart:5005:14 smart:6006:14 smart:7007:14 smart:8008:14 smart:9009:14 smart:10010:14 smart:11011:14 smart:12012:14 smart:13013:14 smart:14014:14 smart:15015:14 smart:16016:14 smart:17017:14 smart:18018:14 smart:19019:14 smart:20020:14 smart:21021:14 smart:22022:14 smart:23023:14 smart:24024:14 smart:25025:14 smart:26026:14 smart:27027:14 smart:28028:14 smart:29029:14 smart:30030:14 --out=/tmp/swg-bosshp/control",
+   "node scripts/playtest/playtest.mjs hive crude:1001:14 crude:2002:14 crude:3003:14 crude:4004:14 crude:5005:14 crude:6006:14 crude:7007:14 crude:8008:14 crude:9009:14 crude:10010:14 crude:11011:14 crude:12012:14 crude:13013:14 crude:14014:14 crude:15015:14 crude:16016:14 crude:17017:14 crude:18018:14 crude:19019:14 crude:20020:14 crude:21021:14 crude:22022:14 crude:23023:14 crude:24024:14 crude:25025:14 crude:26026:14 crude:27027:14 crude:28028:14 crude:29029:14 crude:30030:14 --out=/tmp/swg-bosshp/control",
+   "node scripts/playtest/playtest.mjs depths crude:1001:14 crude:2002:14 crude:3003:14 crude:4004:14 crude:5005:14 crude:6006:14 crude:7007:14 crude:8008:14 crude:9009:14 crude:10010:14 crude:11011:14 crude:12012:14 crude:13013:14 crude:14014:14 crude:15015:14 crude:16016:14 crude:17017:14 crude:18018:14 crude:19019:14 crude:20020:14 crude:21021:14 crude:22022:14 crude:23023:14 crude:24024:14 crude:25025:14 crude:26026:14 crude:27027:14 crude:28028:14 crude:29029:14 crude:30030:14 --out=/tmp/swg-bosshp/control",
+   "node scripts/playtest/playtest.mjs wastes crude:1001:14 crude:2002:14 crude:3003:14 crude:4004:14 crude:5005:14 crude:6006:14 crude:7007:14 crude:8008:14 crude:9009:14 crude:10010:14 crude:11011:14 crude:12012:14 crude:13013:14 crude:14014:14 crude:15015:14 crude:16016:14 crude:17017:14 crude:18018:14 crude:19019:14 crude:20020:14 crude:21021:14 crude:22022:14 crude:23023:14 crude:24024:14 crude:25025:14 crude:26026:14 crude:27027:14 crude:28028:14 crude:29029:14 crude:30030:14 --out=/tmp/swg-bosshp/control"
+  ]
+ },
+ "metrics": [
+  {
+   "id": "A5",
+   "name": "Boss arrival (smart+P and focus fights)",
+   "value": "388 arrivals, 287 to 306 u, cage active and inside 388/388, in arena 388/388",
+   "target": "250 to 340 u; cage active the same tick",
+   "result": "PASS",
+   "details": []
+  },
+  {
+   "id": "A6",
+   "name": "Fights (focus bot medians mid1/mid2/final; default bot = smart+P)",
+   "value": "hive focus 23.6/18.5/19.7 s (kills 30/23/19), default longest 173.5 s; depths focus 21.8/17.9/26.9 s (kills 28/14/10), default longest 101.6 s; wastes focus 27.3/26/31.6 s (kills 30/23/13), default longest 210 s; kill-to-next-arrival min 20 s",
+   "target": "focus mid1/mid2 median 20 to 40 s, final 40 to 75 s; default bot none over 150 s except stalemate; gap >= 20 s",
+   "result": "FAIL",
+   "details": {
+    "hive": {
+     "focus": {
+      "mid1": {
+       "kills": 30,
+       "median": 23.57,
+       "min": 10.37,
+       "max": 57.08,
+       "unfinished": 0,
+       "deaths": 0
+      },
+      "mid2": {
+       "kills": 23,
+       "median": 18.53,
+       "min": 6.55,
+       "max": 68.51,
+       "unfinished": 0,
+       "deaths": 0
+      },
+      "final": {
+       "kills": 19,
+       "median": 19.68,
+       "min": 8.21,
+       "max": 53.25,
+       "unfinished": 0,
+       "deaths": 0
+      }
+     },
+     "defaultLongest": 173.51,
+     "defaultOver150": [
+      "final 170.81 s (kill, hive_smart_14014_priority.json)",
+      "mid2 173.51 s (kill, hive_smart_20020_priority.json)",
+      "final 165.33 s (kill, hive_smart_20020_priority.json)"
+     ],
+     "defaultFightsEndedByDeath": 0,
+     "defaultFights": 76
+    },
+    "depths": {
+     "focus": {
+      "mid1": {
+       "kills": 28,
+       "median": 21.795,
+       "min": 10.87,
+       "max": 38,
+       "unfinished": 0,
+       "deaths": 0
+      },
+      "mid2": {
+       "kills": 14,
+       "median": 17.869999999999997,
+       "min": 3.91,
+       "max": 35.65,
+       "unfinished": 0,
+       "deaths": 0
+      },
+      "final": {
+       "kills": 10,
+       "median": 26.89,
+       "min": 5.55,
+       "max": 55.05,
+       "unfinished": 0,
+       "deaths": 0
+      }
+     },
+     "defaultLongest": 101.63,
+     "defaultOver150": [],
+     "defaultFightsEndedByDeath": 0,
+     "defaultFights": 51
+    },
+    "wastes": {
+     "focus": {
+      "mid1": {
+       "kills": 30,
+       "median": 27.299999999999997,
+       "min": 12.83,
+       "max": 41.1,
+       "unfinished": 0,
+       "deaths": 0
+      },
+      "mid2": {
+       "kills": 23,
+       "median": 26.01,
+       "min": 5.41,
+       "max": 75.41,
+       "unfinished": 0,
+       "deaths": 0
+      },
+      "final": {
+       "kills": 13,
+       "median": 31.56,
+       "min": 5.01,
+       "max": 60.06,
+       "unfinished": 0,
+       "deaths": 0
+      }
+     },
+     "defaultLongest": 209.98,
+     "defaultOver150": [
+      "mid2 180 s (ascend, wastes_smart_10010_priority.json)",
+      "final 166.25 s (kill, wastes_smart_10010_priority.json)",
+      "final 209.98 s (open, wastes_smart_16016_priority.json)"
+     ],
+     "defaultFightsEndedByDeath": 0,
+     "defaultFights": 71
+    }
+   }
+  },
+  {
+   "id": "A7",
+   "name": "Win rate (30 seeds per world)",
+   "value": "hive smart+P 23/30, smart 12/30; depths smart+P 7/30, smart 4/30; wastes smart+P 17/30, smart 11/30",
+   "target": "smart+P 25 to 45%; smart 5 to 25%",
+   "result": "FAIL",
+   "details": {
+    "hive": {
+     "smartP": "23/30",
+     "smart": "12/30"
+    },
+    "depths": {
+     "smartP": "7/30",
+     "smart": "4/30"
+    },
+    "wastes": {
+     "smartP": "17/30",
+     "smart": "11/30"
+    }
+   }
+  },
+  {
+   "id": "A8",
+   "name": "Median survival (a win or a stalemate counts as the whole 14:00)",
+   "value": "hive smart 9:35, smart+P 14:00, crude 2:08; depths smart 6:46, smart+P 8:25, crude 2:10; wastes smart 10:16, smart+P 14:00, crude 1:43",
+   "target": "smart >= 5:30; smart+P >= 8:00; crude >= 2:30; Hive crude >= Depths and Wastes",
+   "result": "FAIL",
+   "details": {
+    "hive": {
+     "smart": 574.925,
+     "smartP": 840,
+     "crude": 128.245
+    },
+    "depths": {
+     "smart": 406.14,
+     "smartP": 504.725,
+     "crude": 129.785
+    },
+    "wastes": {
+     "smart": 616.06,
+     "smartP": 840,
+     "crude": 103.065
+    },
+    "hiveCrudeAtLeastOthers": false
+   }
+  }
+ ]
+}

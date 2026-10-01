@@ -6,6 +6,9 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 export const DEFAULT_DIR = join(dirname(fileURLToPath(import.meta.url)), 'playtest')
+/** src/config.ts STALEMATE_AFTER, and the slack at a run's end (see `fights` in summarize). */
+const STALEMATE_AFTER = 210
+const RUN_END_STALE = 0.1
 
 /** Every run JSON in `dir`, summarized. */
 export function loadSummaries(dir = DEFAULT_DIR) {
@@ -67,12 +70,16 @@ export function summarize(r, f) {
   const bossSpawns = ev.filter((e) => e.type === 'bossSpawn')
   const bossKills = ev.filter((e) => e.type === 'bossKill')
   // Boss fights: each spawn runs until its kill, an ascend (the next spawn),
-  // the stalemate, or the end of the run.
+  // the stalemate, or the end of the run. A PRIME that arrives on its beat
+  // (630.02 s) reaches STALEMATE_AFTER (210 s) 0.02 s after a 14-minute run
+  // ends, so a final still open within RUN_END_STALE of 210 s at the run's end
+  // counts as the stalemate it is about to be (P19 bosshp).
   const fights = bossSpawns.map((sp, i) => {
     const next = bossSpawns[i + 1]
     const end = ev.find((e) => e.t >= sp.t && (e.type === 'bossKill' || e.type === 'stalemate'))
     const endT = end && (!next || end.t <= next.t) ? end.t : next ? next.t : r.endTime
-    const how = end && (!next || end.t <= next.t) ? (end.type === 'bossKill' ? 'kill' : 'stalemate') : next ? 'ascend' : r.dead ? 'death' : 'open'
+    let how = end && (!next || end.t <= next.t) ? (end.type === 'bossKill' ? 'kill' : 'stalemate') : next ? 'ascend' : r.dead ? 'death' : 'open'
+    if (how === 'open' && sp.stage === 'final' && endT - sp.t >= STALEMATE_AFTER - RUN_END_STALE) how = 'stalemate'
     return { stage: sp.stage, spawnT: sp.t, endT, len: +(endT - sp.t).toFixed(2), how, dist: sp.dist, cage: sp.cage, inCage: sp.inCage, inArena: sp.inArena, hp: sp.hp }
   })
   const killGaps = []

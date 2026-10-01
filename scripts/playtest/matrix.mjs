@@ -5,6 +5,8 @@
 //
 // Usage: node scripts/playtest/matrix.mjs [options]
 //   --seeds=N         seeds per world for the bot sets: 1001 x 1..N (default 10)
+//   --seed-from=K     start the bot sets' seeds at 1001 x K instead (a holdout
+//                     set: --seeds=30 --seed-from=31 runs 1001 x 31..60)
 //   --worlds=a,b      worlds for the bot sets (default hive,depths,wastes)
 //   --only=A6,A10     run and report only these metrics (default: all)
 //   --threat-seeds=N  Hive seeds for the A12 sweep (default --seeds)
@@ -39,6 +41,7 @@ for (const a of process.argv.slice(2)) {
   flags[m[1]] = m[2] ?? true
 }
 const SEEDS = parseInt(flags.seeds ?? '10')
+const SEED_FROM = parseInt(flags['seed-from'] ?? '1')
 const WORLDS = (flags.worlds ?? 'hive,depths,wastes').split(',')
 const THREAT_SEEDS = parseInt(flags['threat-seeds'] ?? String(SEEDS))
 const OT_SETS = (flags['ot-sets'] ?? '1,2').split(',').map(Number)
@@ -53,7 +56,7 @@ const BOSS_IDS = /^(queen|queenPrime|voidMatron|voidMatronPrime|emberTyrant|embe
 mkdirSync(RUNS, { recursive: true })
 mkdirSync(OUT, { recursive: true })
 
-const seedsN = (n, from = 1) => Array.from({ length: n }, (_, i) => 1001 * (from + i))
+const seedsN = (n, from = SEED_FROM) => Array.from({ length: n }, (_, i) => 1001 * (from + i))
 
 // Bot sets: per world, a list of config strings (configs.mjs format).
 const SETS = {
@@ -571,9 +574,9 @@ const meta = {
   srcDirty: git('status', '--porcelain', '--', 'src', 'index.html', 'public') !== '',
   scriptsDirty: git('status', '--porcelain', '--', 'scripts') !== '',
   command: `node scripts/playtest/matrix.mjs ${process.argv.slice(2).join(' ')}`.trim(),
-  seeds: `1001 x 1..${SEEDS} per world`,
+  seeds: `1001 x ${SEED_FROM}..${SEED_FROM + SEEDS - 1} per world`,
   worlds: WORLDS,
-  threatSeeds: `1001 x 1..${THREAT_SEEDS}`,
+  threatSeeds: `1001 x ${SEED_FROM}..${SEED_FROM + THREAT_SEEDS - 1}`,
   otSets: OT_SETS,
   only: ONLY,
   runsDir: RUNS,

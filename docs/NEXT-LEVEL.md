@@ -302,13 +302,13 @@ Beats per cycle:
 - +20 s: EVENT 1, plus a mirror copy at +28 s when c >= 2.
 - +70 s: `2 + c` elites with 2 affixes each.
 - +105 s: EVENT 3.
-- +160 s: OT boss (mid2 kit, `hpBase 2600 x 1.35^c`).
+- +160 s: OT boss (mid2 kit, `hpBase 2600 x 1.35^c`; since the P19 bosshp pass the OT boss has its own `hpBase`, apart from mid2's 3380).
 
 Death is the only end.
 
 Built in P11 (constants `OVERTIME` in `src/config.ts`):
 - `startOvertime()` sets `runState = 'overtime'`, `otCycle = 1` and `otStart = t`, so the first cycle already runs at `c = 1` (HP x1.5, damage x1.2), and opens a 10 s lull at the row's minAlive x0.5. Cycle minute 0, 1 and 2 use world rows 8, 9 and 10. Beats still held at the win are dropped.
-- Every spawn takes `world.hpMul` (THREAT x `1.5^c`). The OT boss grows by its own `1.35^c` instead (A10.2): `2600 x 1.35^c x worldMul x buildScale^0.75 x THREAT hpMul`, so at THREAT 0 it has 3510, 4739 and 6397 base HP in cycles 1 to 3 (the PRIME has 4200). (P11 review: the first build also multiplied in `1.5^c`, which gave `2.025^c`: 18,885 HP at cycle 2 on T0 and 25,908 at cycle 3 on T2.) It fights with mid2's phases, cadence and rotations, and its alert reuses mid2's lines (`THE QUEEN / RETURNS`).
+- Every spawn takes `world.hpMul` (THREAT x `1.5^c`). The OT boss grows by its own `1.35^c` instead (A10.2): `2600 x 1.35^c x worldMul x buildScale^0.75 x THREAT hpMul`, so at THREAT 0 it has 3510, 4739 and 6397 base HP in cycles 1 to 3 (the PRIME has 9800 since the P19 bosshp pass, 4200 before). (P11 review: the first build also multiplied in `1.5^c`, which gave `2.025^c`: 18,885 HP at cycle 2 on T0 and 25,908 at cycle 3 on T2.) It fights with mid2's phases, cadence and rotations, and its alert reuses mid2's lines (`THE QUEEN / RETURNS`).
 - **Speed (P11 review).** From cycle 2, every non-boss spawn moves `x1.3^(c-1)` faster, and the 240 u/s ceiling (A11) rises by the same factor (`world.speedMul`, `OVERTIME.speedMul`). Stream units keep their authored speed. Without it a kiting ship outlives OVERTIME: NOVA runs at 285 u/s (308 with one Fleet Footed stack), faster than the capped swarm, and a Hive smart+P bot held 450 enemies at full HP through cycles 3 to 5. The term leaves cycle 1 as designed and passes the kiter's speed in cycle 2 (flyers 312 u/s). Measurements in the A12 and A13 note (section 11).
 - **Retreat (P11 decision, bound set in the P11 review).** An OT boss still alive `OVERTIME.bossStay` (90 s) after it arrives retreats: it leaves with no credit, the cage drops, the held beats are scheduled as after a kill (no lull), and the alert `THE QUEEN ESCAPED / THE SWARM RETURNS` (the script's stalemate title) plays. The next OT boss comes on time. Inside the cage the swarm is held outside and pulses stop, so the cage is the safest place in OVERTIME: with a stay of up to 180 s (the first rule: retreat when the next OT boss is due) the default bot, which shoots the swarm at the fence, spent up to 64% of its OVERTIME caged, and the runs that lived past 20:00 were the caged ones.
 - The elite beat brings `2 + c` elites (plus HUNTERS' +1 from THREAT 1), at most 8, with 2 affixes each. The count is fixed when the beat warns (`Director.eliteN`), so a beat held by a cage into the next cycle brings the elites its draws were rolled for. (P11 review: the count read at fire time added one elite with no side draw and no affixes.)
@@ -533,7 +533,7 @@ Numbers are in A5.
 ```ts
 estimateBaseDps(w) = wd.fireRate * m.fireRateMul * wd.damage * m.damageMul * (wd.projectilesPerShot + m.extraProjectiles) // wd = WEAPONS[w.baseWeaponId]
 buildScale = clamp(estimateBaseDps(w) / 88, 1, 12)
-bossHp = round(stage.hpBase * script.boss.worldMul * buildScale ** 0.75 * w.hpMul)
+bossHp = round(stage.hpBase * script.boss.worldMul * (stage === 'final' ? script.boss.primeHpMul : 1) * buildScale ** 0.75 * w.hpMul)
 eliteHp = round((def.hp + t*def.hpRamp) * beat.hpMul * 1.5 * buildScale ** 0.75 * (1 + 0.25*affixes) * w.hpMul)
 ```
 
@@ -1963,6 +1963,16 @@ node scripts/measure.mjs 390 844 perf ; node scripts/measure.mjs 390 844 perf-fi
 - **Side effect, A7 and A8:** win rates rise past A7 in Hive and Wastes: smart+P 8/30, 7/30, 6/30 to 23/30, 7/30, 17/30 (Hive, Depths, Wastes), smart 4/30, 3/30, 5/30 to 12/30, 4/30, 11/30. A8 smart and smart+P now pass in every world (Hive smart 6:50 to 9:35, Depths smart+P 6:58 to 8:25, Wastes smart+P 7:07 to 14:00); crude stays at about 2:08 (its deaths got slower, not later). The boss-HP and density passes take the A7 overshoot. A12 passes (T0 23/30, T1 19/30, T4 2/30). **A13 gets worse:** 47/72 (65%) dead by 20:00 and 18 alive past 24:00 (baseline 25/33, 4), because more runs win and the bite cap is a share of max HP that OVERTIME's dmgMul cannot raise.
 - Determinism on the new values (A14, 21 of 21 lines agree across 375x667, 667x375 and the settings injection): det keeps the W5 hashes (642fbc46, 1365ccb6, d3c8cef6); det-long 8c3766b0, 54a5737, 51ca7954; det-death 7408614a (159 s), 5739e8a2 (141.87 s), 224be1c (168.1 s).
 
+**A6 and A7 note (P19 bosshp pass).** Full tables, every arm and the commands: `docs/tuning/pass-bosshp.md`. Seeds 1001 x 1 to 30 per world (the confirm) and 1001 x 31 to 60 (a holdout, `matrix.mjs --seed-from=31`), T0, 14 min, NOVA, evolutions, cores and bonuses live. `node scripts/playtest/fightwindow.mjs <runs dir>` prints the per-stage numbers below and the HP windows each clause leaves.
+- Values (A10.1, A10.2, A7.2): mid1 `hpBase` 2400 to 2760, mid2 2600 to 3380, final 4200 to 9800; the OVERTIME boss keeps 2600 as its own `hpBase`; Wastes `worldMul` 1.15 to 0.9; new `primeHpMul` Hive 1.0, Depths 1.0, Wastes 0.95.
+- **Why the PRIME needs 9800.** At 4200 on the deaths-pass build the focus bot killed the PRIME in 19.7, 26.9 and 31.6 s (Hive, Depths, Wastes) and smart+P won 23, 7 and 17 of 30. The deaths pass let more bots reach the PRIME with more levels (focus PRIME 25.8 to 19.7 s in Hive), and the PRIME's damage outgrows `buildScale`: the focus bot's damage per second over `88 x buildScale` is 0.95 to 0.99 at mid1 and 1.13 to 1.61 at the PRIME (median 2 cores taken before it; evolutions, fusions and pickup weapons are not in `buildScale`). Since boss HP grows with `buildScale ** 0.75`, the PRIME gets about 0.55 of mid1's seconds per unit of `hpBase`, so 4200 / 2400 made it about as long as mid1, and 9800 / 2760 makes it about twice as long.
+- **A6 focus passes** on both seed halves and on the union: medians mid1 / mid2 / final Hive 26.6 / 26.7 / 60.6 s (60 seeds 24.9 / 24.5 / 53.2), Depths 24.0 / 22.0 / 64.2 (23.4 / 21.0 / 54.3), Wastes 25.1 / 23.3 / 59.2 (24.3 / 20.9 / 52.3). Kill to next arrival at least 20.1 s. The holdout half alone fails the 20 s floor in Depths mid2 (17.2 s) and Wastes mid1 (19.9 s): the two 30-seed halves differ by more than any knob step tried.
+- **A6 default bot FAILS, and no PRIME HP can pass it with A7.** A7 needs 55 to 75% of smart+P runs to end without a PRIME kill while most of them reach the PRIME (45, 26 and 38 of 60), and the default bot's PRIME kills spread from 11 to 210 s with no gap: on 60 seeds 18, 17 and 16 kills under 150 s, 10, 9 and 10 between 150 and 210 s, 17, 0 and 12 stalemates. Every final tested (4200, 7000, 9800, 11300) left kills between 150 and 210 s in at least two worlds. The owner decides between counting a PRIME fight that ends by kill or by the 210 s stalemate as passing, a cap on the default bot's median instead of its maximum, or a 150 s PRIME stalemate (a rule change: the 14:00 run end, `UNCLEARED_MAX_MS` and the clear score depend on it). The mid stages fail on single fights: Hive mid2 seed 9009 (159.9 s), Depths mid1 seed 6006 (159.5 s), and on the holdout a Wastes mid2 ascend (180 s) and a 152.2 s mid2 kill. A 7% mid step that fixes one of them (b1 mid1 2560, b2 mid2 3150) moves every later fight and broke the focus floor or A7 elsewhere.
+- **A7:** seeds 1 to 30 smart+P 13, 9 and 12 of 30 (43, 30, 40%), smart 7, 0 and 6 of 30 (FAIL in Depths only); 60 seeds smart+P 28, 26 and 26 of 60 (Hive 47%, FAIL by one run), smart 13, 5 and 12 of 60 (pass). Finals of 10300 and 11300 gave Hive smart+P 30/60 and 27/60: from 9800 to 10300, 15 of 109 smart+P PRIME fights switched between kill and stalemate in both directions, so the A7 count does not follow PRIME HP at this resolution. Depths smart is set by survival: 29 of 30 runs died before 10:30, outside boss fights (density pass).
+- **PRIME factor (`primeHpMul`).** Depths 1.15 cut the Depths smart+P wins to 6/30 (under the band); at 1.0 the Matron PRIME already measures like the Queen PRIME (focus 64.2 against 60.6 s; 60 seeds 54.3 against 53.2 s). She still takes about 1.4x the Queen PRIME's damage per second, but the Depths bots that reach her carry larger builds (median PRIME HP 39,135 against 30,672). Wastes 0.95 is the one value of 1.0, 0.95 and 0.9 that passes both A7 bands (0.9: smart 8/30).
+- Side effects (seeds 1 to 30): A12 passes (T0 13/30, T1 11/30, T4 0/30). A13 23/40 (58%) dead by 20:00 and 10 past 24:00 (deaths pass 47/72 and 18): fewer runs win, so fewer enter OVERTIME; the OVERTIME knobs own it. A8 smart+P Depths 8:25 to 9:19. A2, A5, A10, A11 unchanged in result.
+- Determinism (A14, 21 of 21 lines): det and det-death keep their hashes (no boss in those windows); det-long bc906b30, 65945a0d, 3e2a9a51.
+
 ---
 
 ## 12. Later
@@ -2325,7 +2335,7 @@ xpScale values below already include the no-expiry factor (x0.85, row 0 pinned a
 **HIVE MEADOW**
 - Pack A: 8 swarmers. Pack B: 6 biters.
 - Elite `guardian` (GUARDIAN). Fodder `swarmer`.
-- Bosses `queen` / `queenPrime`, worldMul 1.0.
+- Bosses `queen` / `queenPrime`, worldMul 1.0, primeHpMul 1.0.
 - Affix pool: MOLTEN, HASTED, BROOD, VOLATILE.
 
 | min | Mix (weights) | minAlive | maxAlive | every x batch | xpScale | Target alive | Debut / beats |
@@ -2346,7 +2356,7 @@ xpScale values below already include the no-expiry factor (x0.85, row 0 pinned a
 **VIOLET DEPTHS**
 - Pack A: 8 biters. Pack B: 5 flyers.
 - Elite `abyssalWarden` (WARDEN). Fodder `biter`.
-- Bosses `voidMatron` / `voidMatronPrime`, worldMul 1.0 (P6b review: 0.9 made her fights the shortest of the three worlds; A6 note in section 11).
+- Bosses `voidMatron` / `voidMatronPrime`, worldMul 1.0 (P6b review: 0.9 made her fights the shortest of the three worlds; A6 note in section 11), primeHpMul 1.0 (P19 bosshp: 1.15 cut the smart+P wins to 6/30; section 11, A6 and A7 note).
 - Affix pool: HASTED, VOLATILE, SHIELDED, BROOD. No acid in Depths.
 
 | min | Mix | minAlive | maxAlive | every x batch | xpScale | Target alive | Beats |
@@ -2367,7 +2377,7 @@ xpScale values below already include the no-expiry factor (x0.85, row 0 pinned a
 **EMBER WASTES**
 - Pack A: 8 biters. Pack B: 3 beetles.
 - Elite `duneLeviathan` (LEVIATHAN). Fodder `biter`.
-- Bosses `emberTyrant` / `emberTyrantPrime`, worldMul 1.15.
+- Bosses `emberTyrant` / `emberTyrantPrime`, worldMul 0.9 (1.15 before the P19 bosshp pass: with the hazard escape the bot lives through her mid fights, and at 1.15 they ran 33 and 40 s on the focus bot), primeHpMul 0.95 (the one value of 1.0, 0.95 and 0.9 that passes both A7 bands; section 11, A6 and A7 note).
 - Affix pool: MOLTEN, SHIELDED, VOLATILE, BROOD.
 
 | min | Mix | minAlive | maxAlive | every x batch | xpScale | Target alive | Beats |
@@ -2460,15 +2470,18 @@ P7 rules (`src/content/affixes.ts`): the outline is a ring on the floor at the b
 - `egg`: sprite splitter, scale 0.9, hp 40, speed 0, r 14, damage 0, XP 2, behavior `'egg'`, hpRamp 0. Hatches after 4.0 s into 3 swarmers.
 - `flakTurret`: sprite cinderMortarch, scale 1.0, hp 60, speed 0, r 16, XP 3, behavior `'spitter'`, fireCooldown 1.6, projectileSpeed 460, projectileDamage 11, hpRamp 0.1. P6b: damage 0 (a rooted gun, no bite), tint #ff8a2a, gib #ffb05a x6, name `FLAK TURRET`, no acid. It is the fight's brood, so it shoots inside the cage. When its fight ends (kill, ascend or stalemate), every turret of that fight collapses with no credit: a speed-0 shooter would otherwise fire across the arena for the rest of the run.
 - Boss contact bites: queen 24, matron 22, tyrant 24.
+- Boss HP per world (`WorldScript.boss`, A7.2): `worldMul` scales every boss of the world, the OVERTIME boss included; `primeHpMul` (P19 bosshp pass) scales only the PRIME, on top of `worldMul`, so a world's final fight can be set apart from its mid fights. Values: Hive 1.0 / 1.0, Depths 1.0 / 1.0, Wastes 0.9 / 0.95. The pass added the PRIME factor because the P6b review found the Matron PRIME short next to the Queen PRIME; on the P19 build the three PRIMEs measure close at one base (section 11, A6 and A7 note), and the Matron at 1.15 lost A7. `director.beginFight` applies it once, when the stage is `'final'` (the PRIME's beat and the ascend both pass through it).
 
 ### A10.2 Stages
 
 | Stage | hpBase | Phases (HP frac) | Cadence per phase | Tele mul per phase |
 |---|---|---|---|---|
-| mid1 | 2400 | [0.5] | 1.0 / 1.2 | 1.0 / 1.0 |
-| mid2 | 2600 | [0.66, 0.33] | 1.0 / 1.2 / 1.35 | 1.0 / 1.0 / 0.8 |
-| final (PRIME) | 4200 | [0.66, 0.33] | 1.0 / 1.2 / 1.35 | 1.0 / 1.0 / 0.75 |
-| overtime c | 2600 x 1.35^c (x THREAT hpMul, not OVERTIME's 1.5^c) | as mid2 | as mid2 | as mid2 |
+| mid1 | 2760 | [0.5] | 1.0 / 1.2 | 1.0 / 1.0 |
+| mid2 | 3380 | [0.66, 0.33] | 1.0 / 1.2 / 1.35 | 1.0 / 1.0 / 0.8 |
+| final (PRIME) | 9800 (x `primeHpMul`) | [0.66, 0.33] | 1.0 / 1.2 / 1.35 | 1.0 / 1.0 / 0.75 |
+| overtime c | 2600 x 1.35^c (x THREAT hpMul, not OVERTIME's 1.5^c); its own hpBase | as mid2 | as mid2 | as mid2 |
+
+P19 bosshp pass (section 11, A6 and A7 note; `docs/tuning/pass-bosshp.md`): mid1 2400 to 2760, mid2 2600 to 3380, final 4200 to 9800. The OVERTIME boss keeps 2600 as its own `hpBase` (it shared mid2's object before), so the pass leaves A13 to the OVERTIME knobs. Every hpBase is multiplied by the world's `worldMul`, the PRIME also by `primeHpMul` (A10.1), then by `buildScale ** 0.75` and `hpMul` (section 4.7).
 
 Idle gap: queen 0.9 s, matron 0.7 s, tyrant 1.1 s. Cadence divides idleGap and recover. THREAT 3+ multiplies base cadence by 1.2, and FRENZY stacks on top.
 
@@ -2521,11 +2534,11 @@ A multi-part attack (riftStorm, cinderfall) holds the boss until its last part l
 
 | Stage | Build ratio | HP | Fight length |
 |---|---|---|---|
-| mid1 | 1.0 | 2400 | 45 s |
-| mid2 | 5.0 | 8690 | 33 s |
-| final | 7.0 | 18060 | 49 s |
+| mid1 | 1.0 | 2760 | 52 s |
+| mid2 | 5.0 | 11300 | 43 s |
+| final | 7.0 | 42170 | 114 s |
 
-This table is a design estimate. The mid1 row runs past 40 s at ratio 1.0, but the focus bot reaches mid1 at a median build ratio of 1.8 (1.0 to 6.1) and deals about the full estimate to the boss, not 0.6 of it, so A6 is measured with the bot (A6 note in section 11).
+This table is a design estimate (Hive, worldMul 1.0; the P19 bosshp values). The rows run past the A6 bands, but the focus bot reaches mid1 at a median build ratio of 1.8 (1.0 to 6.1) and deals about the full estimate to the boss, not 0.6 of it, and the evolutions, fusions and pickup weapons it has by the PRIME add damage that `buildScale` does not count. A6 is measured with the bot (A6 and A7 note in section 11): the focus bot's medians on these values are about 25 s, 25 s and 55 to 60 s.
 
 ## A11. THREAT levels
 

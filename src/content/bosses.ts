@@ -47,27 +47,27 @@ export interface BossStageDef {
 const loop = (...slots: number[]): PhaseRotation => ({ slots, loopFrom: 0 })
 
 const MID2: BossStageDef = {
-  hpBase: 2600,
+  hpBase: 3380,
   phases: [0.66, 0.33],
   cadence: [1.0, 1.2, 1.35],
   teleMul: [1.0, 1.0, 0.8],
   rotations: [loop(SLOT_A, SLOT_B, SLOT_C), loop(SLOT_A, SLOT_C, SLOT_B), loop(SLOT_B, SLOT_A, SLOT_C)],
 }
 
-/** A10.2. The OVERTIME boss fights as mid2; the director scales its hpBase by
- *  OVERTIME.bossHpMul^c. */
+/** A10.2. The OVERTIME boss fights as mid2 from its own hpBase (the A13 knob,
+ *  apart from mid2's since P19); the director scales it by OVERTIME.bossHpMul^c. */
 export const BOSS_STAGES: Readonly<Record<BossStage, BossStageDef>> = {
   mid1: {
-    hpBase: 2400,
+    hpBase: 2760,
     phases: [0.5],
     cadence: [1.0, 1.2],
     teleMul: [1.0, 1.0],
     rotations: [loop(SLOT_A, SLOT_B), loop(SLOT_A, SLOT_B, SLOT_C)],
   },
   mid2: MID2,
-  overtime: MID2,
+  overtime: { ...MID2, hpBase: 2600 },
   final: {
-    hpBase: 4200,
+    hpBase: 9800,
     phases: [0.66, 0.33],
     cadence: [1.0, 1.2, 1.35],
     teleMul: [1.0, 1.0, 0.75],

@@ -855,7 +855,8 @@ function beginFight(world: World, boss: Enemy, stage: BossStage): void {
   // bossHpMul^c is the OT boss's whole OVERTIME growth (A10.2): it takes the
   // THREAT level's HP multiplier, not the swarm's hpMul^c on top.
   const hpMul = ot ? world.threatDef.hpMul : world.hpMul
-  boss.hp = boss.maxHp = Math.round(hpBase * world.script.boss.worldMul * buildHpScale(world) * hpMul)
+  const primeMul = stage === 'final' ? world.script.boss.primeHpMul : 1
+  boss.hp = boss.maxHp = Math.round(hpBase * world.script.boss.worldMul * primeMul * buildHpScale(world) * hpMul)
   boss.submerged = true
   world.beginBossFight()
   world.bossFight.begin(stage)
