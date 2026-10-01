@@ -8,33 +8,30 @@
 //         switch off the stream dodge (an A/B of the dodge on one seed)
 import puppeteer from '/Users/Adelson/Desktop/personal/SWARMGEDDON/node_modules/puppeteer-core/lib/esm/puppeteer/puppeteer-core.js'
 import { acquireChromeLock } from '../lib/chromeLock.mjs'
+import { parseConfig, runFile } from './configs.mjs'
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const OUT = join(HERE, 'playtest')
-mkdirSync(OUT, { recursive: true })
 
 // Usage: node playtest.mjs <arena> <mode[+dash]:seed[:minutes[:char[:perkPolicy[:threat[:ot]]]]]> [...more configs]
+//          [--out=DIR] [--harness=FILE]
 //   minutes defaults to 14; threat 0..4; ot = 'ot' to push into OVERTIME after a win.
-const arena = process.argv[2] || 'hive'
-const configs = process.argv.slice(3).map((s) => {
-  const [modeTok, seed, min, char, perkPolicy, threat, ot] = s.split(':')
-  const [mode, ...opts] = modeTok.split('+')
-  return {
-    mode,
-    dash: opts.includes('dash'),
-    focus: opts.includes('focus'),
-    noStreamDodge: opts.includes('nostream'),
-    seed: parseInt(seed),
-    minutes: min ? parseFloat(min) : 14,
-    char: char || 'nova',
-    perkPolicy: perkPolicy || 'first',
-    threat: threat ? parseInt(threat) : 0,
-    ot: ot === 'ot',
-  }
-})
+//   --out: where the run JSONs go (default scripts/playtest/playtest, which analyze.mjs reads
+//   by default). --harness: an in-page harness file other than harness.js (an A/B of a bot change).
+const flags = {}
+const pos = []
+for (const a of process.argv.slice(2)) {
+  const m = /^--([a-z]+)=(.*)$/s.exec(a)
+  if (m) flags[m[1]] = m[2]
+  else pos.push(a)
+}
+const OUT = flags.out ? resolve(flags.out) : join(HERE, 'playtest')
+const HARNESS = flags.harness ? resolve(flags.harness) : join(HERE, 'harness.js')
+mkdirSync(OUT, { recursive: true })
+const arena = pos[0] || 'hive'
+const configs = pos.slice(1).map(parseConfig)
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const ORIGIN = (process.env.SWG_URL || 'http://localhost:5176').replace(/\/+$/, '')
 const W = 390
@@ -66,10 +63,11 @@ async function launch() {
 
 await acquireChromeLock('playtest')
 const { browser, page } = await launch()
-await page.evaluate(readFileSync(join(HERE, 'harness.js'), 'utf8'))
-for (const { mode, dash, focus, noStreamDodge, seed, minutes, char, perkPolicy, threat, ot } of configs) {
+await page.evaluate(readFileSync(HARNESS, 'utf8'))
+for (const cfg of configs) {
+  const { mode, dash, focus, noStreamDodge, seed, minutes, char, perkPolicy, threat, ot } = cfg
   const invincible = mode === 'turret' || mode === 'roam'
-  const init = await page.evaluate((cfg) => window.__PT_init(cfg), { arena, mode, dash, focus, noStreamDodge, seed, char, invincible, perkPolicy, threat, ot })
+  const init = await page.evaluate((c) => window.__PT_init(c), { arena, mode, dash, focus, noStreamDodge, seed, minutes, char, invincible, perkPolicy, threat, ot })
   const t0 = Date.now()
   const end = minutes * 60
   for (let t = 30; t <= end + 1e-6; t += 30) {
@@ -83,8 +81,8 @@ for (const { mode, dash, focus, noStreamDodge, seed, minutes, char, perkPolicy, 
   const fin = await page.evaluate(() => window.__PT_final())
   fin.init = init
   fin.wallSeconds = (Date.now() - t0) / 1000
-  const file = join(OUT, `${arena}_${mode}${dash ? '_dash' : ''}${focus ? '_focus' : ''}${noStreamDodge ? '_nostream' : ''}_${seed}${char !== 'nova' ? '_' + char : ''}${perkPolicy !== 'first' ? '_' + perkPolicy : ''}${threat ? '_t' + threat : ''}${ot ? '_ot' : ''}.json`)
+  const file = join(OUT, runFile(arena, cfg))
   writeFileSync(file, JSON.stringify(fin, null, 1))
-  console.log(JSON.stringify({ file, arena, mode, dash, focus, seed, perkPolicy, endTime: fin.endTime, dead: fin.dead, won: fin.won, stalemate: fin.stalemate, firstDraftAt: fin.firstDraftAt, firstFusionAt: fin.firstFusionAt, xpCollectFrac: fin.xpCollectFrac, xpCollectFrac30: fin.xpCollectFrac30, fromHalfHp: fin.death?.fromHalfHp ?? null, level: fin.level, kills: fin.kills, dashes: fin.dashes, closeCalls: fin.closeCalls, maxEnemies: fin.maxEnemies, streamDmg: fin.streamDmg, dodgeSteps: fin.dodgeSteps, wall: fin.wallSeconds }))
+  console.log(JSON.stringify({ file, arena, mode, dash, focus, seed, perkPolicy, endTime: fin.endTime, dead: fin.dead, won: fin.won, stalemate: fin.stalemate, firstDraftAt: fin.firstDraftAt, firstFusionAt: fin.firstFusionAt, xpCollectFrac: fin.xpCollectFrac, xpCollectFrac30: fin.xpCollectFrac30, fromHalfHp: fin.death?.fromHalfHp ?? null, level: fin.level, kills: fin.kills, dashes: fin.dashes, closeCalls: fin.closeCalls, maxEnemies: fin.maxEnemies, streamDmg: fin.streamDmg, dodgeSteps: fin.dodgeSteps, hzSteps: fin.hzSteps, wall: fin.wallSeconds }))
 }
 await browser.close()

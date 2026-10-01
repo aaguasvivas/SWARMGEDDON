@@ -1,13 +1,20 @@
-// Summarize playtest/*.json into pacing metrics -> playtest/summary.json (+ stdout table).
+// Summarize playtest run JSONs into pacing metrics -> <dir>/summary.json (+ stdout table).
+// Usage: node scripts/playtest/analyze.mjs [dir]   (default: scripts/playtest/playtest)
+// matrix.mjs imports the per-run summary and the section 11 aggregates below.
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
-const DIR = join(dirname(fileURLToPath(import.meta.url)), 'playtest')
-const files = readdirSync(DIR).filter((f) => f.endsWith('.json') && f !== 'summary.json').sort()
-const out = []
-for (const f of files) {
-  const r = JSON.parse(readFileSync(join(DIR, f), 'utf8'))
+export const DEFAULT_DIR = join(dirname(fileURLToPath(import.meta.url)), 'playtest')
+
+/** Every run JSON in `dir`, summarized. */
+export function loadSummaries(dir = DEFAULT_DIR) {
+  const files = readdirSync(dir).filter((f) => f.endsWith('.json') && f !== 'summary.json').sort()
+  return files.map((f) => summarize(JSON.parse(readFileSync(join(dir, f), 'utf8')), f))
+}
+
+/** One run's pacing summary (`r` is a playtest.mjs output, `f` its file name). */
+export function summarize(r, f) {
   const ev = r.events
   const lv = ev.filter((e) => e.type === 'levelup')
   const at = (t) => r.chunks.find((c) => Math.abs(c.t - t) < 0.05)
@@ -24,6 +31,7 @@ for (const f of files) {
       maxEnemies: Math.max(0, ...c.map((x) => x.maxEnemiesChunk)),
       capFrac: c.length ? +(c.reduce((s, x) => s + x.capFrac, 0) / c.length).toFixed(2) : 0,
       dmgTaken: c.reduce((s, x) => s + x.dmgTaken, 0),
+      aliveMean: c.length ? +(c.reduce((s, x) => s + x.aliveMean, 0) / c.length).toFixed(1) : null,
     })
   }
   // level-up gaps
@@ -75,11 +83,13 @@ for (const f of files) {
   const pods = ev.filter((e) => e.type === 'pod')
   const equips = ev.filter((e) => e.type === 'equip')
   const capChunk = r.chunks.find((c) => c.maxEnemiesChunk >= 700)
-  out.push({
+  return {
     file: f,
     arena: r.cfg.arena,
     mode: r.cfg.mode + (r.cfg.dash ? '+dash' : '') + (r.cfg.focus ? '+focus' : '') + ({ priority: '+P', random: '+R', evolve: '+E' }[r.cfg.perkPolicy] ?? ''),
     seed: r.cfg.seed,
+    minutes: r.cfg.minutes ?? null,
+    invincible: !!r.cfg.invincible,
     threat: r.cfg.threat ?? 0,
     ot: !!r.cfg.ot,
     otStart: r.otStart ?? null,
@@ -91,7 +101,7 @@ for (const f of files) {
     kills: r.kills,
     killsPerMin: +(r.kills / (r.endTime / 60)).toFixed(1),
     firstLevelUp: lv[0]?.t ?? null,
-    levelAt: { 60: at(60)?.level, 120: at(120)?.level, 180: at(180)?.level, 300: at(300)?.level, 480: at(480)?.level, 600: at(600)?.level, 720: at(720)?.level },
+    levelAt: { 60: at(60)?.level, 120: at(120)?.level, 180: at(180)?.level, 300: at(300)?.level, 480: at(480)?.level, 600: at(600)?.level, 660: at(660)?.level, 720: at(720)?.level },
     killsAt: { 300: at(300)?.kills, 600: at(600)?.kills },
     maxEnemies: r.maxEnemies,
     capFirstReachedChunkEnd: capChunk?.t ?? null,
@@ -123,6 +133,10 @@ for (const f of files) {
     firstFusionAt: r.firstFusionAt,
     dmgTaken: r.dmgTaken,
     healed: r.healed,
+    coresTaken: r.coresTaken ?? 0,
+    evolutions: r.evolutions ?? [],
+    maxSpeedByType: r.maxSpeedByType ?? {},
+    hzSteps: r.hzSteps ?? null,
     dashes: r.dashes ?? 0,
     closeCalls: r.closeCalls ?? 0,
     closeCallsPerMin: +((r.closeCalls ?? 0) / (r.endTime / 60)).toFixed(2),
@@ -137,7 +151,7 @@ for (const f of files) {
     perks: r.perks,
     death: r.death,
     wallSeconds: r.wallSeconds,
-  })
+  }
 }
 /**
  * A3: replay the deferral rules (section 4.1) over the run's own cage
@@ -232,102 +246,164 @@ function beatFidelity(r) {
   return res
 }
 
-writeFileSync(join(DIR, 'summary.json'), JSON.stringify(out, null, 1))
-for (const s of out) {
-  console.log(
-    [
-      s.arena.padEnd(6),
-      (s.mode + (s.threat ? ' T' + s.threat : '') + (s.ot ? ' OT' : '')).padEnd(8),
-      String(s.seed).padEnd(5),
-      `end=${s.endTime}${s.dead ? ' DEAD' : ''}`,
-      `L=${s.finalLevel}`,
-      `firstLv=${s.firstLevelUp}`,
-      `L@1/2/3/5/8/10/12=${[60, 120, 180, 300, 480, 600, 720].map((t) => s.levelAt[t] ?? '-').join('/')}`,
-      `kpm=${s.killsPerMin}`,
-      `max=${s.maxEnemies} cap@${s.capFirstReachedChunkEnd} capFrac=${s.capStepFrac}`,
-      `boss1=${s.bossFirstSpawn} bosses=${s.bossSpawns.length} killed=${s.bossKills.length}`,
-      `elites=${s.elites}`,
-      `pods=${s.podsSeen}(kill ${s.podsFromKills}) equips=${s.equips.length} onPickup=${s.secondsOnPickupWeapon}s`,
-      `xp=${(s.xpCollectFrac * 100).toFixed(1)}% draft1=${s.firstDraftAt} fusion=${s.firstFusionAt ?? '-'}`,
-      `podFail=${s.podDropFailedAtPickupCap} pkCap=${s.pickupCapStepFrac}`,
-      `lv/min=${s.levelUpsPerMin.join(',')}`,
-      `dash=${s.dashes} cc/min=${s.closeCallsPerMin}`,
-      `50%->death=${s.fromHalfHp ?? '-'}s`,
-    ].join(' | '),
-  )
-}
-// A5 arrivals, A6 fight lengths and the wins (docs/NEXT-LEVEL.md section 11).
-const median = (a) => {
+
+export const median = (a) => {
   if (!a.length) return null
   const v = [...a].sort((x, y) => x - y)
   const m = v.length >> 1
   return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2
 }
-const allFights = out.flatMap((s) => s.fights.map((f) => ({ ...f, run: s.file })))
-if (allFights.length) {
-  const dists = allFights.map((f) => f.dist)
-  const a5Bad = allFights.filter((f) => f.dist < 250 || f.dist > 340 || !f.cage || !f.inCage || !f.inArena)
-  console.log(`A5 arrivals=${allFights.length} dist min=${Math.min(...dists)} max=${Math.max(...dists)} cage+inside=${allFights.filter((f) => f.cage && f.inCage).length} inArena=${allFights.filter((f) => f.inArena).length} bad=${a5Bad.length} (pass: 250 to 340 u, cage active the same tick, boss inside the walls)`)
-  for (const f of a5Bad) console.log(`  A5 outlier ${f.run} ${f.stage} t=${f.spawnT} dist=${f.dist} cage=${f.cage} inCage=${f.inCage} inArena=${f.inArena}`)
+
+/** A5 arrivals and A6 fight lengths per stage, and the kill-to-next-arrival gaps. */
+export function fightStats(out) {
+  const fights = out.flatMap((s) => s.fights.map((f) => ({ ...f, run: s.file })))
+  if (!fights.length) return null
+  const dists = fights.map((f) => f.dist)
+  const bad = fights.filter((f) => f.dist < 250 || f.dist > 340 || !f.cage || !f.inCage || !f.inArena)
+  const stages = {}
   for (const stage of ['mid1', 'mid2', 'final']) {
-    const k = allFights.filter((f) => f.stage === stage && f.how === 'kill').map((f) => f.len)
-    const other = allFights.filter((f) => f.stage === stage && f.how !== 'kill').map((f) => `${f.how}@${f.len}`)
-    console.log(`A6 ${stage} kills=${k.length} median=${median(k)} min=${k.length ? Math.min(...k) : '-'} max=${k.length ? Math.max(...k) : '-'} lens=[${k.join(', ')}] unfinished=[${other.join(', ')}]`)
+    const k = fights.filter((f) => f.stage === stage && f.how === 'kill').map((f) => f.len)
+    stages[stage] = {
+      kills: k.length,
+      median: median(k),
+      min: k.length ? Math.min(...k) : null,
+      max: k.length ? Math.max(...k) : null,
+      lens: k,
+      unfinished: fights.filter((f) => f.stage === stage && f.how !== 'kill').map((f) => ({ how: f.how, len: f.len, run: f.run })),
+    }
   }
   const gaps = out.flatMap((s) => s.killGaps)
-  console.log(`A6 kill-to-next-arrival gaps=${gaps.length} min=${gaps.length ? Math.min(...gaps) : '-'} (pass: at least 20 s)`)
-}
-console.log(`WINS ${out.filter((s) => s.won).length}/${out.length} stalemates=${out.filter((s) => s.stalemate).length} runs: ${out.filter((s) => s.won).map((s) => s.file).join(', ')}`)
-
-// A3 beat fidelity: each beat fired on time or where the deferral rules put it
-// (OVERTIME runs have their own rows after the win, so they stay out of it).
-const a3Runs = out.filter((s) => s.a3 && !s.ot)
-if (a3Runs.length) {
-  let bad = 0
-  for (const s of a3Runs) {
-    const off = s.a3.filter((b) => !b.ok)
-    bad += off.length
-    const d = s.a3Density
-    const line = s.a3.map((b) => `${b.label}@${b.at}${b.fired === null ? ':-' : b.fired < 0 ? ':drop' : b.fired === b.at ? '' : ':' + b.fired}${b.ok ? '' : '(want ' + b.want + ')'}`).join(' ')
-    console.log(`A3 ${s.file} ok=${s.a3.length - off.length}/${s.a3.length} alive max=${d.maxAlive} overRow=${d.overRowMax} sat=${d.satFrac} evUnits=${d.eventUnitsMax} | ${line}`)
+  return {
+    fights,
+    arrivals: { n: fights.length, distMin: Math.min(...dists), distMax: Math.max(...dists), cageInside: fights.filter((f) => f.cage && f.inCage).length, inArena: fights.filter((f) => f.inArena).length, bad },
+    stages,
+    gaps: { n: gaps.length, min: gaps.length ? Math.min(...gaps) : null },
   }
-  const dens = a3Runs.map((s) => s.a3Density)
-  console.log(`A3 beats off-rule=${bad} (pass: 0); alive max=${Math.max(...dens.map((d) => d.maxAlive))} (pass: <= 610); over row maxAlive max=${Math.max(...dens.map((d) => d.overRowMax))} (pass: <= 160); saturated share max=${Math.max(...dens.map((d) => d.satFrac))} (pass: <= 0.25)`)
 }
 
-// A10 readable deaths: seconds from the last moment at 50%+ HP to death.
-const readable = out.map((s) => s.fromHalfHp).filter((v) => v !== null).sort((a, b) => a - b)
-if (readable.length) {
-  const mid = readable.length >> 1
-  const median = readable.length % 2 ? readable[mid] : (readable[mid - 1] + readable[mid]) / 2
-  console.log(`A10 deaths=${readable.length} median=${median.toFixed(2)}s min=${readable[0].toFixed(2)}s (pass: median >= 3.0, min >= 1.2)`)
+/** A3 beat fidelity and density over the runs that carry beats (OVERTIME runs have their own rows after the win, so they stay out). */
+export function a3Stats(out) {
+  const runs = out.filter((s) => s.a3 && !s.ot)
+  if (!runs.length) return null
+  const per = runs.map((s) => {
+    const off = s.a3.filter((b) => !b.ok)
+    const d = s.a3Density
+    return { file: s.file, mode: s.mode, ok: s.a3.length - off.length, total: s.a3.length, off: off.length, ...d, beats: s.a3 }
+  })
+  return {
+    runs: per,
+    offRule: per.reduce((n, p) => n + p.off, 0),
+    maxAlive: Math.max(...per.map((p) => p.maxAlive)),
+    overRowMax: Math.max(...per.map((p) => p.overRowMax)),
+    satMax: Math.max(...per.map((p) => p.satFrac)),
+  }
 }
 
-// A12 ladder: win rate per world, bot and THREAT level (T4 at most 15% and
-// below T0; T1 at most T0). An OVERTIME run counts its win before OVERTIME.
-const ladder = new Map()
-for (const s of out) {
-  const k = `${s.arena} ${s.mode}`
-  if (!ladder.has(k)) ladder.set(k, new Map())
-  const byT = ladder.get(k)
-  if (!byT.has(s.threat)) byT.set(s.threat, { runs: 0, wins: 0, ends: [] })
-  const e = byT.get(s.threat)
-  e.runs++
-  if (s.won) e.wins++
-  e.ends.push(s.ot && s.won ? s.otStart : s.endTime)
-}
-for (const [k, byT] of ladder) {
-  if (byT.size < 2) continue
-  const cells = [...byT.entries()].sort((a, b) => a[0] - b[0]).map(([t, e]) => `T${t} ${e.wins}/${e.runs} (${Math.round((100 * e.wins) / e.runs)}%) median end ${median(e.ends)}`)
-  console.log(`A12 ${k}: ${cells.join(' | ')}`)
+/** A10 readable deaths: seconds from the last moment at 50%+ HP to death. */
+export function a10Stats(out) {
+  const v = out.map((s) => s.fromHalfHp).filter((x) => x !== null).sort((a, b) => a - b)
+  if (!v.length) return null
+  return { deaths: v.length, median: median(v), min: v[0] }
 }
 
-// A13 OVERTIME end: runs that won and went on (cfg.ot). 90% or more dead by
-// 20:00 (1200 s), none alive past 24:00 (1440 s).
-const otRuns = out.filter((s) => s.ot && s.won)
-if (otRuns.length) {
-  const by20 = otRuns.filter((s) => s.dead && s.endTime <= 1200).length
-  const past24 = otRuns.filter((s) => !s.dead || s.endTime > 1440).length
-  for (const s of otRuns) console.log(`A13 ${s.file} clear->OT at ${s.otStart} cycle ${s.otCycle} ${s.dead ? 'dead' : 'ALIVE'} at ${s.endTime} (${(s.endTime / 60).toFixed(2)} min) L${s.finalLevel}`)
-  console.log(`A13 OT runs=${otRuns.length} dead by 20:00 ${by20} (${Math.round((100 * by20) / otRuns.length)}%, pass >= 90%); alive past 24:00 or unfinished ${past24} (pass: 0)`)
+/** A12 ladder: win rate per world, bot and THREAT level. An OVERTIME run counts its win before OVERTIME. */
+export function ladderStats(out) {
+  const ladder = new Map()
+  for (const s of out) {
+    const k = `${s.arena} ${s.mode}`
+    if (!ladder.has(k)) ladder.set(k, new Map())
+    const byT = ladder.get(k)
+    if (!byT.has(s.threat)) byT.set(s.threat, { runs: 0, wins: 0, ends: [] })
+    const e = byT.get(s.threat)
+    e.runs++
+    if (s.won) e.wins++
+    e.ends.push(s.ot && s.won ? s.otStart : s.endTime)
+  }
+  return [...ladder.entries()].map(([key, byT]) => ({
+    key,
+    byThreat: [...byT.entries()].sort((a, b) => a[0] - b[0]).map(([threat, e]) => ({ threat, runs: e.runs, wins: e.wins, medianEnd: median(e.ends) })),
+  }))
+}
+
+/** A13 OVERTIME end over the runs that won and went on (cfg.ot): dead by 20:00 (1200 s), alive past 24:00 (1440 s). */
+export function a13Stats(out) {
+  const runs = out.filter((s) => s.ot && s.won)
+  if (!runs.length) return null
+  return {
+    runs: runs.map((s) => ({ file: s.file, otStart: s.otStart, otCycle: s.otCycle, dead: s.dead, endTime: s.endTime, level: s.finalLevel })),
+    n: runs.length,
+    by20: runs.filter((s) => s.dead && s.endTime <= 1200).length,
+    past24: runs.filter((s) => !s.dead || s.endTime > 1440).length,
+  }
+}
+
+function printReport(out) {
+  for (const s of out) {
+    console.log(
+      [
+        s.arena.padEnd(6),
+        (s.mode + (s.threat ? ' T' + s.threat : '') + (s.ot ? ' OT' : '')).padEnd(8),
+        String(s.seed).padEnd(5),
+        `end=${s.endTime}${s.dead ? ' DEAD' : ''}`,
+        `L=${s.finalLevel}`,
+        `firstLv=${s.firstLevelUp}`,
+        `L@1/2/3/5/8/10/12=${[60, 120, 180, 300, 480, 600, 720].map((t) => s.levelAt[t] ?? '-').join('/')}`,
+        `kpm=${s.killsPerMin}`,
+        `max=${s.maxEnemies} cap@${s.capFirstReachedChunkEnd} capFrac=${s.capStepFrac}`,
+        `boss1=${s.bossFirstSpawn} bosses=${s.bossSpawns.length} killed=${s.bossKills.length}`,
+        `elites=${s.elites}`,
+        `pods=${s.podsSeen}(kill ${s.podsFromKills}) equips=${s.equips.length} onPickup=${s.secondsOnPickupWeapon}s`,
+        `xp=${(s.xpCollectFrac * 100).toFixed(1)}% draft1=${s.firstDraftAt} fusion=${s.firstFusionAt ?? '-'}`,
+        `podFail=${s.podDropFailedAtPickupCap} pkCap=${s.pickupCapStepFrac}`,
+        `lv/min=${s.levelUpsPerMin.join(',')}`,
+        `dash=${s.dashes} cc/min=${s.closeCallsPerMin}`,
+        `50%->death=${s.fromHalfHp ?? '-'}s`,
+      ].join(' | '),
+    )
+  }
+  // A5 arrivals, A6 fight lengths and the wins (docs/NEXT-LEVEL.md section 11).
+  const fs = fightStats(out)
+  if (fs) {
+    const a = fs.arrivals
+    console.log(`A5 arrivals=${a.n} dist min=${a.distMin} max=${a.distMax} cage+inside=${a.cageInside} inArena=${a.inArena} bad=${a.bad.length} (pass: 250 to 340 u, cage active the same tick, boss inside the walls)`)
+    for (const f of a.bad) console.log(`  A5 outlier ${f.run} ${f.stage} t=${f.spawnT} dist=${f.dist} cage=${f.cage} inCage=${f.inCage} inArena=${f.inArena}`)
+    for (const [stage, st] of Object.entries(fs.stages)) {
+      console.log(`A6 ${stage} kills=${st.kills} median=${st.median} min=${st.min ?? '-'} max=${st.max ?? '-'} lens=[${st.lens.join(', ')}] unfinished=[${st.unfinished.map((u) => `${u.how}@${u.len}`).join(', ')}]`)
+    }
+    console.log(`A6 kill-to-next-arrival gaps=${fs.gaps.n} min=${fs.gaps.min ?? '-'} (pass: at least 20 s)`)
+  }
+  console.log(`WINS ${out.filter((s) => s.won).length}/${out.length} stalemates=${out.filter((s) => s.stalemate).length} runs: ${out.filter((s) => s.won).map((s) => s.file).join(', ')}`)
+
+  // A3 beat fidelity: each beat fired on time or where the deferral rules put it.
+  const a3 = a3Stats(out)
+  if (a3) {
+    for (const p of a3.runs) {
+      const line = p.beats.map((b) => `${b.label}@${b.at}${b.fired === null ? ':-' : b.fired < 0 ? ':drop' : b.fired === b.at ? '' : ':' + b.fired}${b.ok ? '' : '(want ' + b.want + ')'}`).join(' ')
+      console.log(`A3 ${p.file} ok=${p.ok}/${p.total} alive max=${p.maxAlive} overRow=${p.overRowMax} sat=${p.satFrac} evUnits=${p.eventUnitsMax} | ${line}`)
+    }
+    console.log(`A3 beats off-rule=${a3.offRule} (pass: 0); alive max=${a3.maxAlive} (pass: <= 610); over row maxAlive max=${a3.overRowMax} (pass: <= 160); saturated share max=${a3.satMax} (pass: <= 0.25)`)
+  }
+
+  const a10 = a10Stats(out)
+  if (a10) console.log(`A10 deaths=${a10.deaths} median=${a10.median.toFixed(2)}s min=${a10.min.toFixed(2)}s (pass: median >= 3.0, min >= 1.2)`)
+
+  // A12 ladder (T4 at most 15% and below T0; T1 at most T0).
+  for (const { key, byThreat } of ladderStats(out)) {
+    if (byThreat.length < 2) continue
+    console.log(`A12 ${key}: ${byThreat.map((e) => `T${e.threat} ${e.wins}/${e.runs} (${Math.round((100 * e.wins) / e.runs)}%) median end ${e.medianEnd}`).join(' | ')}`)
+  }
+
+  // A13 OVERTIME end: 90% or more dead by 20:00, none alive past 24:00.
+  const a13 = a13Stats(out)
+  if (a13) {
+    for (const s of a13.runs) console.log(`A13 ${s.file} clear->OT at ${s.otStart} cycle ${s.otCycle} ${s.dead ? 'dead' : 'ALIVE'} at ${s.endTime} (${(s.endTime / 60).toFixed(2)} min) L${s.level}`)
+    console.log(`A13 OT runs=${a13.n} dead by 20:00 ${a13.by20} (${Math.round((100 * a13.by20) / a13.n)}%, pass >= 90%); alive past 24:00 or unfinished ${a13.past24} (pass: 0)`)
+  }
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const dir = process.argv[2] ? resolve(process.argv[2]) : DEFAULT_DIR
+  const out = loadSummaries(dir)
+  writeFileSync(join(dir, 'summary.json'), JSON.stringify(out, null, 1))
+  printReport(out)
 }

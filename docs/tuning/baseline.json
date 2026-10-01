@@ -1,0 +1,2003 @@
+{
+ "meta": {
+  "label": "baseline",
+  "date": "2026-10-01T08:11:10.934Z",
+  "commit": "15c16b9",
+  "srcDirty": false,
+  "scriptsDirty": true,
+  "command": "node scripts/playtest/matrix.mjs --seeds=10 --label=baseline",
+  "seeds": "1001 x 1..10 per world",
+  "worlds": [
+   "hive",
+   "depths",
+   "wastes"
+  ],
+  "threatSeeds": "1001 x 1..10",
+  "otSets": [
+   1,
+   2
+  ],
+  "only": [
+   "A1",
+   "A2",
+   "A3",
+   "A4",
+   "A5",
+   "A6",
+   "A7",
+   "A8",
+   "A9",
+   "A10",
+   "A11",
+   "A12",
+   "A13",
+   "A14",
+   "A15",
+   "A16",
+   "A17",
+   "A18"
+  ],
+  "runsDir": "/tmp/swg-matrix/baseline",
+  "machineAtEnd": {
+   "load": [
+    4.18,
+    4.15,
+    4.05
+   ],
+   "swap": "total = 6144.00M  used = 5232.31M  free = 911.69M  (encrypted)"
+  },
+  "sets": {
+   "smartP": {
+    "label": "smart+P",
+    "pattern": "smart:SEED:14:nova:priority",
+    "worlds": [
+     "hive",
+     "depths",
+     "wastes"
+    ],
+    "runs": 30
+   },
+   "roam": {
+    "label": "roam",
+    "pattern": "roam:SEED:14",
+    "worlds": [
+     "hive",
+     "depths",
+     "wastes"
+    ],
+    "runs": 30
+   },
+   "smart": {
+    "label": "smart",
+    "pattern": "smart:SEED:14",
+    "worlds": [
+     "hive",
+     "depths",
+     "wastes"
+    ],
+    "runs": 30
+   },
+   "focus": {
+    "label": "smart+focus+P",
+    "pattern": "smart+focus:SEED:14:nova:priority",
+    "worlds": [
+     "hive",
+     "depths",
+     "wastes"
+    ],
+    "runs": 30
+   },
+   "dash": {
+    "label": "smart+dash+P",
+    "pattern": "smart+dash:SEED:14:nova:priority",
+    "worlds": [
+     "hive",
+     "depths",
+     "wastes"
+    ],
+    "runs": 30
+   },
+   "evolve": {
+    "label": "smart+E",
+    "pattern": "smart:SEED:14:nova:evolve",
+    "worlds": [
+     "hive",
+     "depths",
+     "wastes"
+    ],
+    "runs": 30
+   },
+   "crude": {
+    "label": "crude",
+    "pattern": "crude:SEED:14",
+    "worlds": [
+     "hive",
+     "depths",
+     "wastes"
+    ],
+    "runs": 30
+   },
+   "threat": {
+    "label": "smart+P T1, T4 (Hive)",
+    "pattern": "smart:SEED:14:nova:priority:T (T 1 and 4)",
+    "worlds": [
+     "hive"
+    ],
+    "runs": 20
+   },
+   "ot": {
+    "label": "smart+P OVERTIME (Hive)",
+    "pattern": "smart:SEED:25:nova:priority:T:ot",
+    "worlds": [
+     "hive"
+    ],
+    "runs": 120
+   }
+  },
+  "commands": [
+   "node scripts/measure.mjs 375 667 det",
+   "node scripts/measure.mjs 667 375 det",
+   "node scripts/measure.mjs 375 667 det-long",
+   "node scripts/measure.mjs 667 375 det-long",
+   "node scripts/measure.mjs 375 667 det-death",
+   "node scripts/measure.mjs 667 375 det-death",
+   "node scripts/measure.mjs 375 667 det '--settings={\"shake\":0,\"reduceMotion\":true,\"damageNumbers\":\"off\",\"flashes\":false,\"glow\":0}'",
+   "node scripts/measure.mjs 375 667 opening 560 996",
+   "node scripts/measure.mjs 375 667 opening 996 560",
+   "node scripts/measure.mjs 390 844 perf nova hive",
+   "node scripts/measure.mjs 390 844 perf nova wastes",
+   "node scripts/measure.mjs 390 844 perf-final nova hive",
+   "node scripts/probe-alloc.mjs x x --gc --perks="
+  ]
+ },
+ "metrics": [
+  {
+   "id": "A1",
+   "name": "Opening probe (5 seeds x 3 worlds, views 560x996 and 996x560)",
+   "value": "first in view 0.3 s, first kill 0.57 s, empty view 1.32 s (worst)",
+   "target": "first enemy in view <= 1.0 s; first kill <= 2.5 s; empty view <= 2.0 s",
+   "result": "PASS",
+   "details": [
+    {
+     "view": "560x996",
+     "worst": {
+      "firstInView": 0.3,
+      "firstKill": 0.57,
+      "emptyViewSec": 0.8
+     },
+     "pass": true,
+     "pageErrors": 0
+    },
+    {
+     "view": "996x560",
+     "worst": {
+      "firstInView": 0.3,
+      "firstKill": 0.57,
+      "emptyViewSec": 1.32
+     },
+     "pass": true,
+     "pageErrors": 0
+    }
+   ]
+  },
+  {
+   "id": "A2",
+   "name": "First draft (smart+P)",
+   "value": "median 6.02 s, max 6.02 s",
+   "target": "median 6 to 12 s; max <= 20 s",
+   "result": "PASS",
+   "details": {
+    "hive": {
+     "median": 6.02,
+     "max": 6.02,
+     "n": 10
+    },
+    "depths": {
+     "median": 6.02,
+     "max": 6.02,
+     "n": 10
+    },
+    "wastes": {
+     "median": 6.02,
+     "max": 6.02,
+     "n": 10
+    }
+   }
+  },
+  {
+   "id": "A3",
+   "name": "Beats and density (T0 runs of roam, smart, smart+P, focus, dash, evolve)",
+   "value": "beats off-rule 0; alive max 440; over row maxAlive 243; saturated share max 0.368",
+   "target": "beats on time or per deferral; alive <= row.maxAlive + 160 and <= 610; saturated share <= 0.25",
+   "result": "FAIL",
+   "details": {
+    "bySet": {
+     "roam": {
+      "runs": 30,
+      "offRule": 0,
+      "maxAlive": 440,
+      "overRowMax": 243,
+      "satMax": 0.271,
+      "worst": "hive_roam_4004.json"
+     },
+     "smart": {
+      "runs": 30,
+      "offRule": 0,
+      "maxAlive": 424,
+      "overRowMax": 181,
+      "satMax": 0.062,
+      "worst": "hive_smart_3003.json"
+     },
+     "smart+P": {
+      "runs": 30,
+      "offRule": 0,
+      "maxAlive": 424,
+      "overRowMax": 135,
+      "satMax": 0.206,
+      "worst": "hive_smart_5005_priority.json"
+     },
+     "smart+focus+P": {
+      "runs": 30,
+      "offRule": 0,
+      "maxAlive": 378,
+      "overRowMax": 198,
+      "satMax": 0.27,
+      "worst": "hive_smart_focus_3003_priority.json"
+     },
+     "smart+dash+P": {
+      "runs": 30,
+      "offRule": 0,
+      "maxAlive": 425,
+      "overRowMax": 240,
+      "satMax": 0.368,
+      "worst": "hive_smart_dash_3003_priority.json"
+     },
+     "smart+E": {
+      "runs": 30,
+      "offRule": 0,
+      "maxAlive": 420,
+      "overRowMax": 92,
+      "satMax": 0.053,
+      "worst": "hive_smart_3003_evolve.json"
+     }
+    },
+    "offRuleRuns": []
+   }
+  },
+  {
+   "id": "A4",
+   "name": "Density band (smart+P median alive per minute vs the A7.2 Target alive)",
+   "value": "hive 6/9, depths 6/9, wastes 7/9",
+   "target": "in band in 3 of 4 scored minutes (7 of 9; the cage rows 4, 7 and 11 have no band)",
+   "result": "FAIL",
+   "details": {
+    "hive": {
+     "inBand": 6,
+     "scored": 9,
+     "need": 7,
+     "mins": [
+      {
+       "min": 1,
+       "band": "16-28",
+       "median": 17.15,
+       "runs": 10,
+       "ok": true
+      },
+      {
+       "min": 2,
+       "band": "24-56",
+       "median": 28.55,
+       "runs": 10,
+       "ok": true
+      },
+      {
+       "min": 3,
+       "band": "40-84",
+       "median": 49.1,
+       "runs": 9,
+       "ok": true
+      },
+      {
+       "min": 4,
+       "band": "40-98",
+       "median": 40.95,
+       "runs": 8,
+       "ok": true
+      },
+      {
+       "min": 5,
+       "band": "cage",
+       "median": 42.25,
+       "runs": 8,
+       "ok": null
+      },
+      {
+       "min": 6,
+       "band": "70-147",
+       "median": 72.2,
+       "runs": 7,
+       "ok": true
+      },
+      {
+       "min": 7,
+       "band": "85-175",
+       "median": 92,
+       "runs": 7,
+       "ok": true
+      },
+      {
+       "min": 8,
+       "band": "cage",
+       "median": 87.8,
+       "runs": 7,
+       "ok": null
+      },
+      {
+       "min": 9,
+       "band": "120-224",
+       "median": 82.65,
+       "runs": 6,
+       "ok": false
+      },
+      {
+       "min": 10,
+       "band": "140-252",
+       "median": 122.2,
+       "runs": 5,
+       "ok": false
+      },
+      {
+       "min": 11,
+       "band": "170-294",
+       "median": 160.6,
+       "runs": 4,
+       "ok": false
+      },
+      {
+       "min": 12,
+       "band": "cage",
+       "median": 54.599999999999994,
+       "runs": 2,
+       "ok": null
+      }
+     ]
+    },
+    "depths": {
+     "inBand": 6,
+     "scored": 9,
+     "need": 7,
+     "mins": [
+      {
+       "min": 1,
+       "band": "14-28",
+       "median": 15.850000000000001,
+       "runs": 10,
+       "ok": true
+      },
+      {
+       "min": 2,
+       "band": "20-49",
+       "median": 24.25,
+       "runs": 10,
+       "ok": true
+      },
+      {
+       "min": 3,
+       "band": "30-70",
+       "median": 35.400000000000006,
+       "runs": 10,
+       "ok": true
+      },
+      {
+       "min": 4,
+       "band": "30-77",
+       "median": 32.2,
+       "runs": 10,
+       "ok": true
+      },
+      {
+       "min": 5,
+       "band": "cage",
+       "median": 36.5,
+       "runs": 10,
+       "ok": null
+      },
+      {
+       "min": 6,
+       "band": "50-119",
+       "median": 50.35,
+       "runs": 8,
+       "ok": true
+      },
+      {
+       "min": 7,
+       "band": "60-140",
+       "median": 66.6,
+       "runs": 6,
+       "ok": true
+      },
+      {
+       "min": 8,
+       "band": "cage",
+       "median": 64,
+       "runs": 5,
+       "ok": null
+      },
+      {
+       "min": 9,
+       "band": "80-182",
+       "median": 75.3,
+       "runs": 5,
+       "ok": false
+      },
+      {
+       "min": 10,
+       "band": "90-203",
+       "median": 80.80000000000001,
+       "runs": 4,
+       "ok": false
+      },
+      {
+       "min": 11,
+       "band": "110-231",
+       "median": 83.3,
+       "runs": 3,
+       "ok": false
+      },
+      {
+       "min": 12,
+       "band": "cage",
+       "median": 36.6,
+       "runs": 1,
+       "ok": null
+      }
+     ]
+    },
+    "wastes": {
+     "inBand": 7,
+     "scored": 9,
+     "need": 7,
+     "mins": [
+      {
+       "min": 1,
+       "band": "14-25",
+       "median": 14.850000000000001,
+       "runs": 10,
+       "ok": true
+      },
+      {
+       "min": 2,
+       "band": "16-42",
+       "median": 17.5,
+       "runs": 10,
+       "ok": true
+      },
+      {
+       "min": 3,
+       "band": "22-56",
+       "median": 29.3,
+       "runs": 10,
+       "ok": true
+      },
+      {
+       "min": 4,
+       "band": "26-70",
+       "median": 26.75,
+       "runs": 10,
+       "ok": true
+      },
+      {
+       "min": 5,
+       "band": "cage",
+       "median": 34,
+       "runs": 10,
+       "ok": null
+      },
+      {
+       "min": 6,
+       "band": "36-95",
+       "median": 33.8,
+       "runs": 9,
+       "ok": false
+      },
+      {
+       "min": 7,
+       "band": "44-109",
+       "median": 59.9,
+       "runs": 5,
+       "ok": true
+      },
+      {
+       "min": 8,
+       "band": "cage",
+       "median": 48.9,
+       "runs": 4,
+       "ok": null
+      },
+      {
+       "min": 9,
+       "band": "58-137",
+       "median": 45.95,
+       "runs": 4,
+       "ok": false
+      },
+      {
+       "min": 10,
+       "band": "66-151",
+       "median": 67.2,
+       "runs": 3,
+       "ok": true
+      },
+      {
+       "min": 11,
+       "band": "80-175",
+       "median": 83.8,
+       "runs": 3,
+       "ok": true
+      },
+      {
+       "min": 12,
+       "band": "cage",
+       "median": 34.4,
+       "runs": 1,
+       "ok": null
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "A5",
+   "name": "Boss arrival (smart+P and focus fights)",
+   "value": "99 arrivals, 295 to 305 u, cage active and inside 99/99, in arena 99/99",
+   "target": "250 to 340 u; cage active the same tick",
+   "result": "PASS",
+   "details": []
+  },
+  {
+   "id": "A6",
+   "name": "Fights (focus bot medians mid1/mid2/final; default bot = smart+P)",
+   "value": "hive focus 22.3/19/32.5 s (kills 8/5/2), default longest 181.1 s; depths focus 21.3/16.9/- s (kills 10/3/0), default longest 114.5 s; wastes focus 28.9/21.3/27.9 s (kills 10/5/2), default longest 173.5 s; kill-to-next-arrival min 51.1 s",
+   "target": "focus mid1/mid2 median 20 to 40 s, final 40 to 75 s; default bot none over 150 s except stalemate; gap >= 20 s",
+   "result": "FAIL",
+   "details": {
+    "hive": {
+     "focus": {
+      "mid1": {
+       "kills": 8,
+       "median": 22.33,
+       "min": 11.8,
+       "max": 32,
+       "unfinished": 0,
+       "deaths": 0
+      },
+      "mid2": {
+       "kills": 5,
+       "median": 18.96,
+       "min": 12.08,
+       "max": 22.36,
+       "unfinished": 0,
+       "deaths": 0
+      },
+      "final": {
+       "kills": 2,
+       "median": 32.504999999999995,
+       "min": 7.68,
+       "max": 57.33,
+       "unfinished": 0,
+       "deaths": 0
+      }
+     },
+     "defaultLongest": 181.13,
+     "defaultOver150": [
+      "mid1 158.9 s (kill, hive_smart_3003_priority.json)",
+      "final 181.13 s (kill, hive_smart_6006_priority.json)"
+     ],
+     "defaultFightsEndedByDeath": 0,
+     "defaultFights": 19
+    },
+    "depths": {
+     "focus": {
+      "mid1": {
+       "kills": 10,
+       "median": 21.25,
+       "min": 16.28,
+       "max": 32.57,
+       "unfinished": 0,
+       "deaths": 0
+      },
+      "mid2": {
+       "kills": 3,
+       "median": 16.88,
+       "min": 16.23,
+       "max": 35.5,
+       "unfinished": 0,
+       "deaths": 0
+      },
+      "final": {
+       "kills": 0,
+       "median": null,
+       "min": null,
+       "max": null,
+       "unfinished": 0,
+       "deaths": 0
+      }
+     },
+     "defaultLongest": 114.53,
+     "defaultOver150": [],
+     "defaultFightsEndedByDeath": 0,
+     "defaultFights": 18
+    },
+    "wastes": {
+     "focus": {
+      "mid1": {
+       "kills": 10,
+       "median": 28.95,
+       "min": 16.08,
+       "max": 52.25,
+       "unfinished": 0,
+       "deaths": 0
+      },
+      "mid2": {
+       "kills": 5,
+       "median": 21.28,
+       "min": 16.26,
+       "max": 29.58,
+       "unfinished": 0,
+       "deaths": 0
+      },
+      "final": {
+       "kills": 2,
+       "median": 27.93,
+       "min": 16.8,
+       "max": 39.06,
+       "unfinished": 0,
+       "deaths": 0
+      }
+     },
+     "defaultLongest": 173.51,
+     "defaultOver150": [
+      "final 173.51 s (kill, wastes_smart_6006_priority.json)"
+     ],
+     "defaultFightsEndedByDeath": 0,
+     "defaultFights": 17
+    }
+   }
+  },
+  {
+   "id": "A7",
+   "name": "Win rate (10 seeds per world)",
+   "value": "hive smart+P 4/10, smart 1/10; depths smart+P 3/10, smart 1/10; wastes smart+P 3/10, smart 3/10",
+   "target": "smart+P 25 to 45%; smart 5 to 25%",
+   "result": "FAIL",
+   "details": {
+    "hive": {
+     "smartP": "4/10",
+     "smart": "1/10"
+    },
+    "depths": {
+     "smartP": "3/10",
+     "smart": "1/10"
+    },
+    "wastes": {
+     "smartP": "3/10",
+     "smart": "3/10"
+    }
+   }
+  },
+  {
+   "id": "A8",
+   "name": "Median survival (a win or a stalemate counts as the whole 14:00)",
+   "value": "hive smart 6:19, smart+P 9:44, crude 2:07; depths smart 6:21, smart+P 8:19, crude 2:07; wastes smart 6:53, smart+P 6:57, crude 1:39",
+   "target": "smart >= 5:30; smart+P >= 8:00; crude >= 2:30; Hive crude >= Depths and Wastes",
+   "result": "FAIL",
+   "details": {
+    "hive": {
+     "smart": 378.685,
+     "smartP": 583.985,
+     "crude": 127.42500000000001
+    },
+    "depths": {
+     "smart": 380.765,
+     "smartP": 499.23,
+     "crude": 127.06
+    },
+    "wastes": {
+     "smart": 412.53499999999997,
+     "smartP": 416.62,
+     "crude": 98.8
+    },
+    "hiveCrudeAtLeastOthers": true
+   }
+  },
+  {
+   "id": "A9",
+   "name": "Level curve (smart+P median level; a run that won earlier counts its final level)",
+   "value": "hive L9/L16/L20 at 3:00/8:00/11:00, gap over 60 s in 6/10 runs; depths L9/L17/L22 at 3:00/8:00/11:00, gap over 60 s in 1/10 runs; wastes L10/L16/L20 at 3:00/8:00/11:00, gap over 60 s in 6/10 runs",
+   "target": "L9 to 12 at 3:00; L18 to 23 at 8:00; L23 to 28 at 11:00; no gap over 60 s after 1:00",
+   "result": "FAIL",
+   "details": {
+    "hive": {
+     "L3": 9,
+     "L8": 16,
+     "L11": 20,
+     "gapRuns": 6,
+     "runs": 10,
+     "longestGap": 128.6,
+     "gaps": [
+      {
+       "from": 220.4,
+       "to": 281.7,
+       "gap": 61.3,
+       "run": "hive_smart_3003_priority.json"
+      },
+      {
+       "from": 281.7,
+       "to": 368.7,
+       "gap": 87,
+       "run": "hive_smart_3003_priority.json"
+      },
+      {
+       "from": 410.8,
+       "to": 495.8,
+       "gap": 85,
+       "run": "hive_smart_3003_priority.json"
+      },
+      {
+       "from": 451.2,
+       "to": 572.8,
+       "gap": 121.6,
+       "run": "hive_smart_4004_priority.json"
+      },
+      {
+       "from": 185.7,
+       "to": 248.2,
+       "gap": 62.5,
+       "run": "hive_smart_5005_priority.json"
+      },
+      {
+       "from": 336.1,
+       "to": 399.7,
+       "gap": 63.6,
+       "run": "hive_smart_5005_priority.json"
+      },
+      {
+       "from": 418.3,
+       "to": 492.9,
+       "gap": 74.6,
+       "run": "hive_smart_5005_priority.json"
+      },
+      {
+       "from": 548.8,
+       "to": 611.1,
+       "gap": 62.4,
+       "run": "hive_smart_5005_priority.json"
+      },
+      {
+       "from": 448.9,
+       "to": 519,
+       "gap": 70.2,
+       "run": "hive_smart_6006_priority.json"
+      },
+      {
+       "from": 519,
+       "to": 582.4,
+       "gap": 63.3,
+       "run": "hive_smart_6006_priority.json"
+      },
+      {
+       "from": 663.3,
+       "to": 792,
+       "gap": 128.6,
+       "run": "hive_smart_6006_priority.json"
+      },
+      {
+       "from": 432,
+       "to": 496.4,
+       "gap": 64.4,
+       "run": "hive_smart_7007_priority.json"
+      },
+      {
+       "from": 444.5,
+       "to": 513.6,
+       "gap": 69.1,
+       "run": "hive_smart_9009_priority.json"
+      },
+      {
+       "from": 607.8,
+       "to": 670.3,
+       "gap": 62.5,
+       "run": "hive_smart_9009_priority.json"
+      }
+     ]
+    },
+    "depths": {
+     "L3": 9,
+     "L8": 17,
+     "L11": 22,
+     "gapRuns": 1,
+     "runs": 10,
+     "longestGap": 68.4,
+     "gaps": [
+      {
+       "from": 677.3,
+       "to": 745.7,
+       "gap": 68.4,
+       "run": "depths_smart_10010_priority.json"
+      }
+     ]
+    },
+    "wastes": {
+     "L3": 10,
+     "L8": 16,
+     "L11": 20,
+     "gapRuns": 6,
+     "runs": 10,
+     "longestGap": 87.9,
+     "gaps": [
+      {
+       "from": 222.3,
+       "to": 289.1,
+       "gap": 66.8,
+       "run": "wastes_smart_2002_priority.json"
+      },
+      {
+       "from": 289.1,
+       "to": 357.1,
+       "gap": 68,
+       "run": "wastes_smart_2002_priority.json"
+      },
+      {
+       "from": 179.4,
+       "to": 239.8,
+       "gap": 60.4,
+       "run": "wastes_smart_3003_priority.json"
+      },
+      {
+       "from": 297.3,
+       "to": 359.9,
+       "gap": 62.6,
+       "run": "wastes_smart_3003_priority.json"
+      },
+      {
+       "from": 288.3,
+       "to": 352.4,
+       "gap": 64.1,
+       "run": "wastes_smart_4004_priority.json"
+      },
+      {
+       "from": 464.4,
+       "to": 539.4,
+       "gap": 74.9,
+       "run": "wastes_smart_5005_priority.json"
+      },
+      {
+       "from": 481.7,
+       "to": 555.8,
+       "gap": 74.1,
+       "run": "wastes_smart_6006_priority.json"
+      },
+      {
+       "from": 689.3,
+       "to": 777.2,
+       "gap": 87.9,
+       "run": "wastes_smart_6006_priority.json"
+      },
+      {
+       "from": 242.5,
+       "to": 318.2,
+       "gap": 75.8,
+       "run": "wastes_smart_9009_priority.json"
+      },
+      {
+       "from": 428.1,
+       "to": 506.9,
+       "gap": 78.8,
+       "run": "wastes_smart_9009_priority.json"
+      },
+      {
+       "from": 620.4,
+       "to": 689.6,
+       "gap": 69.2,
+       "run": "wastes_smart_9009_priority.json"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "A10",
+   "name": "Readable deaths (smart-family deaths; crude in the details)",
+   "value": "99 deaths, median 2.57 s, min 0.42 s",
+   "target": "median >= 3.0 s; minimum >= 1.2 s",
+   "result": "FAIL",
+   "details": {
+    "bySet": {
+     "smart": {
+      "deaths": 25,
+      "median": 2.833,
+      "min": 0.633
+     },
+     "smart+P": {
+      "deaths": 20,
+      "median": 3.3165,
+      "min": 0.417
+     },
+     "smart+focus+P": {
+      "deaths": 26,
+      "median": 2.05,
+      "min": 0.517
+     },
+     "smart+dash+P": {
+      "deaths": 5,
+      "median": 2.067,
+      "min": 2.033
+     },
+     "smart+E": {
+      "deaths": 23,
+      "median": 2.367,
+      "min": 0.817
+     },
+     "crude": {
+      "deaths": 30,
+      "median": 1.242,
+      "min": 0.533
+     }
+    },
+    "byWorld": {
+     "hive": {
+      "deaths": 32,
+      "median": 2.825,
+      "min": 0.517
+     },
+     "depths": {
+      "deaths": 37,
+      "median": 2.017,
+      "min": 0.417
+     },
+     "wastes": {
+      "deaths": 30,
+      "median": 4.383,
+      "min": 0.833
+     }
+    },
+    "fastest": [
+     {
+      "run": "depths_smart_8008_priority.json",
+      "fromHalfHp": 0.417,
+      "t": 344.82,
+      "dmgLast3sByKind": {
+       "shot": 44.2,
+       "bite": 55.4
+      },
+      "lastHitBy": 3
+     },
+     {
+      "run": "hive_smart_focus_7007_priority.json",
+      "fromHalfHp": 0.517,
+      "t": 360.9,
+      "dmgLast3sByKind": {
+       "shot": 69.2,
+       "acid": 34.2
+      },
+      "lastHitBy": -2
+     },
+     {
+      "run": "hive_smart_6006.json",
+      "fromHalfHp": 0.633,
+      "t": 366.98,
+      "dmgLast3sByKind": {
+       "shot": 52.2,
+       "acid": 27.9
+      },
+      "lastHitBy": -2
+     },
+     {
+      "run": "hive_smart_6006_evolve.json",
+      "fromHalfHp": 0.817,
+      "t": 414.73,
+      "dmgLast3sByKind": {
+       "shot": 53.5,
+       "acid": 20.7,
+       "bite": 64
+      },
+      "lastHitBy": -2
+     },
+     {
+      "run": "wastes_smart_6006.json",
+      "fromHalfHp": 0.833,
+      "t": 406.02,
+      "dmgLast3sByKind": {
+       "bite": 48,
+       "shot": 14
+      },
+      "lastHitBy": 7
+     },
+     {
+      "run": "depths_smart_8008_evolve.json",
+      "fromHalfHp": 0.85,
+      "t": 350.43,
+      "dmgLast3sByKind": {
+       "shot": 66.6,
+       "bite": 62.1
+      },
+      "lastHitBy": 11
+     },
+     {
+      "run": "depths_smart_8008.json",
+      "fromHalfHp": 0.867,
+      "t": 540.48,
+      "dmgLast3sByKind": {
+       "shot": 95
+      },
+      "lastHitBy": 22
+     },
+     {
+      "run": "hive_smart_4004.json",
+      "fromHalfHp": 0.883,
+      "t": 377.3,
+      "dmgLast3sByKind": {
+       "shot": 70,
+       "acid": 22.2,
+       "bite": 58
+      },
+      "lastHitBy": -2
+     }
+    ]
+   }
+  },
+  {
+   "id": "A11",
+   "name": "Speed (T0 runs before OVERTIME; streams, charger dash and the boss lunge exempt)",
+   "value": "fastest flyer 240, wraith 240, cinderCharger 240 u/s",
+   "target": "no enemy over 240 u/s",
+   "result": "PASS",
+   "details": {
+    "max": {
+     "swarmer": {
+      "v": 143.1,
+      "run": "hive_smart_1001_priority.json"
+     },
+     "biter": {
+      "v": 230.8,
+      "run": "depths_smart_1001_priority.json"
+     },
+     "flyer": {
+      "v": 240,
+      "run": "hive_smart_1001_priority.json"
+     },
+     "guardian": {
+      "v": 156.6,
+      "run": "hive_smart_1001_priority.json"
+     },
+     "spitter": {
+      "v": 108.3,
+      "run": "hive_smart_1001_priority.json"
+     },
+     "splitter": {
+      "v": 116,
+      "run": "hive_smart_1001_priority.json"
+     },
+     "queen": {
+      "v": 48.7,
+      "run": "hive_smart_1001_priority.json"
+     },
+     "beetle": {
+      "v": 92.8,
+      "run": "hive_smart_1001_priority.json"
+     },
+     "hivemind": {
+      "v": 77.3,
+      "run": "hive_smart_1001_priority.json"
+     },
+     "broodmother": {
+      "v": 88.9,
+      "run": "hive_smart_1001_priority.json"
+     },
+     "brute": {
+      "v": 146.5,
+      "run": "depths_smart_1001_priority.json"
+     },
+     "queenPrime": {
+      "v": 48.7,
+      "run": "hive_smart_5005_priority.json"
+     },
+     "wraith": {
+      "v": 240,
+      "run": "depths_smart_1001_priority.json"
+     },
+     "abyssalWarden": {
+      "v": 173.1,
+      "run": "depths_smart_1001_priority.json"
+     },
+     "psychic": {
+      "v": 115.4,
+      "run": "depths_smart_1001_priority.json"
+     },
+     "abyssalMaw": {
+      "v": 66.6,
+      "run": "depths_smart_1001_priority.json"
+     },
+     "voidMatron": {
+      "v": 57.3,
+      "run": "depths_smart_1001_priority.json"
+     },
+     "deepCaller": {
+      "v": 79.9,
+      "run": "depths_smart_1001_priority.json"
+     },
+     "warper": {
+      "v": 128.7,
+      "run": "depths_smart_1001_priority.json"
+     },
+     "voidMatronPrime": {
+      "v": 57.3,
+      "run": "depths_smart_1001_priority.json"
+     },
+     "cinderCharger": {
+      "v": 240,
+      "run": "wastes_smart_1001_priority.json"
+     },
+     "duneLeviathan": {
+      "v": 240,
+      "run": "wastes_smart_1001_priority.json"
+     },
+     "stinger": {
+      "v": 100.2,
+      "run": "wastes_smart_2002_priority.json"
+     },
+     "burrower": {
+      "v": 224,
+      "run": "wastes_smart_2002_priority.json"
+     },
+     "emberTyrant": {
+      "v": 25.8,
+      "run": "wastes_smart_5005_priority.json"
+     },
+     "cinderMortarch": {
+      "v": 48.7,
+      "run": "wastes_smart_2002_priority.json"
+     },
+     "emberTyrantPrime": {
+      "v": 25.8,
+      "run": "wastes_smart_6006_priority.json"
+     }
+    },
+    "over": []
+   }
+  },
+  {
+   "id": "A12",
+   "name": "Ladder (Hive smart+P)",
+   "value": "T0 4/10 (40%), T1 3/10 (30%), T4 0/10 (0%)",
+   "target": "T4 win rate <= 15%; T1 <= T0",
+   "result": "PASS",
+   "details": {
+    "key": "hive smart+P",
+    "byThreat": [
+     {
+      "threat": 0,
+      "runs": 10,
+      "wins": 4,
+      "medianEnd": 583.985
+     },
+     {
+      "threat": 1,
+      "runs": 10,
+      "wins": 3,
+      "medianEnd": 413.96500000000003
+     },
+     {
+      "threat": 4,
+      "runs": 10,
+      "wins": 0,
+      "medianEnd": 275.41
+     }
+    ]
+   }
+  },
+  {
+   "id": "A13",
+   "name": "Overtime (Hive OVERTIME sets 1 and 2, runs that won)",
+   "value": "25/33 (76%) dead by 20:00; 4 alive past 24:00",
+   "target": ">= 90% dead by 20:00; none past 24:00",
+   "result": "FAIL",
+   "details": {
+    "runs": [
+     {
+      "file": "hive_smart_5005_priority_ot.json",
+      "otStart": 672.22,
+      "otCycle": 1,
+      "dead": true,
+      "endTime": 691.53,
+      "level": 18
+     },
+     {
+      "file": "hive_smart_6006_priority_ot.json",
+      "otStart": 813.17,
+      "otCycle": 4,
+      "dead": false,
+      "endTime": 1500.02,
+      "level": 31
+     },
+     {
+      "file": "hive_smart_7007_priority_ot.json",
+      "otStart": 669.85,
+      "otCycle": 1,
+      "dead": true,
+      "endTime": 721.45,
+      "level": 22
+     },
+     {
+      "file": "hive_smart_9009_priority_ot.json",
+      "otStart": 726.62,
+      "otCycle": 5,
+      "dead": false,
+      "endTime": 1500.02,
+      "level": 30
+     },
+     {
+      "file": "hive_smart_14014_priority_ot.json",
+      "otStart": 792.93,
+      "otCycle": 4,
+      "dead": true,
+      "endTime": 1439.05,
+      "level": 27
+     },
+     {
+      "file": "hive_smart_22022_priority_ot.json",
+      "otStart": 641,
+      "otCycle": 4,
+      "dead": true,
+      "endTime": 1218.87,
+      "level": 30
+     },
+     {
+      "file": "hive_smart_23023_priority_ot.json",
+      "otStart": 668.35,
+      "otCycle": 1,
+      "dead": true,
+      "endTime": 826.27,
+      "level": 25
+     },
+     {
+      "file": "hive_smart_30030_priority_ot.json",
+      "otStart": 720.85,
+      "otCycle": 2,
+      "dead": true,
+      "endTime": 976.42,
+      "level": 23
+     },
+     {
+      "file": "hive_smart_6006_priority_t1_ot.json",
+      "otStart": 773.87,
+      "otCycle": 1,
+      "dead": true,
+      "endTime": 797.25,
+      "level": 22
+     },
+     {
+      "file": "hive_smart_9009_priority_t1_ot.json",
+      "otStart": 725.52,
+      "otCycle": 1,
+      "dead": true,
+      "endTime": 822.77,
+      "level": 20
+     },
+     {
+      "file": "hive_smart_10010_priority_t1_ot.json",
+      "otStart": 794.33,
+      "otCycle": 1,
+      "dead": true,
+      "endTime": 817.68,
+      "level": 19
+     },
+     {
+      "file": "hive_smart_8008_priority_t2_ot.json",
+      "otStart": 647.48,
+      "otCycle": 1,
+      "dead": true,
+      "endTime": 706.2,
+      "level": 24
+     },
+     {
+      "file": "hive_smart_5005_priority_t3_ot.json",
+      "otStart": 705.15,
+      "otCycle": 1,
+      "dead": true,
+      "endTime": 729.75,
+      "level": 19
+     },
+     {
+      "file": "hive_smart_6006_priority_t3_ot.json",
+      "otStart": 755.22,
+      "otCycle": 2,
+      "dead": true,
+      "endTime": 1026.5,
+      "level": 24
+     },
+     {
+      "file": "hive_smart_31031_priority_ot.json",
+      "otStart": 703.73,
+      "otCycle": 2,
+      "dead": true,
+      "endTime": 963.4,
+      "level": 23
+     },
+     {
+      "file": "hive_smart_33033_priority_ot.json",
+      "otStart": 718,
+      "otCycle": 1,
+      "dead": true,
+      "endTime": 770.2,
+      "level": 18
+     },
+     {
+      "file": "hive_smart_36036_priority_ot.json",
+      "otStart": 651.08,
+      "otCycle": 1,
+      "dead": true,
+      "endTime": 774.47,
+      "level": 22
+     },
+     {
+      "file": "hive_smart_38038_priority_ot.json",
+      "otStart": 712.88,
+      "otCycle": 2,
+      "dead": true,
+      "endTime": 965.72,
+      "level": 23
+     },
+     {
+      "file": "hive_smart_39039_priority_ot.json",
+      "otStart": 734.7,
+      "otCycle": 2,
+      "dead": true,
+      "endTime": 1006.88,
+      "level": 18
+     },
+     {
+      "file": "hive_smart_42042_priority_ot.json",
+      "otStart": 762.85,
+      "otCycle": 1,
+      "dead": true,
+      "endTime": 838.45,
+      "level": 19
+     },
+     {
+      "file": "hive_smart_44044_priority_ot.json",
+      "otStart": 821,
+      "otCycle": 2,
+      "dead": true,
+      "endTime": 1113.98,
+      "level": 22
+     },
+     {
+      "file": "hive_smart_45045_priority_ot.json",
+      "otStart": 719.98,
+      "otCycle": 2,
+      "dead": true,
+      "endTime": 1037.12,
+      "level": 25
+     },
+     {
+      "file": "hive_smart_48048_priority_ot.json",
+      "otStart": 655.42,
+      "otCycle": 5,
+      "dead": false,
+      "endTime": 1500.02,
+      "level": 32
+     },
+     {
+      "file": "hive_smart_51051_priority_ot.json",
+      "otStart": 731.48,
+      "otCycle": 3,
+      "dead": true,
+      "endTime": 1154.88,
+      "level": 24
+     },
+     {
+      "file": "hive_smart_54054_priority_ot.json",
+      "otStart": 705.08,
+      "otCycle": 3,
+      "dead": true,
+      "endTime": 1123.55,
+      "level": 20
+     },
+     {
+      "file": "hive_smart_55055_priority_ot.json",
+      "otStart": 726.78,
+      "otCycle": 3,
+      "dead": true,
+      "endTime": 1179.88,
+      "level": 20
+     },
+     {
+      "file": "hive_smart_58058_priority_ot.json",
+      "otStart": 665.18,
+      "otCycle": 5,
+      "dead": false,
+      "endTime": 1500.02,
+      "level": 33
+     },
+     {
+      "file": "hive_smart_59059_priority_ot.json",
+      "otStart": 645.95,
+      "otCycle": 2,
+      "dead": true,
+      "endTime": 931.23,
+      "level": 28
+     },
+     {
+      "file": "hive_smart_60060_priority_ot.json",
+      "otStart": 681.7,
+      "otCycle": 2,
+      "dead": true,
+      "endTime": 936.48,
+      "level": 26
+     },
+     {
+      "file": "hive_smart_16016_priority_t1_ot.json",
+      "otStart": 692.77,
+      "otCycle": 4,
+      "dead": true,
+      "endTime": 1314.17,
+      "level": 21
+     },
+     {
+      "file": "hive_smart_11011_priority_t3_ot.json",
+      "otStart": 698.4,
+      "otCycle": 1,
+      "dead": true,
+      "endTime": 809.75,
+      "level": 23
+     },
+     {
+      "file": "hive_smart_16016_priority_t3_ot.json",
+      "otStart": 726.47,
+      "otCycle": 4,
+      "dead": true,
+      "endTime": 1349.27,
+      "level": 21
+     },
+     {
+      "file": "hive_smart_20020_priority_t3_ot.json",
+      "otStart": 740.43,
+      "otCycle": 1,
+      "dead": true,
+      "endTime": 781.37,
+      "level": 23
+     }
+    ],
+    "n": 33,
+    "by20": 25,
+    "past24": 4
+   }
+  },
+  {
+   "id": "A14",
+   "name": "Determinism (det, det-long, det-death at 375x667 and 667x375, det with the settings injection; each with its rerun)",
+   "value": "9 groups, 0 split; reruns match; 21/21 lines",
+   "target": "one hash per mode and world across views, settings, reruns",
+   "result": "PASS",
+   "details": {
+    "det hive": [
+     {
+      "view": "375x667",
+      "hash": "642fbc46",
+      "rerunMatch": true
+     },
+     {
+      "view": "667x375",
+      "hash": "642fbc46",
+      "rerunMatch": true
+     },
+     {
+      "view": "375x667 settings",
+      "hash": "642fbc46",
+      "rerunMatch": true
+     }
+    ],
+    "det depths": [
+     {
+      "view": "375x667",
+      "hash": "1365ccb6",
+      "rerunMatch": true
+     },
+     {
+      "view": "667x375",
+      "hash": "1365ccb6",
+      "rerunMatch": true
+     },
+     {
+      "view": "375x667 settings",
+      "hash": "1365ccb6",
+      "rerunMatch": true
+     }
+    ],
+    "det wastes": [
+     {
+      "view": "375x667",
+      "hash": "d3c8cef6",
+      "rerunMatch": true
+     },
+     {
+      "view": "667x375",
+      "hash": "d3c8cef6",
+      "rerunMatch": true
+     },
+     {
+      "view": "375x667 settings",
+      "hash": "d3c8cef6",
+      "rerunMatch": true
+     }
+    ],
+    "det-long hive": [
+     {
+      "view": "375x667",
+      "hash": "49f8452e",
+      "rerunMatch": true
+     },
+     {
+      "view": "667x375",
+      "hash": "49f8452e",
+      "rerunMatch": true
+     }
+    ],
+    "det-long depths": [
+     {
+      "view": "375x667",
+      "hash": "b2509c53",
+      "rerunMatch": true
+     },
+     {
+      "view": "667x375",
+      "hash": "b2509c53",
+      "rerunMatch": true
+     }
+    ],
+    "det-long wastes": [
+     {
+      "view": "375x667",
+      "hash": "e27e6638",
+      "rerunMatch": true
+     },
+     {
+      "view": "667x375",
+      "hash": "e27e6638",
+      "rerunMatch": true
+     }
+    ],
+    "det-death hive": [
+     {
+      "view": "375x667",
+      "hash": "97ec1b8a",
+      "rerunMatch": true,
+      "end": "death",
+      "time": 158.98
+     },
+     {
+      "view": "667x375",
+      "hash": "97ec1b8a",
+      "rerunMatch": true,
+      "end": "death",
+      "time": 158.98
+     }
+    ],
+    "det-death depths": [
+     {
+      "view": "375x667",
+      "hash": "df152cad",
+      "rerunMatch": true,
+      "end": "death",
+      "time": 211.17
+     },
+     {
+      "view": "667x375",
+      "hash": "df152cad",
+      "rerunMatch": true,
+      "end": "death",
+      "time": 211.17
+     }
+    ],
+    "det-death wastes": [
+     {
+      "view": "375x667",
+      "hash": "83418332",
+      "rerunMatch": true,
+      "end": "death",
+      "time": 176.77
+     },
+     {
+      "view": "667x375",
+      "hash": "83418332",
+      "rerunMatch": true,
+      "end": "death",
+      "time": 176.77
+     }
+    ]
+   }
+  },
+  {
+   "id": "A15",
+   "name": "Perf at 390x844, run alone (perf hive, perf wastes, perf-final hive)",
+   "value": "perf hive 60 fps, p95 16.8 ms, max 33.3 ms, >20 ms 1, >33.4 ms 0; perf wastes 60 fps, p95 16.8 ms, max 16.8 ms, >20 ms 0, >33.4 ms 0; perf-final 60 fps, p95 16.8 ms, max 16.8 ms, >20 ms 0, >33.4 ms 0, peak alive 332",
+   "target": "perf: 60 fps, 0 frames over 20 ms; perf-final: p95 <= 16.7 ms, 0 frames over 33.4 ms",
+   "result": "FAIL",
+   "details": [
+    {
+     "args": [
+      "390",
+      "844",
+      "perf",
+      "nova",
+      "hive"
+     ],
+     "line": {
+      "mode": "perf",
+      "W": 390,
+      "H": 844,
+      "charId": "nova",
+      "arenaId": "hive",
+      "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Ve",
+      "fps": 60,
+      "p95": 16.8,
+      "max": 33.3,
+      "long": 1,
+      "bad": 0,
+      "total": 1252,
+      "enemies": 500,
+      "particles": 194,
+      "simTimeStart": 91.2,
+      "simTimeEnd": 111.9,
+      "picks": 2
+     },
+     "echoOk": true,
+     "machine": {
+      "load": [
+       3.59,
+       4.05,
+       4.01
+      ],
+      "swap": "total = 6144.00M  used = 5223.56M  free = 920.44M  (encrypted)"
+     },
+     "pageErrors": 0
+    },
+    {
+     "args": [
+      "390",
+      "844",
+      "perf",
+      "nova",
+      "wastes"
+     ],
+     "line": {
+      "mode": "perf",
+      "W": 390,
+      "H": 844,
+      "charId": "nova",
+      "arenaId": "wastes",
+      "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Ve",
+      "fps": 60,
+      "p95": 16.8,
+      "max": 16.8,
+      "long": 0,
+      "bad": 0,
+      "total": 1252,
+      "enemies": 500,
+      "particles": 184,
+      "simTimeStart": 91.2,
+      "simTimeEnd": 111.9,
+      "picks": 2
+     },
+     "echoOk": true,
+     "machine": {
+      "load": [
+       3.8,
+       4.03,
+       4
+      ],
+      "swap": "total = 6144.00M  used = 5232.31M  free = 911.69M  (encrypted)"
+     },
+     "pageErrors": 0
+    },
+    {
+     "args": [
+      "390",
+      "844",
+      "perf-final",
+      "nova",
+      "hive"
+     ],
+     "line": {
+      "mode": "perf-final",
+      "W": 390,
+      "H": 844,
+      "charId": "nova",
+      "arenaId": "hive",
+      "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Ve",
+      "fps": 60,
+      "p95": 16.8,
+      "max": 16.8,
+      "long": 0,
+      "bad": 0,
+      "total": 620,
+      "enemies": 321,
+      "particles": 72,
+      "simTimeStart": 600,
+      "simTimeEnd": 609.9,
+      "picks": 1,
+      "peakAlive": 332,
+      "simTime": 609.9
+     },
+     "echoOk": true,
+     "machine": {
+      "load": [
+       4.75,
+       4.24,
+       4.08
+      ],
+      "swap": "total = 6144.00M  used = 5232.31M  free = 911.69M  (encrypted)"
+     },
+     "pageErrors": 0
+    }
+   ]
+  },
+  {
+   "id": "A16",
+   "name": "Allocation: GC pauses in a 10 s perf-final trace (probe-alloc --gc)",
+   "value": "max pause 5.149 ms (minor 1, major 0)",
+   "target": "no GC pause over 2 ms",
+   "result": "FAIL",
+   "details": {
+    "line": {
+     "mode": "gc",
+     "setup": {
+      "time": 600,
+      "threat": 0,
+      "boss": false,
+      "event": false
+     },
+     "start": {
+      "time": 601.03,
+      "enemies": 76,
+      "projectiles": 12,
+      "enemyShots": 1,
+      "particles": 1,
+      "pickups": 0,
+      "hazards": 0,
+      "boss": false,
+      "event": true,
+      "emitting": true,
+      "eventUnits": 21,
+      "cage": false,
+      "kills": 0,
+      "paused": false,
+      "screen": "playing"
+     },
+     "end": {
+      "time": 610.57,
+      "enemies": 337,
+      "projectiles": 0,
+      "enemyShots": 34,
+      "particles": 93,
+      "pickups": 5,
+      "hazards": 0,
+      "boss": false,
+      "event": true,
+      "emitting": false,
+      "eventUnits": 79,
+      "cage": false,
+      "kills": 50,
+      "paused": false,
+      "screen": "playing"
+     },
+     "maxPauseMs": 5.149,
+     "pass": false,
+     "byName": {
+      "V8.GC_HEAP_EXTERNAL_PROLOGUE": {
+       "count": 1,
+       "maxMs": 0.004,
+       "totalMs": 0
+      },
+      "MinorGC": {
+       "count": 1,
+       "maxMs": 5.149,
+       "totalMs": 5.15
+      },
+      "V8.GC_HEAP_PROLOGUE": {
+       "count": 1,
+       "maxMs": 0.002,
+       "totalMs": 0
+      },
+      "V8.GCScavenger": {
+       "count": 1,
+       "maxMs": 4.345,
+       "totalMs": 4.34
+      },
+      "V8.GC_HEAP_ENSURE_SWEEPING_COMPLETED": {
+       "count": 1,
+       "maxMs": 1.739,
+       "totalMs": 1.74
+      },
+      "V8.GC_MC_COMPLETE_SWEEPING": {
+       "count": 1,
+       "maxMs": 0.022,
+       "totalMs": 0.02
+      },
+      "V8.GC_MC_SWEEP": {
+       "count": 1,
+       "maxMs": 0.005,
+       "totalMs": 0.01
+      },
+      "V8.GC_TIME_TO_SAFEPOINT": {
+       "count": 1,
+       "maxMs": 0.004,
+       "totalMs": 0
+      },
+      "V8.GC_SCAVENGER": {
+       "count": 1,
+       "maxMs": 1.932,
+       "totalMs": 1.93
+      },
+      "V8.GC_HEAP_PROLOGUE_SAFEPOINT": {
+       "count": 1,
+       "maxMs": 0.002,
+       "totalMs": 0
+      },
+      "V8.GC_SCAVENGER_SCAVENGE": {
+       "count": 1,
+       "maxMs": 1.898,
+       "totalMs": 1.9
+      },
+      "V8.GC_SCAVENGER_SCAVENGE_WEAK_GLOBAL_HANDLES_IDENTIFY": {
+       "count": 1,
+       "maxMs": 0.099,
+       "totalMs": 0.1
+      },
+      "V8.GC_SCAVENGER_TRACED_HANDLES_COMPUTE_WEAKNESS_PARALLEL": {
+       "count": 1,
+       "maxMs": 0.066,
+       "totalMs": 0.07
+      },
+      "V8.GC_SCAVENGER_SCAVENGE_COLLECT_OLD_TO_NEW_PAGES": {
+       "count": 1,
+       "maxMs": 0.033,
+       "totalMs": 0.03
+      },
+      "V8.GC_SCAVENGER_SCAVENGE_PARALLEL_PHASE": {
+       "count": 1,
+       "maxMs": 0.763,
+       "totalMs": 0.76
+      },
+      "Parallel scavenge started": {
+       "count": 1,
+       "maxMs": 0.002,
+       "totalMs": 0
+      },
+      "V8.GC_SCAVENGER_SCAVENGE_ROOTS": {
+       "count": 1,
+       "maxMs": 0.077,
+       "totalMs": 0.08
+      },
+      "V8.GC_SCAVENGER_SCAVENGE_PARALLEL": {
+       "count": 1,
+       "maxMs": 0.352,
+       "totalMs": 0.35
+      },
+      "V8.GC_SCAVENGER_SCAVENGE_WEAK_GLOBAL_HANDLES_PROCESS": {
+       "count": 1,
+       "maxMs": 0.179,
+       "totalMs": 0.18
+      },
+      "V8.GC_SCAVENGER_TRACED_HANDLES_RESET_PARALLEL": {
+       "count": 1,
+       "maxMs": 0.16,
+       "totalMs": 0.16
+      },
+      "V8.GC_SCAVENGER_SCAVENGE_FINALIZE": {
+       "count": 1,
+       "maxMs": 0.109,
+       "totalMs": 0.11
+      },
+      "V8.GC_SCAVENGER_SCAVENGE_RESTORE_AND_QUARANTINE_PINNED": {
+       "count": 1,
+       "maxMs": 0.006,
+       "totalMs": 0.01
+      },
+      "V8.GC_SCAVENGER_FREE_REMEMBERED_SET": {
+       "count": 1,
+       "maxMs": 0.007,
+       "totalMs": 0.01
+      },
+      "V8.GC_SCAVENGER_SWEEP_ARRAY_BUFFERS": {
+       "count": 1,
+       "maxMs": 0.007,
+       "totalMs": 0.01
+      },
+      "V8.GC_SCAVENGER_RESIZE_NEW_SPACE": {
+       "count": 1,
+       "maxMs": 0.002,
+       "totalMs": 0
+      },
+      "V8.GC_HEAP_EPILOGUE_SAFEPOINT": {
+       "count": 1,
+       "maxMs": 0.004,
+       "totalMs": 0
+      },
+      "V8.GC_HEAP_EPILOGUE": {
+       "count": 1,
+       "maxMs": 0.006,
+       "totalMs": 0.01
+      },
+      "V8.GC_HEAP_DUMP_STATISTICS": {
+       "count": 1,
+       "maxMs": 0.002,
+       "totalMs": 0
+      },
+      "V8.GC_HEAP_EXTERNAL_EPILOGUE": {
+       "count": 1,
+       "maxMs": 0.009,
+       "totalMs": 0.01
+      }
+     }
+    },
+    "machine": {
+     "load": [
+      4.75,
+      4.24,
+      4.08
+     ],
+     "swap": "total = 6144.00M  used = 5232.31M  free = 911.69M  (encrypted)"
+    }
+   }
+  },
+  {
+   "id": "A17",
+   "name": "Human (owner): about 1 win in 3 Hive T0 runs on iPhone",
+   "value": "owner",
+   "target": "about 1 win in 3",
+   "result": "owner",
+   "details": null
+  },
+  {
+   "id": "A18",
+   "name": "Build systems (dash = smart+dash+P vs smart+P mean survival; fusion over priority runs that reach 4:00; evolve runs that reach mid2; XP = roam whole-run)",
+   "value": "hive dash 1.39x, cc 1.53/min, fusion by 4:00 17/26, evolve 3/4, XP min 0.944; depths dash 1.28x, cc 1.66/min, fusion by 4:00 27/30, evolve 3/4, XP min 0.918; wastes dash 1.5x, cc 2.05/min, fusion by 4:00 27/30, evolve 2/4, XP min 0.863",
+   "target": "dash >= 1.25x; 1 to 4 close calls/min; >= 50% fusion by 4:00; >= 40% evolve; XP >= 90%",
+   "result": "FAIL",
+   "details": {
+    "hive": {
+     "dashSurvivalRatio": 1.3856138134051683,
+     "dashMeanSurvival": 798.302,
+     "baseMeanSurvival": 576.136,
+     "closeCallsPerMin": 1.5315739868049012,
+     "fusionBy4": "17/26",
+     "evolveAtBoss2": "3/4",
+     "roamXpMin": 0.9435,
+     "roamXp30Min": 1
+    },
+    "depths": {
+     "dashSurvivalRatio": 1.283751912863444,
+     "dashMeanSurvival": 713.0600000000001,
+     "baseMeanSurvival": 555.45,
+     "closeCallsPerMin": 1.661941046418517,
+     "fusionBy4": "27/30",
+     "evolveAtBoss2": "3/4",
+     "roamXpMin": 0.9183,
+     "roamXp30Min": 0.9965
+    },
+    "wastes": {
+     "dashSurvivalRatio": 1.5013364409052652,
+     "dashMeanSurvival": 811.645,
+     "baseMeanSurvival": 540.615,
+     "closeCallsPerMin": 2.0523515148505838,
+     "fusionBy4": "27/30",
+     "evolveAtBoss2": "2/4",
+     "roamXpMin": 0.8632,
+     "roamXp30Min": 0.962
+    }
+   }
+  }
+ ]
+}

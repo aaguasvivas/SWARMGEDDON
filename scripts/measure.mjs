@@ -900,6 +900,6 @@ if (MODE === 'shot') {
       picks: window.__PERF_PICKS,
     }
   })
-  console.log(JSON.stringify({ mode: MODE, W, H, ...(PERF_PERKS.length ? { perks: PERF_PERKS } : {}), gl: String(glInfo).slice(0, 60), ...stats, ...(final ? { peakAlive, simTime: +(await page.evaluate(() => window.__SWARM.world.time)).toFixed(1) } : {}) }))
+  console.log(JSON.stringify({ mode: MODE, W, H, charId: pChar, arenaId: pArena, ...(PERF_PERKS.length ? { perks: PERF_PERKS } : {}), gl: String(glInfo).slice(0, 60), ...stats, ...(final ? { peakAlive, simTime: +(await page.evaluate(() => window.__SWARM.world.time)).toFixed(1) } : {}) }))
 }
 await browser.close()

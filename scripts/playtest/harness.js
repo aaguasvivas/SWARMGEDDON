@@ -15,8 +15,9 @@
 // into OVERTIME through the win panel's own path (__SWARM.overtime). With
 // cfg.dash the bot also dashes out of danger; with cfg.focus it shoots the
 // boss during a fight. The smart and roam bots sidestep swarm-event streams
-// (STAMPEDE, walls, SHOAL RUN) and step out of every damaging hazard circle
-// (boss attacks, MORTAR BARRAGE, VOLATILE blasts).
+// (STAMPEDE, walls, SHOAL RUN) and plan an escape from every telegraphed
+// hazard (boss circles, lanes and sweeps, MORTAR BARRAGE, VOLATILE blasts):
+// see hazardEscape.
 (() => {
   const DT = 1 / 60
   const FEEL_PLAYER_HURT = 5
@@ -40,6 +41,10 @@
   const STREAM_REACT = 300
   const STREAM_PUSH = 3.2
   const EVENT_WINDOW = 15
+  /** bossAI's ROYAL LUNGE attack id and ACTIVE state (src/content/bosses.ts, src/systems/bossAI.ts). */
+  const ATK_ROYAL_LUNGE = 1
+  const BS_ACTIVE = 3
+  const BS_RECOVER = 4
 
   function xpTotal(w) {
     let s = w.xp
@@ -170,32 +175,6 @@
         fx += nx * 2.2
         fy += ny * 2.2
       }
-      // Boss telegraphs: step sideways out of a lunge lane, out of a damaging circle.
-      const hz = w.hazards.active
-      for (let i = 0; i < hz.length; i++) {
-        const h = hz[i]
-        if (!h.alive) continue
-        if (h.shape === 1) {
-          const ux = Math.cos(h.ang)
-          const uy = Math.sin(h.ang)
-          const rx = pl.x - h.x
-          const ry = pl.y - h.y
-          const along = rx * ux + ry * uy
-          const perp = -rx * uy + ry * ux
-          if (along < -40 || along > h.len + 40 || Math.abs(perp) > h.r + pl.radius + 50) continue
-          const side = perp >= 0 ? 1 : -1
-          fx += -uy * side * 3
-          fy += ux * side * 3
-        } else if (h.damage > 0) {
-          const dx = pl.x - h.x
-          const dy = pl.y - h.y
-          const d = Math.hypot(dx, dy) || 1
-          if (d < h.r + pl.radius + 50) {
-            fx += (dx / d) * 3
-            fy += (dy / d) * 3
-          }
-        }
-      }
       if (!st.cfg.noStreamDodge) {
         const sd = streamDodge(w, pl, st)
         fx += sd[0]
@@ -273,10 +252,21 @@
       if (pl.y - b.y < m) my += 2 * (1 - (pl.y - b.y) / m)
       if (b.y + b.h - pl.y < m) my -= 2 * (1 - (b.y + b.h - pl.y) / m)
     }
-    const ml = Math.hypot(mx, my)
+    let ml = Math.hypot(mx, my)
     if (ml > 1) {
       mx /= ml
       my /= ml
+      ml = 1
+    }
+    // Telegraphed hazards (boss casts, MORTAR BARRAGE, VOLATILE blasts): when
+    // the planned move would be inside one as it goes live, take the escape.
+    if (mode === 'smart' || mode === 'roam') {
+      const esc = hazardEscape(w, pl, st, mx, my, ml)
+      if (esc) {
+        mx = esc[0]
+        my = esc[1]
+        holdPod = false
+      }
     }
     inp.move.x = holdPod ? 0 : mx
     inp.move.y = holdPod ? 0 : my
@@ -321,6 +311,147 @@
     sdOut[0] = st.streamSide[0] * STREAM_PUSH
     sdOut[1] = st.streamSide[1] * STREAM_PUSH
     return sdOut
+  }
+
+  // Hazard escape (smart and roam bots). A cast is dangerous from its
+  // detonation (after `tele`) to the end of its live window, and it hits once.
+  // Damaging circles and sweeps count, and so do lanes, which carry no damage
+  // of their own: a lunge lane is the boss body's path and a lance lane its
+  // bolts' path. Each candidate move (the planned one, the last escape, 16
+  // headings at full speed, standing still) is played forward in a straight
+  // line, clamped to the arena and the cage, and tested against each hazard's
+  // shape at each sampled moment of its window: a circle by center distance,
+  // a lane by distance to its segment, a sweep by distance to the flame line
+  // at that moment's angle. The planned move stands when it clears every
+  // hazard by HZ_MARGIN. Otherwise the cheapest candidate wins: least damage,
+  // then more clearance (up to 60 u), then closest to the plan, then the last
+  // escape (so the bot does not dither between two equal gaps). Summing one
+  // push per circle cancels out inside a symmetric volley (the magma mortar's
+  // 5 circles), and a sweep is not a circle on the boss, which is why the bot
+  // plans instead of adding forces here.
+  const HZ_CIRCLE = 0
+  const HZ_LANE = 1
+  const HZ_SWEEP = 2
+  const HZ_MARGIN = 14
+  const HZ_HORIZON = 2.6
+  const HZ_DIRS = 16
+  const HZ_SAMPLE = 2 / 60
+  const HZ_LANE_DMG = 25
+  /** A lane with no live window (the psi lance): its bolts' flight past the ship. */
+  const HZ_LANE_FLIGHT = 0.4
+  const hzList = []
+  const hzOut = [0, 0]
+  let hzDmg = 0
+  let hzClear = 0
+
+  function segDist(px, py, x, y, vx, vy) {
+    const wx = px - x
+    const wy = py - y
+    const vv = vx * vx + vy * vy
+    let t = vv > 0 ? (wx * vx + wy * vy) / vv : 0
+    t = t < 0 ? 0 : t > 1 ? 1 : t
+    return Math.hypot(wx - vx * t, wy - vy * t)
+  }
+
+  /** Damage (hzDmg) and least clearance (hzClear) of moving at (vx, vy) u/s. */
+  function hazardCost(w, pl, vx, vy) {
+    const b = w.arena.bounds
+    const c = w.director.cage
+    const r = pl.radius
+    vx += w.pullX
+    vy += w.pullY
+    hzDmg = 0
+    hzClear = Infinity
+    for (let i = 0; i < hzList.length; i++) {
+      const h = hzList[i]
+      const on = h.tele > 0 ? h.tele : 0
+      const spent = h.tele > 0 ? 0 : h.liveMax - h.live
+      const span = h.shape === HZ_LANE && h.liveMax === 0 ? HZ_LANE_FLIGHT : h.liveMax - spent
+      const reach = h.r + r
+      for (let t = on; t <= on + span + 1e-9; t += HZ_SAMPLE) {
+        let x = Math.min(Math.max(pl.x + vx * t, b.x + r), b.x + b.w - r)
+        let y = Math.min(Math.max(pl.y + vy * t, b.y + r), b.y + b.h - r)
+        if (c.active) {
+          const dx = x - c.x
+          const dy = y - c.y
+          const d = Math.hypot(dx, dy)
+          const max = c.r - r
+          if (d > max) {
+            x = c.x + (dx * max) / d
+            y = c.y + (dy * max) / d
+          }
+        }
+        let d
+        if (h.shape === HZ_CIRCLE) d = Math.hypot(x - h.x, y - h.y)
+        else {
+          const a = h.shape === HZ_SWEEP && h.liveMax > 0 ? h.ang + h.arc * Math.min(1, (spent + t - on) / h.liveMax) : h.ang
+          d = segDist(x, y, h.x, h.y, Math.cos(a) * h.len, Math.sin(a) * h.len)
+        }
+        const clear = d - reach
+        if (clear < hzClear) hzClear = clear
+        if (clear < HZ_MARGIN) {
+          hzDmg += h.damage > 0 ? h.damage : HZ_LANE_DMG
+          break
+        }
+      }
+    }
+  }
+
+  /** The escape heading (a unit vector, or 0 0 to stand still), or null when
+   *  the planned move (mx, my) at magnitude ml clears every hazard. */
+  function hazardEscape(w, pl, st, mx, my, ml) {
+    const hz = w.hazards.active
+    hzList.length = 0
+    for (let i = 0; i < hz.length; i++) {
+      const h = hz[i]
+      if (!h.alive || h.hit || h.tele > HZ_HORIZON) continue
+      if (h.damage > 0 || h.shape === HZ_LANE) hzList.push(h)
+    }
+    if (hzList.length === 0) {
+      st.hzDir = null
+      return null
+    }
+    const sp = pl.speed * w.mods.moveSpeedMul
+    hazardCost(w, pl, mx * sp, my * sp)
+    if (hzDmg === 0 && hzClear >= HZ_MARGIN) {
+      st.hzDir = null
+      return null
+    }
+    const px = ml > 1e-3 ? mx / ml : 0
+    const py = ml > 1e-3 ? my / ml : 0
+    const score = (dx, dy, bonus) => hzDmg * 1000 + 2 * Math.max(0, 60 - Math.min(hzClear, 60)) - 10 * (dx * px + dy * py) - bonus
+    let best = score(px, py, 0)
+    let bx = mx
+    let by = my
+    const prev = st.hzDir
+    for (let k = -1; k <= HZ_DIRS; k++) {
+      let dx
+      let dy
+      if (k === -1) {
+        if (!prev) continue
+        dx = prev[0]
+        dy = prev[1]
+      } else if (k === HZ_DIRS) {
+        dx = 0
+        dy = 0
+      } else {
+        const a = (k * 2 * Math.PI) / HZ_DIRS
+        dx = Math.cos(a)
+        dy = Math.sin(a)
+      }
+      hazardCost(w, pl, dx * sp, dy * sp)
+      const s = score(dx, dy, k === -1 ? 15 : 0)
+      if (s < best) {
+        best = s
+        bx = dx
+        by = dy
+      }
+    }
+    st.hzSteps++
+    st.hzDir = bx !== 0 || by !== 0 ? [bx, by] : null
+    hzOut[0] = bx
+    hzOut[1] = by
+    return hzOut
   }
 
   // Dash policy: dash (along the bot's move, else its facing) when a hit is
@@ -437,8 +568,15 @@
       eventUnitsMax: 0,
       /** HP lost to stream units' contact (the bite source stood on a stream unit). */
       streamDmg: 0,
+      /** HP lost to hazard hits (boss casts, MORTAR BARRAGE, VOLATILE). */
+      hzDmg: 0,
+      /** HP lost per hurt kind over the run (bite, shot, ram, lunge, acid, hazard, other). */
+      dmgByKind: {},
       /** Steps the stream dodge steered the bot. */
       dodgeSteps: 0,
+      /** Steps the hazard escape overrode the planned move, and its last heading. */
+      hzSteps: 0,
+      hzDir: null,
       medkitDrops: 0,
       bonusDrops: 0,
       shardDrops: 0,
@@ -567,6 +705,11 @@
       const t0 = w.time
       const hp0 = w.player.hp
       const dropTimer0 = w.weaponDropTimer
+      // Damaging hazards before the step: a discrete hurt at one's anchor (the
+      // FeelQueue stores float32 coordinates) is that hazard's hit.
+      const hzPre = []
+      const hza = w.hazards.active
+      for (let i = 0; i < hza.length; i++) if (hza[i].alive && hza[i].damage > 0) hzPre.push(Math.fround(hza[i].x), Math.fround(hza[i].y))
       S.step(1)
       calls++
       const ran = w.time > t0
@@ -587,7 +730,13 @@
             }
           }
         }
-        const kind = f & FF_ACID ? 'acid' : f & FF_CONTACT ? 'bite' : f & FF_RAM ? 'ram' : f & FF_DISCRETE ? 'shot' : 'other'
+        let hzHit = false
+        if (f & FF_DISCRETE) for (let k = 0; k < hzPre.length && !hzHit; k += 2) hzHit = hzPre[k] === q.x[i] && hzPre[k + 1] === q.y[i]
+        if (hzHit) st.hzDmg += q.a[i]
+        // A boss ram at the boss's spot during ROYAL LUNGE is the lunge.
+        const lunge = (f & FF_RAM) !== 0 && w.bossAlive && w.boss && w.bossFight.attack === ATK_ROYAL_LUNGE && Math.fround(w.boss.x) === q.x[i] && Math.fround(w.boss.y) === q.y[i]
+        const kind = hzHit ? 'hazard' : lunge ? 'lunge' : f & FF_ACID ? 'acid' : f & FF_CONTACT ? 'bite' : f & FF_RAM ? 'ram' : f & FF_DISCRETE ? 'shot' : 'other'
+        st.dmgByKind[kind] = (st.dmgByKind[kind] || 0) + q.a[i]
         st.hurts.push([w.time, kind, q.a[i]])
       }
       q.clear()
@@ -735,7 +884,10 @@
       const act = w.enemies.active
       for (let i = 0; i < act.length; i++) {
         const e = act[i]
-        if (e.alive && !e.stream && !(e.def.behavior === 'charger' && e.phase === 2)) {
+        // A11 exempts streams, a charger's dash and the boss lunge (ROYAL LUNGE
+        // ACTIVE, and its RECOVER, which keeps the lunge's last velocity).
+        const lunging = e === w.boss && w.bossFight.attack === ATK_ROYAL_LUNGE && (w.bossFight.state === BS_ACTIVE || w.bossFight.state === BS_RECOVER)
+        if (e.alive && !e.stream && !(e.def.behavior === 'charger' && e.phase === 2) && !lunging) {
           const v = Math.hypot(e.vx, e.vy)
           if (!(v <= (st.maxSpeedByType[e.def.id] || 0))) st.maxSpeedByType[e.def.id] = +v.toFixed(1)
         }
@@ -956,7 +1108,10 @@
       }),
       eventUnitsMax: st.eventUnitsMax,
       streamDmg: +st.streamDmg.toFixed(1),
+      hzDmg: +st.hzDmg.toFixed(1),
+      dmgByKind: Object.fromEntries(Object.entries(st.dmgByKind).map(([k, v]) => [k, +v.toFixed(1)])),
       dodgeSteps: st.dodgeSteps,
+      hzSteps: st.hzSteps,
       a3Base: st.a3Base,
       a3Sat: st.a3Sat,
       events: st.events,
