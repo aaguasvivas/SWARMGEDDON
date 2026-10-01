@@ -3,9 +3,10 @@
 // and a summary of the standard checks (text under 12 px, targets under 44 px,
 // overlapping text boxes).
 //
-// Usage: node scripts/ui-shots.mjs [sizes] [--out=DIR]
+// Usage: node scripts/ui-shots.mjs [sizes] [--out=DIR] [--steps=a,b]
 //   sizes  comma list of p375,l667,p390,l844,d1440 (default p375,l667)
 //   --out  output folder (default <os tmp>/swarmgeddon-ui-shots)
+//   --steps  run only these step ids (each step sets up its own state)
 // Server origin: env SWG_URL (default http://localhost:5176).
 //
 // Network: the leaderboard API is mocked in-page (fetch override) and any
@@ -36,6 +37,7 @@ for (const a of process.argv.slice(2)) {
 const OUT = flags.out || path.join(os.tmpdir(), 'swarmgeddon-ui-shots')
 fs.mkdirSync(OUT, { recursive: true })
 const ONLY = (pos[0] || 'p375,l667').split(',')
+const STEPS = flags.steps ? flags.steps.split(',') : null
 
 const SIZES = [
   { name: 'p375', w: 375, h: 667, touch: true, insets: null },
@@ -66,7 +68,7 @@ const LB_GAP = await leaderboardGap()
 if (LB_GAP) console.error(`SKIPPING the leaderboard steps: ${LB_GAP}. Start a server with both variables (see the header of this script) to run them.`)
 
 /** Steps that need the opt-in card or a post (skipped when LB_GAP is set). */
-const LB_STEPS = ['16-recap-optin', '17-name-prompt', '18b-daily-rank-unlock', '21-leaderboard-join', '23-recap-nothanks']
+const LB_STEPS = ['16-recap-optin', '17-name-prompt', '18b-daily-rank-unlock', '21-leaderboard-join', '23-recap-nothanks', '27-recap-unlocks-rank', '28-recap-daily-optin']
 
 async function launch() {
   await acquireChromeLock('ui-shots')
@@ -246,6 +248,7 @@ async function runSize(browser, size) {
     console.log(size.name, id)
   }
   const step = async (id, fn) => {
+    if (STEPS && !STEPS.includes(id)) return
     if (LB_GAP && LB_STEPS.includes(id)) {
       meta.skipped.push(`${id}: ${LB_GAP}`)
       return
@@ -650,6 +653,142 @@ async function runSize(browser, size) {
     const d = meta.shots['23-recap-nothanks']
     const t = d.texts.find((x) => x.t.includes('You can join later from LEADERS.'))
     if (!t || t.y < 0 || t.y + t.h > d.H) throw new Error('23: the NO THANKS toast is missing or off screen')
+  })
+
+  // P16: the pause sheet (a build, the QUIT confirm, the resume countdown) and
+  // the Daily's RANKED / PRACTICE mark.
+  const pauseRun = (daily) =>
+    page.evaluate((daily) => {
+      const S = window.__SWARM
+      const w = S.world
+      if (daily) S.startDaily(new Date().toISOString().slice(0, 10))
+      else {
+        S.setLoadout('nova', 'depths')
+        S.setThreat('depths', 1)
+        S.startRun('endless')
+      }
+      w.player.maxHp = w.player.hp = 1e9
+      S.step(60)
+      for (const id of ['heavy_rounds', 'heavy_rounds', 'twin_shot', 'cryo_rounds', 'explosive_rounds', 'f_shatter', 'vitality', 'magnetic', 'adrenaline', 'deadeye', 'phase_step', 'sharpen']) w.choosePerk(id)
+      S.jumpTo(252)
+      S.step(2)
+      w.kills = 1287
+      w.pendingLevelUps = 0
+      S.pause()
+    }, daily)
+  await step('24-pause', async () => {
+    await pauseRun(false)
+    await sleep(500)
+    await shot('24-pause')
+    await tap(page, size, 'QUIT AND SCORE')
+    await sleep(250)
+    await shot('24b-pause-confirm')
+    await tap(page, size, 'RESUME')
+    await sleep(200)
+    await shot('24c-countdown')
+    await sleep(1400)
+    const st = await page.evaluate(() => ({ paused: window.__SWARM.world.paused, reason: window.__SWARM.pauseReason }))
+    if (st.paused || st.reason !== 'none') throw new Error('24: the countdown did not resume the run: ' + JSON.stringify(st))
+    await page.evaluate(() => window.__SWARM.endRun('quit', 'menu'))
+    await sleep(300)
+  })
+  await step('25-pause-daily', async () => {
+    await pauseRun(true)
+    await sleep(500)
+    await shot('25-pause-daily')
+    const d = meta.shots['25-pause-daily']
+    if (!d.texts.some((t) => t.t === 'RANKED' || t.t === 'PRACTICE')) throw new Error('25: no RANKED or PRACTICE mark on the Daily pause sheet')
+    await page.evaluate(() => window.__SWARM.endRun('quit', 'menu'))
+    await sleep(300)
+  })
+  // P16 recap acceptance: a first run, a run with 4 unlocks and a rank, and a
+  // ranked Daily with the opt-in card (section 10.3).
+  await step('26-recap-first', async () => {
+    await page.evaluate(() => {
+      localStorage.clear()
+    })
+    await page.reload({ waitUntil: 'networkidle0' })
+    await page.waitForFunction('!!window.__SWARM', { timeout: 20000 })
+    await sleep(600)
+    await page.evaluate(() => {
+      const S = window.__SWARM
+      const w = S.world
+      S.startRun('endless')
+      S.step(60)
+      w.time = 45.3
+      w.kills = 62
+      w.level = 4
+      w.score = w.killPts = 1840
+      w.xpSum = 70
+      w.peakTier = 2
+      w.bestChain = 24
+      w.lastHitBy = 1
+      S.endRun('death')
+    })
+    await sleep(900)
+    await shot('26-recap-first')
+    const d = meta.shots['26-recap-first']
+    if (d.texts.some((t) => /NEW BEST/.test(t.t))) throw new Error('26: a first run celebrates a best')
+  })
+  await step('27-recap-unlocks-rank', async () => {
+    await page.evaluate(() => {
+      const S = window.__SWARM
+      const w = S.world
+      S.saveJSON('lb:optIn', true)
+      S.saveJSON('lb:id', 'P16P16P16P16P16P16P16x')
+      S.saveJSON('player:name', 'TESTER')
+      S.saveJSON('lb:sent', {})
+      const f = S.loadJSON('feats', { done: {}, prog: {} })
+      for (const id of ['field_promotion', 'overcharged', 'rampage', 'swatter']) delete f.done[id]
+      f.done.first_contact = '2026-09-30'
+      S.saveJSON('feats', f)
+      S.setLoadout('nova', 'hive')
+      S.startRun('endless')
+      S.step(60)
+      w.time = 142.6
+      w.kills = 320
+      w.level = 9
+      w.peakTier = 3
+      w.bestChain = 141
+      w.score = w.killPts = 48210
+      w.xpSum = 900
+      w.lastHitBy = 1
+      S.endRun('death')
+    })
+    await sleep(1200)
+    await shot('27-recap-unlocks-rank')
+    const d = meta.shots['27-recap-unlocks-rank']
+    if (!d.texts.some((t) => t.t.includes('THIS WEEK'))) throw new Error('27: no rank line')
+    if (!d.texts.some((t) => t.t.includes('UNLOCKED'))) throw new Error('27: no unlock card')
+  })
+  await step('28-recap-daily-optin', async () => {
+    await page.evaluate(() => {
+      const S = window.__SWARM
+      const w = S.world
+      const today = new Date().toISOString().slice(0, 10)
+      S.saveJSON('lb:optIn', null)
+      S.saveJSON('lb:asked', 0)
+      S.saveJSON('stats', { ...S.loadJSON('stats', {}), runs: 5 })
+      S.saveJSON('daily:' + today, { rankedStarted: false })
+      const f = S.loadJSON('feats', { done: {}, prog: {} })
+      delete f.done.daybreak
+      S.saveJSON('feats', f)
+      S.startDaily(today)
+      S.step(60)
+      w.time = 388.2
+      w.kills = 640
+      w.level = 14
+      w.peakTier = 4
+      w.bestChain = 233
+      w.score = w.killPts = 62480
+      w.xpSum = 1500
+      w.lastHitBy = 1
+      S.endRun('death')
+    })
+    await sleep(900)
+    await shot('28-recap-daily-optin')
+    const d = meta.shots['28-recap-daily-optin']
+    if (!d.texts.some((t) => t.t.includes('JOIN THE LEADERBOARD?'))) throw new Error('28: no opt-in card')
   })
 
   meta.apiCalls = await page.evaluate(() => window.__apiCalls)

@@ -140,6 +140,8 @@ export class FeelDirector {
   /** killPts and bossesFlawless when the current boss arrived. */
   private bossPtsAt = 0
   private flawlessAt = 0
+  /** The PRIME fight took no hit (the WIN panel's FLAWLESS tag). */
+  primeFlawless = false
 
   constructor(
     private readonly world: World,
@@ -181,6 +183,7 @@ export class FeelDirector {
     this.newBestShown = false
     this.bossPtsAt = 0
     this.flawlessAt = 0
+    this.primeFlawless = false
     this.audio.resetMix()
   }
 
@@ -321,7 +324,7 @@ export class FeelDirector {
           this.heavyThenSuccess(nowMs)
           this.shake.add(0.85, 1)
           this.time.play(TimePreset.BossKill)
-          if (!won) this.bossSlain()
+          if (!won) this.bossSlain(false)
           break
         case FeelKind.ChargerWindup:
           this.audio.play('chargerWindup', 0, 1, panOf(x, view))
@@ -410,8 +413,7 @@ export class FeelDirector {
           haptic('success')
           this.shake.add(0.6, 1)
           won = true
-          this.bossSlain()
-          this.callouts.show(CALLOUT.win, this.world.script.text.win, 'CLEARED IN ' + clock(this.world.director.clearTime), T.accentGold, true)
+          this.bossSlain(true)
           break
         case FeelKind.Stalemate:
           this.audio.play('multBreak')
@@ -464,11 +466,18 @@ export class FeelDirector {
   }
 
   /** A level-up draft opened: the full ceremony for a run's first drafts,
-   *  the short one after. */
-  draftOpened(): void {
+   *  the short one after. Returns whether this one is full. */
+  draftOpened(): boolean {
     this.draftsOpened++
+    const full = this.draftsOpened <= FULL_CEREMONIES
     this.audio.play('levelup')
-    haptic(this.draftsOpened <= FULL_CEREMONIES ? 'success' : 'light')
+    haptic(full ? 'success' : 'light')
+    return full
+  }
+
+  /** Card `i` of a draft lands: ticks rising a whole tone per card (A16.2 cardDeal). */
+  cardDealt(i: number): void {
+    this.audio.play('cardDeal', 2 * i)
   }
 
   cardPicked(): void {
@@ -560,15 +569,23 @@ export class FeelDirector {
     this.edge = Math.max(this.edge, strength)
   }
 
-  /** A boss died: its slain line, the points of its fight, and FLAWLESS when no hit landed. */
-  private bossSlain(): void {
+  /** A boss died: its slain line, the points of its fight, and FLAWLESS when
+   *  no hit landed. The PRIME gets one line, FLAWLESS in its sub: the WIN panel
+   *  (or the recap) opens 2 s of sim later and carries the win text, so a
+   *  queued FLAWLESS or win line would only flash before the lane hides. */
+  private bossSlain(prime: boolean): void {
     const w = this.world
     const pts = w.killPts - this.bossPtsAt
-    this.callouts.show(CALLOUT.bossSlain, w.script.text.slain, pts > 0 ? '+' + group(pts) : '', T.accentGold)
-    if (w.bossesFlawless > this.flawlessAt) {
-      this.flawlessAt = w.bossesFlawless
-      this.callouts.show(CALLOUT.flawless, 'FLAWLESS', '', CALLOUT_COLOR.mint, true)
+    const flawless = w.bossesFlawless > this.flawlessAt
+    if (flawless) this.flawlessAt = w.bossesFlawless
+    const sub = pts > 0 ? '+' + group(pts) : ''
+    if (prime) {
+      this.primeFlawless = flawless
+      this.callouts.show(CALLOUT.bossSlain, w.script.text.slain, flawless ? (sub ? 'FLAWLESS · ' + sub : 'FLAWLESS') : sub, T.accentGold)
+      return
     }
+    this.callouts.show(CALLOUT.bossSlain, w.script.text.slain, sub, T.accentGold)
+    if (flawless) this.callouts.show(CALLOUT.flawless, 'FLAWLESS', '', CALLOUT_COLOR.mint, true)
   }
 
   private onShieldHit(x: number, y: number, f: number, nowMs: number, view: ViewRect): void {
@@ -651,13 +668,6 @@ function group(v: number): string {
     out += s[i]
   }
   return out
-}
-
-/** Seconds as m:ss. */
-function clock(sec: number): string {
-  const s = Math.floor(sec)
-  const r = s % 60
-  return Math.floor(s / 60) + ':' + (r < 10 ? '0' : '') + r
 }
 
 const RING_SLOTS = 3

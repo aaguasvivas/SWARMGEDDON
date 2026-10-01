@@ -10,6 +10,23 @@ const GP_LB = 4
 const GP_LT = 6
 const GP_LT_PRESS = 0.5
 
+/** Menu and modal pad buttons (standard mapping), as bits of `padPresses()`. */
+export const PAD_A = 1
+export const PAD_B = 2
+export const PAD_X = 4
+export const PAD_Y = 8
+export const PAD_START = 16
+export const PAD_UP = 32
+export const PAD_DOWN = 64
+export const PAD_LEFT = 128
+export const PAD_RIGHT = 256
+/** Standard-mapping button index per PAD_* bit, in bit order. */
+const PAD_BUTTONS = [0, 1, 2, 3, 9, 12, 13, 14, 15] as const
+/** The left stick past this reads as a d-pad direction in menus. */
+const PAD_STICK_NAV = 0.6
+/** A mouse that moved this many CSS px since the run start has aimed. */
+const AIM_ENGAGE_PX = 6
+
 /**
  * Unified input. Aggregates keyboard+mouse, touch dual-sticks, and gamepad into
  * one set of outputs the rest of the game reads each tick:
@@ -50,6 +67,12 @@ export class InputManager {
   /** A dash press waiting for the next sim step to read it. */
   private dashLatch = false
   private gpDashHeld = false
+  /** The mouse moved or clicked since `armStartGate`, so its cursor counts as aim. */
+  private mouseEngaged = false
+  private armX = 0
+  private armY = 0
+  /** PAD_* bits held at the last `padPresses` poll. */
+  private padHeld = 0
 
   // Reusable scratch for the gamepad poll (no per-frame allocation).
   private gp = { active: false, mx: 0, my: 0, ax: 0, ay: 0, aimActive: false, fire: false }
@@ -126,6 +149,49 @@ export class InputManager {
   /** Drop a press made while the sim was paused (a tap on a draft card). */
   cancelDashPress(): void {
     this.dashLatch = false
+  }
+
+  /** A run starts: until `engaged()`, a cursor resting on the arena is not aim. */
+  armStartGate(): void {
+    this.mouseEngaged = false
+    this.armX = this.pointerX
+    this.armY = this.pointerY
+  }
+
+  /** Whether the sample `update()` just took holds a deliberate input: a move,
+   *  a thumb on the glass, pad aim or fire, a dash press, or a mouse that moved
+   *  or clicked since `armStartGate`. */
+  engaged(): boolean {
+    return (
+      this.move.x !== 0 || this.move.y !== 0 || this.dashLatch || this.touch.active || this.gp.aimActive || this.gp.fire || this.mouseEngaged
+    )
+  }
+
+  /** PAD_* bits of the buttons pressed since the last call (rising edges); the
+   *  left stick doubles as the d-pad. Menus and modals poll this once a frame.
+   *  A press makes the pad the last input type. */
+  padPresses(): number {
+    if (this.padsConnected === 0 || !navigator.getGamepads) {
+      this.padHeld = 0
+      return 0
+    }
+    const pads = navigator.getGamepads()
+    let pad: Gamepad | null = (this.gamepadIndex >= 0 ? pads[this.gamepadIndex] : null) ?? null
+    for (let i = 0; !pad && i < pads.length; i++) pad = pads[i] ?? null
+    let held = 0
+    if (pad) {
+      for (let i = 0; i < PAD_BUTTONS.length; i++) if (pad.buttons[PAD_BUTTONS[i]!]?.pressed) held |= 1 << i
+      const lx = pad.axes[0] ?? 0
+      const ly = pad.axes[1] ?? 0
+      if (ly < -PAD_STICK_NAV) held |= PAD_UP
+      if (ly > PAD_STICK_NAV) held |= PAD_DOWN
+      if (lx < -PAD_STICK_NAV) held |= PAD_LEFT
+      if (lx > PAD_STICK_NAV) held |= PAD_RIGHT
+    }
+    const pressed = held & ~this.padHeld
+    this.padHeld = held
+    if (pressed) this.lastType = 'gamepad'
+    return pressed
   }
 
   update(playerX: number, playerY: number): void {
@@ -303,6 +369,7 @@ export class InputManager {
       this.pointerY = e.clientY - this.rectT
       this.hasPointer = true
       if (e.button === 0) this.mouseFiring = true
+      if (this.enabled) this.mouseEngaged = true
       this.lastType = 'kbm'
     }
   }
@@ -315,6 +382,9 @@ export class InputManager {
       this.pointerX = e.clientX - this.rectL
       this.pointerY = e.clientY - this.rectT
       this.hasPointer = true
+      if (this.enabled && !this.mouseEngaged && Math.abs(this.pointerX - this.armX) + Math.abs(this.pointerY - this.armY) > AIM_ENGAGE_PX) {
+        this.mouseEngaged = true
+      }
     }
   }
 

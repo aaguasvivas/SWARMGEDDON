@@ -108,11 +108,22 @@ export function bakeIcons(renderer: Renderer): void {
   }
 }
 
-/** A centered icon sprite `size` px across, tinted `tint`. */
-export function makeIcon(name: IconName, size: number, tint = 0xffffff): Sprite {
+function iconTexture(name: IconName): Texture {
   const tex = baked.get(name)
   if (!tex) throw new Error('icon not baked: ' + name)
-  const s = new Sprite(tex)
+  return tex
+}
+
+/** Point an existing icon sprite at another icon (pooled views reuse their sprite). */
+export function setIcon(s: Sprite, name: IconName, size: number): void {
+  s.texture = iconTexture(name)
+  s.width = size
+  s.height = size
+}
+
+/** A centered icon sprite `size` px across, tinted `tint`. */
+export function makeIcon(name: IconName, size: number, tint = 0xffffff): Sprite {
+  const s = new Sprite(iconTexture(name))
   s.anchor.set(0.5)
   s.width = size
   s.height = size

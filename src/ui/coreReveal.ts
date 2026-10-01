@@ -3,6 +3,7 @@ import { CORES } from '../config.ts'
 import { doubleFields } from '../core/fields.ts'
 import { findPerk } from '../content/perks.ts'
 import { WEAPONS } from '../content/weapons.ts'
+import { PAD_A, PAD_DOWN, PAD_UP, PAD_X } from '../input/input.ts'
 import type { Insets } from '../platform/safeArea.ts'
 import type { CoreState } from '../systems/cores.ts'
 import { Button } from './button.ts'
@@ -44,6 +45,8 @@ export class CoreReveal {
   private readonly evolveBtn: Button
   private readonly levelsBtn: Button
   private choice = false
+  private pad = false
+  private focus = 0
   private rowN = 0
   private openAt = 0
   private closeAt = 0
@@ -88,9 +91,12 @@ export class CoreReveal {
     return performance.now() >= this.openAt + CORES.skipAfterSec * 1000
   }
 
-  /** `stacks`: the perk levels owned before this core. `keys`: the last input
-   *  was keyboard and mouse, so the key hint shows. */
-  show(core: CoreState, stacks: ReadonlyMap<string, number>, keys: boolean): void {
+  /** `stacks`: the perk levels owned before this core. `input`: the last
+   *  input type, which picks the key, pad or touch hint. */
+  show(core: CoreState, stacks: ReadonlyMap<string, number>, input: 'kbm' | 'touch' | 'gamepad'): void {
+    const keys = input === 'kbm'
+    this.pad = input === 'gamepad'
+    this.focus = 0
     this.choice = core.evolveTo !== ''
     this.title.text = core.prime ? 'PRIME CORE' : 'HIVE CORE'
     this.sub.text = `+${core.levels} ${core.levels === 1 ? 'LEVEL' : 'LEVELS'}`
@@ -101,10 +107,11 @@ export class CoreReveal {
       this.evolveBtn.setText(`EVOLVE: ${to}`)
       this.levelsBtn.setText(`TAKE ${core.levels} ${core.levels === 1 ? 'LEVEL' : 'LEVELS'}`)
       this.evolveDesc.text = `${from} becomes ${to}. Infinite ammo for the rest of the run.`
-      this.hint.text = keys ? 'Press 1 to evolve or 2 for the levels' : ''
+      this.hint.text = this.pad ? 'Press A to evolve or X for the levels' : keys ? 'Press 1 to evolve or 2 for the levels' : ''
     } else {
-      this.hint.text = keys ? 'Press Enter to continue' : 'Tap to continue'
+      this.hint.text = this.pad ? 'Press A to continue' : keys ? 'Press Enter to continue' : 'Tap to continue'
     }
+    this.drawFocus()
     this.evolveBtn.view.visible = this.choice
     this.levelsBtn.view.visible = this.choice
     this.evolveDesc.visible = this.choice
@@ -140,6 +147,26 @@ export class CoreReveal {
     } else if (key === 'Enter' || key === ' ') {
       this.onClose(false)
     }
+  }
+
+  /** Pad: with a choice, A presses the focused button (EVOLVE first), X takes
+   *  the levels, up and down move the focus; without one, A continues. */
+  padPress(bits: number): void {
+    if (!this.view.visible || bits === 0) return
+    this.pad = true
+    if (this.choice) {
+      if (bits & PAD_UP) this.focus = 0
+      if (bits & PAD_DOWN) this.focus = 1
+      this.drawFocus()
+    }
+    if (!this.acceptsInput()) return
+    if (bits & PAD_A) this.onClose(this.choice && this.focus === 0)
+    else if (this.choice && bits & PAD_X) this.onClose(false)
+  }
+
+  private drawFocus(): void {
+    this.evolveBtn.setFocused(this.pad && this.choice && this.focus === 0)
+    this.levelsBtn.setFocused(this.pad && this.choice && this.focus === 1)
   }
 
   layout(w: number, h: number, insets: Insets): void {
