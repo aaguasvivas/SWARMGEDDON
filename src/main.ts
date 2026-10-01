@@ -380,7 +380,7 @@ async function boot(): Promise<void> {
     hud.reset(world, dailyTitle) // don't let last run's dying bars sweep across the fresh run
     emerge.setTheme(theme)
     emerge.reset(world)
-    if (daily) feel.intro(dailyTitle, theme.name + ' · SAME RUN FOR EVERYONE', T.accentGold, true)
+    if (daily) feel.intro(dailyTitle, theme.name + (cfg.ranked ? ' · SAME RUN FOR EVERYONE' : ' · PRACTICE RUN'), T.accentGold, true)
     else feel.intro(theme.name, 'vs ' + theme.broodName.toUpperCase(), theme.borderGlow, false)
     pausedLabel.visible = false
     touchMoveUsed = false

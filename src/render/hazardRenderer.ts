@@ -120,8 +120,9 @@ export class HazardRenderer {
 
     // A charger in windup shows the lane its dash will sweep: 2r wide, as
     // long as the dash, in the world's hazard tint.
+    // Under FREEZE the dash waits for the thaw, so the lane holds dim and still.
     const t = world.time + alpha * FIXED_DT
-    const pulse = LANE_ALPHA0 + (LANE_ALPHA1 - LANE_ALPHA0) * (0.5 + 0.5 * Math.sin(t * LANE_HZ * Math.PI * 2))
+    const pulse = world.freezeT > 0 ? LANE_ALPHA0 : LANE_ALPHA0 + (LANE_ALPHA1 - LANE_ALPHA0) * (0.5 + 0.5 * Math.sin(t * LANE_HZ * Math.PI * 2))
     const laneTint = world.arenaTheme.hazardTint
     let nc = 0
     const es = world.enemies.active

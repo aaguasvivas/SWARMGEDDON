@@ -11,6 +11,13 @@
 // Network: the leaderboard API is mocked in-page (fetch override) and any
 // request that is not same-origin and not a GET is aborted, so nothing
 // reaches the live leaderboard.
+//
+// The leaderboard steps (opt-in card, name prompt, rank lines, JOIN, NO THANKS)
+// need a dev server started with both leaderboard variables (any URL: the API
+// is mocked), for example:
+//   VITE_LEADERBOARD_URL=http://127.0.0.1:8788 VITE_LEADERBOARD_DEV_SUBMIT=1 npx vite --port 5177 --strictPort
+// On a server without them the opt-in card never shows, so those steps are
+// skipped and listed under `skipped` in the report.
 import puppeteer from 'puppeteer-core'
 import { acquireChromeLock } from './lib/chromeLock.mjs'
 import fs from 'node:fs'
@@ -39,6 +46,27 @@ const SIZES = [
 ].filter((s) => ONLY.includes(s.name))
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+/** Why the leaderboard steps cannot run on this server, or null when they can.
+ *  A dev server injects its env at the top of each module it serves. */
+async function leaderboardGap() {
+  let src
+  try {
+    src = await (await fetch(ORIGIN + '/src/net/leaderboard.ts')).text()
+  } catch (e) {
+    return null
+  }
+  const m = /^import\.meta\.env = (\{.*?\});/.exec(src)
+  if (!m) return null
+  const env = JSON.parse(m[1])
+  const missing = ['VITE_LEADERBOARD_URL', 'VITE_LEADERBOARD_DEV_SUBMIT'].filter((k) => !env[k])
+  return missing.length ? `the dev server at ${ORIGIN} has no ${missing.join(' or ')}` : null
+}
+const LB_GAP = await leaderboardGap()
+if (LB_GAP) console.error(`SKIPPING the leaderboard steps: ${LB_GAP}. Start a server with both variables (see the header of this script) to run them.`)
+
+/** Steps that need the opt-in card or a post (skipped when LB_GAP is set). */
+const LB_STEPS = ['16-recap-optin', '17-name-prompt', '18b-daily-rank-unlock', '21-leaderboard-join', '23-recap-nothanks']
 
 async function launch() {
   await acquireChromeLock('ui-shots')
@@ -209,7 +237,7 @@ async function runSize(browser, size) {
   await page.waitForFunction('!!window.__SWARM', { timeout: 20000 })
   await sleep(900)
 
-  const meta = { size, shots: {}, summary: {}, failed: [] }
+  const meta = { size, shots: {}, summary: {}, failed: [], skipped: [] }
   const shot = async (id) => {
     await page.screenshot({ path: path.join(OUT, `${size.name}-${id}.png`) })
     const d = await page.evaluate(dump)
@@ -218,6 +246,10 @@ async function runSize(browser, size) {
     console.log(size.name, id)
   }
   const step = async (id, fn) => {
+    if (LB_GAP && LB_STEPS.includes(id)) {
+      meta.skipped.push(`${id}: ${LB_GAP}`)
+      return
+    }
     try {
       await fn()
     } catch (e) {
@@ -633,7 +665,7 @@ try {
   for (const s of SIZES) {
     try {
       const m = await runSize(browser, s)
-      report[s.name] = { failed: m.failed, errors: m.errors, summary: m.summary }
+      report[s.name] = { failed: m.failed, skipped: m.skipped, errors: m.errors, summary: m.summary }
     } catch (e) {
       console.error('SIZE FAILED', s.name, e)
       report[s.name] = { fatal: String(e) }

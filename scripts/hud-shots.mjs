@@ -1,11 +1,12 @@
 // SWARMGEDDON HUD capture (P15): the run HUD with a boss alive (in FRENZY), a
-// LEVEL UP x2 chip, tier x5, an overshield, all three bonus timer rings and a callout in the lane, at phone sizes with
+// LEVEL UP x2 chip, tier x5, an overshield, all three bonus timer rings, the
+// Daily tag (DAILY #1000) and a callout in the lane, at phone sizes with
 // safe-area insets. Writes one PNG per size plus the HUD element boxes, and
 // checks: no two HUD boxes overlap (bitmap DigitStrips included, which a Text
 // dump misses), the DASH hit circle clears the weapon pill, the boss plate and
 // the pause button and the stick rest points, and every Text is at least 12 px.
-// Then, per size: the Daily intro line (the longest world name) keeps 12 px
-// text; the 3 s alert arrows stay inside the safe edges; a real hit
+// Then, per size: the Daily intro line (DAILY #1000, the longest world name)
+// keeps 12 px text; the 3 s alert arrows stay inside the safe edges; a real hit
 // (scoring.registerHit) flashes the tier drop and a chain decay does not; and
 // real taps and clicks on the pause button pause and resume the run. At the
 // first size, the boss kill lines (slain, FLAWLESS, the PRIME's win line) all
@@ -44,12 +45,18 @@ const SIZES = [
 ].filter((s) => ONLY.includes(s.name))
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
+/** A four-digit Daily number (2.7 years after DAILY_EPOCH): the widest title and HUD tag. */
+const DAILY_TAG = 'DAILY #1000'
+
 /** In page: the run HUD in its busiest state; the rAF hook holds it there. */
-function stage(world) {
+function stage(world, dailyTag) {
   const S = window.__SWARM
   const w = S.world
   S.setLoadout('nova', world)
   S.startRun('endless')
+  // The widest Daily tag a real run shows (DAILY #N from the run config), so
+  // the daily pairs below are checked on a Standard scene too.
+  S.hud.reset(w, dailyTag)
   w.player.maxHp = w.player.hp = 1e9
   S.jumpTo(236)
   for (let i = 0; i < 60 * 12 && !(w.bossAlive && w.boss && w.time - w.boss.bornAt > 1.2); i++) {
@@ -139,13 +146,13 @@ const DAILY_SUB = 'VIOLET DEPTHS \u00b7 SAME RUN FOR EVERYONE'
 
 /** In page: the Daily intro line in the lane, past its enter animation.
  *  Returns the lane state when it measured (for a failure report). */
-async function stageDaily(sub) {
+async function stageDaily(title, sub) {
   const S = window.__SWARM
   const c = S.callouts
   c.clear()
-  S.feel.intro('DAILY', sub, 0xffc24a, true)
+  S.feel.intro(title, sub, 0xffc24a, true)
   const t0 = performance.now()
-  while (performance.now() - t0 < 1500 && !(c.box.visible && c.title.text === 'DAILY' && c.age > 0.3)) await new Promise((r) => setTimeout(r, 30))
+  while (performance.now() - t0 < 1500 && !(c.box.visible && c.title.text === title && c.age > 0.3)) await new Promise((r) => setTimeout(r, 30))
   return { title: c.title.text, visible: c.box.visible, view: c.view.visible, prio: c.prio, age: +c.age.toFixed(2), life: +c.life.toFixed(2), paused: S.world.paused, screen: S.screen }
 }
 
@@ -314,17 +321,18 @@ try {
     await page.waitForFunction('!!window.__SWARM', { timeout: 20000 })
     await sleep(600)
     // A touch in the run area makes the touch UI (sticks and DASH) the live input.
-    await page.evaluate(stage, WORLD)
+    await page.evaluate(stage, WORLD, DAILY_TAG)
     await page.touchscreen.tap(size.w * 0.3, size.h * 0.7)
     await sleep(700)
     const file = path.join(OUT, `${size.name}-${WORLD}-hud.png`)
     await page.screenshot({ path: file })
     const m = await page.evaluate(measure)
     const fails = check(m)
+    if (!m.boxes.daily) fails.push('the Daily tag is not showing')
     const L = size.insets ? size.insets.left : 0
     const R = size.insets ? size.insets.right : 0
 
-    const dailyLane = await page.evaluate(stageDaily, DAILY_SUB)
+    const dailyLane = await page.evaluate(stageDaily, DAILY_TAG, DAILY_SUB)
     const dailyFile = path.join(OUT, `${size.name}-${WORLD}-daily.png`)
     await page.screenshot({ path: dailyFile })
     const md = await page.evaluate(measure)

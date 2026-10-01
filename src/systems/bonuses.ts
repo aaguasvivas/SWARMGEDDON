@@ -16,7 +16,8 @@ const wts = new Float64Array(BONUSES.length)
 
 /**
  * A kill may drop a bonus (section 4.6, A5.3): the first elite kill of a run
- * always does; otherwise PER_XP chance per kill, or any kill worth 2+ XP once
+ * always does; otherwise PER_XP chance per kill (x OVERTIME.bonusMul^c in
+ * OVERTIME, where the kill volume grows), or any kill worth 2+ XP once
  * pityAfter seconds pass with no drop. Never within minGap of the last drop,
  * never past maxOnField, never from a NUKE or FIREBLAST kill (`noBonus`).
  * Capacity and timing gate before any draw.
@@ -29,7 +30,7 @@ export function bonusOnKill(w: World, def: EnemyDef, x: number, y: number, noBon
   if (!firstElite) {
     if (t - w.lastBonusAt < BONUS.minGap) return
     const pity = def.xp >= 2 && t - w.lastBonusAt >= BONUS.pityAfter
-    if (!pity && !(w.rngs.loot.float() < BONUS.perXpChance * def.xp)) return
+    if (!pity && !(w.rngs.loot.float() < BONUS.perXpChance * def.xp * w.director.otBonusMul)) return
   }
   const type = rollType(w)
   if (type < 0 || !dropBonus(w, x, y, type)) return

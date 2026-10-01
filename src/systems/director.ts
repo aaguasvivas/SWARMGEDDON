@@ -143,12 +143,14 @@ export class Director {
   broodCount = 0
   bossesKilled = 0
   /** OVERTIME: the cycle (1, 2, ...; 0 before OVERTIME), its start, the
-   *  next OVERTIME beat to warn and to fire, and the cycle's gem XP multiplier. */
+   *  next OVERTIME beat to warn and to fire, and the cycle's gem XP and bonus
+   *  drop chance multipliers. */
   otCycle = 0
   otStart = 0
   otWarn = 0
   otFire = 0
   otXpMul = 1
+  otBonusMul = 1
 
   constructor() {
     for (let i = 0; i < EVENT_SLOTS; i++) this.events.push(new EventRun())
@@ -198,6 +200,7 @@ export class Director {
     this.otWarn = 0
     this.otFire = 0
     this.otXpMul = 1
+    this.otBonusMul = 1
   }
 }
 
@@ -212,6 +215,7 @@ export function applyRunMuls(world: World): void {
   world.aliveMul = T.aliveMul * Math.pow(OVERTIME.aliveMul, c)
   world.speedMul = Math.pow(OVERTIME.speedMul, Math.max(0, c - 1))
   d.otXpMul = Math.pow(OVERTIME.xpMul, c)
+  d.otBonusMul = Math.pow(OVERTIME.bonusMul, c)
 }
 
 /** The win panel's OVERTIME (section 4.1): cycle 1 starts now with a short

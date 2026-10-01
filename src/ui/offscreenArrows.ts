@@ -126,7 +126,8 @@ export class OffscreenArrows {
       const e = es[i]!
       if (e.alive && e.def.elite && !e.def.boss) this.target(cam, e.x, e.y, T.accentGold, KIND_ELITE)
     }
-    for (let i = 0; i < es.length && this.n < SLOTS; i++) {
+    // A frozen charger's windup waits for the thaw: no arrow until it resumes.
+    for (let i = 0; i < es.length && this.n < SLOTS && world.freezeT <= 0; i++) {
       const e = es[i]!
       if (e.alive && e.phase === 1 && e.def.behavior === 'charger') this.target(cam, e.x, e.y, TINT_CHARGER, KIND_CHARGER)
     }

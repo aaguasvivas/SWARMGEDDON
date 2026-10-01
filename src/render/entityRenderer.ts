@@ -13,6 +13,8 @@ const HIT_PULSE = 1.12
 const POD_BLINK_HZ = 6
 const POD_BLINK_ALPHA = 0.3
 const FRENZY_TINT = 0xff5a6e
+/** Frozen (FREEZE) or slowed (cryo) enemies. */
+const ICE_TINT = 0x7fd8ff
 /** Per EnemyDef.idx: the sprite texture and its white silhouette (filled lazily). */
 const baseTex: (Texture | undefined)[] = []
 const whiteTex: (Texture | undefined)[] = []
@@ -69,7 +71,10 @@ function renderEnemies(world: World, alpha: number, t: number): void {
     const tex = hit ? whiteTex[idx]! : base0
     if (s.texture !== tex) s.texture = tex
     const base = e.def.scale * (e.buffed > 0 ? 1.08 : 1) * (0.55 + 0.45 * emerge) * (hit ? HIT_PULSE : 1)
-    const wob = Math.sin(t * 14 + e.animPhase)
+    // FREEZE skips the AI step of every non-boss enemy, so a charger's windup
+    // or dash waits for the thaw: it holds its pose, with no flicker or wobble.
+    const iced = frozen && !e.def.boss
+    const wob = iced ? 0 : Math.sin(t * 14 + e.animPhase)
     if (hit) {
       s.scale.set(base)
       setTint(s, 0xffffff)
@@ -77,17 +82,17 @@ function renderEnemies(world: World, alpha: number, t: number): void {
       // Charger windup telegraph: coil (squash along the locked heading, sprite
       // rotation IS the heading) + a fast white flicker. Read-only cosmetics.
       s.scale.set(base * 0.78, base * 1.22)
-      setTint(s, Math.sin(t * 42) > 0 ? 0xffffff : e.tint)
+      setTint(s, iced ? ICE_TINT : Math.sin(t * 42) > 0 ? 0xffffff : e.tint)
     } else if (e.phase === 2) {
       // Dash: stretch along the line.
       s.scale.set(base * 1.35, base * 0.72)
-      setTint(s, e.tint)
+      setTint(s, iced ? ICE_TINT : e.tint)
     } else {
       s.scale.set(base * (1 + wob * 0.1), base * (1 - wob * 0.1))
       setTint(
         s,
-        e.slow > 0 || (frozen && !e.def.boss)
-          ? 0x7fd8ff
+        e.slow > 0 || iced
+          ? ICE_TINT
           : e.def.boss && frenzy
             ? lerpHex(e.tint, FRENZY_TINT, 0.3 + 0.25 * Math.sin(t * 8))
             : e.tint,
