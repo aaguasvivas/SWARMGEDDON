@@ -51,6 +51,8 @@ export class OffscreenArrows {
   private right = 0
   private top = 0
   private bottom = 0
+  /** The safe screen bottom: a boss above it is on screen even behind the weapon pill. */
+  private screenBottom = 0
   private sx = 0
   private sy = 0
   private lane: Float32Array | null = null
@@ -73,10 +75,12 @@ export class OffscreenArrows {
     this.view.eventMode = 'none'
   }
 
-  /** Screen width and the left and right safe-area insets (the notch side in landscape). */
-  layout(w: number, insetLeft: number, insetRight: number): void {
+  /** Screen width, the left and right safe-area insets (the notch side in
+   *  landscape) and the safe screen bottom. */
+  layout(w: number, insetLeft: number, insetRight: number, screenBottom: number): void {
     this.left = insetLeft
     this.right = w - insetRight
+    this.screenBottom = screenBottom
   }
 
   /** The DASH button's center (off screen when it is hidden): arrows step above it. */
@@ -150,7 +154,10 @@ export class OffscreenArrows {
   private target(cam: Camera, wx: number, wy: number, tint: number, kind: number): void {
     const x = cam.worldToScreenX(wx)
     const y = cam.worldToScreenY(wy)
-    if (x > this.left + ON_SCREEN_PAD && x < this.right - ON_SCREEN_PAD && y > this.top - EDGE + ON_SCREEN_PAD && y < this.bottom + EDGE - ON_SCREEN_PAD) return
+    // The band ends at the weapon pill, but a boss's body is far wider than the
+    // pill: one in the strip beside or behind it is in plain view.
+    const bottom = kind === KIND_BOSS ? this.screenBottom : this.bottom + EDGE
+    if (x > this.left + ON_SCREEN_PAD && x < this.right - ON_SCREEN_PAD && y > this.top - EDGE + ON_SCREEN_PAD && y < bottom - ON_SCREEN_PAD) return
     const i = this.n++
     this.place(i, x, y, kind >= KIND_POD ? ensureContrast(tint, INK) : tint, kind === KIND_BOSS ? 1.15 : 1)
     this.slots[i]!.alpha = kind === KIND_CHARGER ? 0.7 + 0.3 * Math.sin(this.clock * 16) : 1

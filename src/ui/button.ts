@@ -39,6 +39,7 @@ export class Button {
   private readonly face = new Container()
   private readonly bg = new Graphics()
   private readonly text: Text
+  private readonly focusRing = new Graphics()
 
   constructor(
     text: string,
@@ -54,7 +55,9 @@ export class Button {
     this.face.position.set(w / 2, h / 2)
     this.text.position.set(w / 2, h / 2)
     this.face.addChild(this.bg, this.text)
-    this.view.addChild(this.face)
+    this.focusRing.roundRect(-4, -4, w + 8, h + 8, RADIUS.button + 4).stroke({ width: 2, color: T.accentXp })
+    this.focusRing.visible = false
+    this.view.addChild(this.focusRing, this.face)
     this.view.eventMode = 'static'
     this.view.cursor = 'pointer'
     this.view.hitArea = hitRect(w, h)
@@ -91,6 +94,16 @@ export class Button {
 
   position(x: number, y: number): void {
     this.view.position.set(x, y)
+  }
+
+  /** The pad's focus ring (a gamepad moves focus with the d-pad and presses A). */
+  setFocused(on: boolean): void {
+    this.focusRing.visible = on
+  }
+
+  /** A press from a key or the pad: what a tap does. */
+  activate(): void {
+    if (this.enabled && this.view.visible) this.onClick()
   }
 
   private draw(hover: boolean): void {

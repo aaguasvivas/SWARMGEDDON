@@ -8,9 +8,11 @@
 // Then, per size: the Daily intro line (DAILY #1000, the longest world name)
 // keeps 12 px text; the 3 s alert arrows stay inside the safe edges; a real hit
 // (scoring.registerHit) flashes the tier drop and a chain decay does not; and
-// real taps and clicks on the pause button pause and resume the run. At the
-// first size, the boss kill lines (slain, FLAWLESS, the PRIME's win line) all
-// show in order, and a line queued behind a longer one still expires.
+// real taps and clicks on the pause button open the pause sheet, and RESUME (or
+// P) resumes the run after its 3 2 1 countdown. At the first size, a mid boss
+// kill shows slain then FLAWLESS, a PRIME kill shows one slain line with
+// FLAWLESS in its sub (the WIN panel carries the win text, P16), and a line
+// queued behind a longer one still expires.
 //
 // Usage: node scripts/hud-shots.mjs [sizes] [--out=DIR] [--world=hive]
 //   sizes  comma list of p320,l568,p375,l667,p390,l844 (default p375,l667,p390;
@@ -235,30 +237,34 @@ async function calloutProbe() {
   const { CALLOUT } = await import('/src/ui/callouts.ts')
   const watch = async (ms) => {
     const seen = []
+    const subs = []
     const t0 = performance.now()
     while (performance.now() - t0 < ms) {
       const t = S.callouts.box.visible ? S.callouts.title.text : ''
-      if (t && seen[seen.length - 1] !== t) seen.push(t)
+      if (t && seen[seen.length - 1] !== t) {
+        seen.push(t)
+        subs.push(S.callouts.sub.text)
+      }
       await new Promise((r) => setTimeout(r, 40))
     }
-    return seen
+    return { seen, subs }
   }
   const x = w.player.x
   const y = w.player.y
   S.callouts.clear()
   w.bossesFlawless++
   w.feel.emit(FeelKind.BossKill, 0, x, y)
-  const mid = await watch(4200)
+  const mid = (await watch(4200)).seen
   S.callouts.clear()
   w.bossesFlawless++
   w.feel.emit(FeelKind.Win, 0, x, y)
   w.feel.emit(FeelKind.BossKill, 0, x, y)
-  const prime = await watch(6600)
+  const p = await watch(6600)
   S.callouts.clear()
   S.callouts.show(CALLOUT.alertBoss, 'STALE TEST', '', 0xff6aa8)
   S.callouts.show(CALLOUT.closeCall, 'CLOSE CALL', '', 0x7dffd6)
-  const stale = await watch(3800)
-  return { mid, prime, stale, slain: w.script.text.slain, win: w.script.text.win }
+  const stale = (await watch(3800)).seen
+  return { mid, prime: p.seen, primeSub: p.subs[0] ?? '', stale, slain: w.script.text.slain, win: w.script.text.win }
 }
 
 function check(m) {
@@ -366,7 +372,9 @@ try {
       callouts = await page.evaluate(calloutProbe)
       const want = (seen, list) => list.every((t, i) => seen[i] === t)
       if (!want(callouts.mid, [callouts.slain, 'FLAWLESS'])) fails.push('mid boss kill lines: ' + JSON.stringify(callouts.mid))
-      if (!want(callouts.prime, [callouts.slain, 'FLAWLESS', callouts.win])) fails.push('PRIME kill lines: ' + JSON.stringify(callouts.prime))
+      if (callouts.prime.length !== 1 || callouts.prime[0] !== callouts.slain || !callouts.primeSub.includes('FLAWLESS')) {
+        fails.push('PRIME kill line: ' + JSON.stringify({ lines: callouts.prime, sub: callouts.primeSub }))
+      }
       if (callouts.stale.includes('CLOSE CALL')) fails.push('a stale line showed: ' + JSON.stringify(callouts.stale))
     }
 
@@ -376,22 +384,35 @@ try {
       return { x: b.minX + b.width / 2, y: b.minY + b.height / 2 }
     })
     const state = () => page.evaluate(() => ({ paused: window.__SWARM.world.paused, t: window.__SWARM.world.time }))
+    const resumeC = () =>
+      page.evaluate(() => {
+        const b = window.__SWARM.pauseSheet.resume.view.getBounds()
+        return { x: b.minX + b.width / 2, y: b.minY + b.height / 2 }
+      })
     const pause = []
-    const tapThen = async (label, act) => {
+    // RESUME counts down 3 2 1 (450 ms each) before the run moves again.
+    const COUNTDOWN_WAIT = 1500
+    const tapThen = async (label, act, waitMs = 250) => {
       await act()
-      await sleep(250)
+      await sleep(waitMs)
       const a = await state()
       await sleep(250)
       const b = await state()
       pause.push({ label, paused: a.paused, advancing: b.t > a.t })
     }
+    const tapResume = async (mouse) => {
+      const r = await resumeC()
+      if (mouse) await page.mouse.click(r.x, r.y)
+      else await page.touchscreen.tap(r.x, r.y)
+    }
     await tapThen('touch tap on pause', () => page.touchscreen.tap(pauseC.x, pauseC.y))
-    await tapThen('touch tap on pause again', () => page.touchscreen.tap(pauseC.x, pauseC.y))
+    await tapThen('touch tap on RESUME', () => tapResume(false), COUNTDOWN_WAIT)
     await tapThen('mouse click on pause', () => page.mouse.click(pauseC.x, pauseC.y))
+    await tapThen('mouse click on RESUME', () => tapResume(true), COUNTDOWN_WAIT)
     await tapThen('mouse click on pause under the crosshair', () => page.mouse.click(pauseC.x, pauseC.y))
-    await tapThen('mouse click on pause, third', () => page.mouse.click(pauseC.x, pauseC.y))
+    await tapThen('P key on the sheet', () => page.keyboard.press('p'), COUNTDOWN_WAIT)
     await tapThen('mouse click elsewhere', () => page.mouse.click(size.w / 2, size.h * 0.55))
-    const wantPaused = [true, false, true, false, true, false]
+    const wantPaused = [true, false, true, false, true, false, false]
     pause.forEach((p, i) => {
       if (p.paused !== wantPaused[i] || p.advancing === wantPaused[i]) fails.push(`${p.label}: paused ${p.paused}, time advancing ${p.advancing}`)
     })

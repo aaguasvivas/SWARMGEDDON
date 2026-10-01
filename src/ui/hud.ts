@@ -250,6 +250,9 @@ export class Hud {
     this.weaponId = ''
     this.daily.text = dailyTag
     this.daily.visible = dailyTag !== ''
+    // A practice Daily's tag reads muted, the PRACTICE chip's color on the pause
+    // sheet: a longer tag would reach the timeline (W4 integration).
+    this.daily.style.fill = world.run && world.run.mode === 'daily' && !world.run.ranked ? T.textMuted : T.accentGold
     this.drawTimeline(world)
   }
 
