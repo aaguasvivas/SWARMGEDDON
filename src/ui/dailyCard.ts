@@ -11,9 +11,12 @@ const BTN_H = 36
 const SEP = ' · '
 /** Width of the longest countdown, `NEW DAILY IN 23H 59M` at 12 px. */
 const CLOCK_MAX_W = 146
+const DAY_MS = 86_400_000
 
 /** What the menu's Daily card shows (A15 card copy). */
 export interface DailyCardModel {
+  /** The UTC day (YYYY-MM-DD) the model describes. */
+  date: string
   number: number
   world: string
   pilot: string
@@ -36,7 +39,7 @@ function group(v: number): string {
 
 /** `NEW DAILY IN 5H 12M`, `NEW DAILY IN 42M`. */
 export function countdownText(nowMs: number): string {
-  const next = (Math.floor(nowMs / 86_400_000) + 1) * 86_400_000
+  const next = (Math.floor(nowMs / DAY_MS) + 1) * DAY_MS
   const min = Math.max(1, Math.ceil((next - nowMs) / 60_000))
   const h = Math.floor(min / 60)
   return h > 0 ? `NEW DAILY IN ${h}H ${min % 60}M` : `NEW DAILY IN ${min}M`
@@ -45,11 +48,12 @@ export function countdownText(nowMs: number): string {
 /**
  * The Daily card (section 9.7, A15): today's number, world and pilot, the ranked
  * attempt or its result, and PLAY RANKED or PRACTICE. The countdown text changes
- * once a minute.
+ * once a minute; at UTC midnight `onNewDay` asks for the new day's model.
  */
 export class DailyCard {
   readonly view = new Container()
   onPlay: () => void = () => {}
+  onNewDay: () => void = () => {}
   private readonly bg = new Graphics()
   private readonly title: Text
   private readonly clock: Text
@@ -62,6 +66,8 @@ export class DailyCard {
   private h = 0
   private model: DailyCardModel | null = null
   private clockMin = -1
+  /** The model's UTC day number. */
+  private day = -1
 
   constructor() {
     this.title = new Text({ text: '', style: { fontFamily: FONT.display, fontWeight: '700', fontSize: 16, fill: T.accentGold, letterSpacing: 1 } })
@@ -79,13 +85,15 @@ export class DailyCard {
    *  the button under the text, full width, and grows taller. */
   set(m: DailyCardModel, w: number): number {
     this.model = m
+    this.day = Math.floor(Date.parse(m.date + 'T00:00:00Z') / DAY_MS)
     const narrow = w < NARROW_W
     const inner = w - PAD * 2
     const left = narrow ? inner : inner - BTN_W - 8
     this.title.text = `DAILY #${m.number}`
     this.title.position.set(PAD, 7)
-    this.clockMin = -1
-    this.tick(Date.now())
+    const now = Date.now()
+    this.clockMin = Math.floor(now / 60_000)
+    this.clock.text = countdownText(now)
 
     const parts: string[] = []
     this.where.text = `${m.world}${SEP}AS ${m.pilot}`
@@ -157,10 +165,18 @@ export class DailyCard {
     this.view.addChild(this.play.view, this.practice.view)
   }
 
-  /** Refresh the countdown (cheap: the text changes once a minute). */
+  /** Refresh the countdown (cheap: the text changes once a minute), and ask for
+   *  a new model once the UTC day is past the model's. */
   tick(nowMs: number): void {
+    if (!this.model) return
+    const day = Math.floor(nowMs / DAY_MS)
+    if (day !== this.day) {
+      this.day = day
+      this.onNewDay()
+      return
+    }
     const min = Math.floor(nowMs / 60_000)
-    if (min === this.clockMin || !this.model) return
+    if (min === this.clockMin) return
     this.clockMin = min
     this.clock.text = countdownText(nowMs)
   }

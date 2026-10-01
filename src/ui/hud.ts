@@ -89,6 +89,11 @@ export class Hud {
   /** Callout scale: short landscape screens take a smaller line. */
   laneScale = 1
   readonly pauseRect = new Rectangle()
+  /** Screen px: where the `Pause` hint chip sits (row A's left end, under the
+   *  pause button, the LEVEL UP chip's place) and the HUD scale. */
+  readonly hintSlot = { x: 0, y: 0, s: 1 }
+  /** The hint chip holds row A: the top stack (arrows, elite tags) ends below it. */
+  hintHeld = false
 
   private s = 1
   private plateX = 0
@@ -319,6 +324,9 @@ export class Hud {
 
     const rowY = portrait ? Tp + ROW_A : plateY + plateH + 4
     this.chip.position.set(L + 8, rowY)
+    this.hintSlot.x = (L + 12) * s
+    this.hintSlot.y = rowY * s
+    this.hintSlot.s = s
     this.chipText.position.set(10, CHIP_H / 2)
     this.chipNum.view.position.set(10 + this.chipText.width + 6, CHIP_H / 2)
     this.badge.position.set(portrait ? W - R - 100 : this.plateR - BADGE_W, rowY)
@@ -365,9 +373,14 @@ export class Hud {
     this.rowBottom = (rowY + ROW_A_H) * s
   }
 
+  /** The LEVEL UP chip shows (it owns the hint chip's slot). */
+  get pendingShown(): boolean {
+    return this.chip.visible
+  }
+
   /** Screen y below every HUD row showing at the top now. */
   get stackBottom(): number {
-    const b = this.boss.visible ? this.boss.y + BOSS_H : this.chip.visible || this.badge.visible ? this.chip.y + ROW_A_H : 0
+    const b = this.boss.visible ? this.boss.y + BOSS_H : this.chip.visible || this.badge.visible || this.hintHeld ? this.chip.y + ROW_A_H : 0
     const r = this.ringMask > 0 ? this.ringY + RING_D / 2 : 0
     return Math.max(this.topBottom, Math.max(b, r) * this.s)
   }

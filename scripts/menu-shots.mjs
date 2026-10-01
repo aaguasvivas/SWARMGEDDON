@@ -1,11 +1,12 @@
 // P17 screens audit: the main menu (first launch, returning, a locked pick, the
-// Daily card before and after the ranked run), every settings tab, the
-// leaderboard (online, empty, no network, a server still on v1, an outdated
-// client, not posting), RECORDS (both tabs) and an in-run hint line. For each
-// shot it walks the Pixi scene graph and checks: text at least 12 px effective,
-// hit rects at least 44 x 44, text inside the safe area, no text overlap (boxes
-// clipped by their masks), no text over the menu's hero ship, and text contrast
-// sampled from the screenshot pixels in a ring just outside each text box.
+// Daily card before and after the ranked run and across UTC midnight), every
+// settings tab, the leaderboard (online, empty, no network, a server still on
+// v1, an outdated client, not posting), RECORDS (both tabs), an in-run hint line
+// and the `Pause` chip (checked against every HUD node). For each shot it walks
+// the Pixi scene graph and checks: text at least 12 px effective, hit rects at
+// least 44 x 44, text inside the safe area, no text overlap (boxes clipped by
+// their masks), no text over the menu's hero ship, and text contrast sampled
+// from the screenshot pixels in a ring just outside each text box.
 //
 // Usage: node scripts/menu-shots.mjs [sizes] [--out=DIR] [--only=a,b]
 //   sizes  comma list of p375,l667,p390,l844,d1440 (default: all five)
@@ -261,39 +262,91 @@ async function tap(page, size, needle) {
   else await page.mouse.click(p.x, p.y)
 }
 
-/** A returning player's save: 12 runs, EMBER and DEPTHS owned, THREAT 2 on Hive, 3 paints, posting on. */
+/** A v1 player's save, before the boot migration runs over it. */
+function seedV1() {
+  localStorage.clear()
+  localStorage.setItem('swarmgeddon:best:endless', JSON.stringify({ score: 5234, time: 300, kills: 900, level: 12 }))
+}
+
+/**
+ * A returning player, built by the game's own end-of-run path: a v1 veteran
+ * (migrated at boot) who then played 9 v2 runs, cleared Hive at THREAT 0 and 1
+ * as NOVA (so THREAT 2 is open), owns EMBER and DEPTHS, has VESPER locked
+ * (THICK HIDE short of 1,000 damage), posts scores, and played the last two ranked
+ * Dailies. Each run goes through `__SWARM.fileRun`, the function endRun files
+ * a run with (stats, THREAT, world bests, feats, the Daily record), so the
+ * stats, feats, unlocks, bests, THREAT and streak agree. The app's own debug
+ * handle, not a module import by URL: after an HMR update the URL import would
+ * load a second copy of the storage module. `dailyDone` adds today's ranked
+ * Daily and two practice runs.
+ */
 function seedSave(opts) {
   const S = window.__SWARM
-  const today = new Date().toISOString().slice(0, 10)
-  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
-  const world = (runs, best, clears, threat) => ({ runs, seconds: runs * 300, kills: runs * 900, bosses: runs, clears, bestTime: best, maxThreatCleared: threat })
-  S.saveJSON('stats', {
-    runs: 12, seconds: 3600, kills: 15400, xp: 40000, damage: 2400, hits: 300, elites: 22, bosses: 6, bossesFlawless: 1, clears: 1,
-    dailyRanked: 3, dailyPractice: 2, bestChain: 640, peakTier: 6, longestNoHit: 95, closeCalls: 14, fusionsTaken: 2, evolutions: 1,
-    perWorld: { hive: world(8, 668, 1, 1), depths: world(4, 260, 0, -1) },
-    perPilot: { nova: { runs: 9, seconds: 2700, kills: 11000, bosses: 5, clears: 1, bestLevel: 24, bestTime: 668 }, ember: { runs: 3, seconds: 900, kills: 4400, bosses: 1, clears: 0, bestLevel: 14, bestTime: 340 } },
-    killsByEnemy: { queen: 2 }, perkPicks: {}, weaponUses: {}, firstRun: yesterday, lastRun: today, importedV1: false,
-  })
-  S.saveJSON('unlocks', ['paint:static', 'paint:hazard', 'ember', 'depths', 'weapon:lightning', 'perk:giant_slayer'])
-  S.saveJSON('feats', {
-    done: { first_contact: yesterday, field_promotion: yesterday, big_game: yesterday, overcharged: yesterday, swatter: today, deep_dive: today },
-    prog: { rampage: 2, mayhem: 4, untouchable: 95, five_alive: 260, arsenal: 3 },
-  })
-  S.saveJSON('best:world:hive', { time: 668, kills: 4100, score: 182345, chain: 640, level: 24, scoreDate: today })
-  S.saveJSON('best:world:depths', { time: 260, kills: 1700, score: 48210, chain: 210, level: 15, scoreDate: yesterday })
-  S.saveJSON('best:endless', { score: 5234, time: 300, kills: 900, level: 12 })
-  S.saveJSON('threat', { hive: 2 })
-  S.saveJSON('sel:threat', { hive: 1 })
+  const day = (k) => new Date(Date.now() - k * 86400000).toISOString().slice(0, 10)
+  const base = {
+    v: 2, mode: 'endless', ranked: false, end: 'death', cleared: false, clearMs: 0, overtimeSec: 0, nextBeat: null,
+    dailyNumber: 0, seed: 1, character: 'nova', arena: 'hive', threat: 0, paint: 'factory',
+    bossesSlain: 0, bossesFlawless: 0, elitesSlain: 1, bestChain: 40, peakTier: 3, hits: 20, longestNoHit: 40,
+    revivesUsed: 0, podsEquipped: 1, weapons: ['lightning'], dashes: 30, closeCalls: 1, fusions: [], evolutions: [],
+    perks: [], killsByEnemy: {}, killer: 'swarmer',
+  }
+  const runs = [
+    { date: day(9), time: 170, kills: 480, level: 9, score: 21400, bestChain: 52, damageTaken: 104 },
+    { date: day(8), time: 290, kills: 1100, level: 13, score: 52800, peakTier: 4, bestChain: 96, damageTaken: 112, elitesSlain: 2, podsEquipped: 2 },
+    { date: day(7), arena: 'depths', time: 210, kills: 760, level: 10, score: 30100, bestChain: 60, damageTaken: 101, closeCalls: 0 },
+    {
+      date: day(6), end: 'clear', cleared: true, clearMs: 655000, time: 668, kills: 3400, level: 24, score: 182345, peakTier: 4, bestChain: 140,
+      damageTaken: 46, elitesSlain: 6, bossesSlain: 3, longestNoHit: 95, closeCalls: 2, weapons: ['lightning', 'railgun'], podsEquipped: 3,
+      killsByEnemy: { queen: 2, queenPrime: 1 }, killer: null,
+    },
+    { date: day(5), character: 'ember', time: 240, kills: 900, level: 10, score: 33600, bestChain: 66, damageTaken: 103 },
+    {
+      date: day(4), threat: 1, end: 'clear', cleared: true, clearMs: 660000, time: 672, kills: 3300, level: 23, score: 171000, peakTier: 4, bestChain: 128,
+      damageTaken: 52, elitesSlain: 7, bossesSlain: 3, longestNoHit: 80, closeCalls: 2, weapons: ['lightning', 'beam'], podsEquipped: 3,
+      killsByEnemy: { queen: 2, queenPrime: 1 }, killer: null,
+    },
+    { date: day(3), threat: 1, end: 'quit', time: 120, kills: 380, level: 7, score: 14200, damageTaken: 30, elitesSlain: 0, podsEquipped: 0, weapons: [], closeCalls: 0, killer: null },
+  ]
+  const dailyRun = (date, ranked, over) => {
+    const spec = S.dailySpec(date)
+    return { date, mode: 'daily', ranked, dailyNumber: spec.number, seed: spec.seed, character: spec.pilot, arena: spec.world, threat: spec.threat, ...over }
+  }
+  // A death takes at least the pilot's max HP (the Daily pilot can be VESPER, 120).
+  runs.push(dailyRun(day(2), true, { time: 260, kills: 820, level: 11, score: 36900, damageTaken: 125 }))
+  runs.push(dailyRun(day(1), true, { time: 230, kills: 700, level: 10, score: 31500, damageTaken: 124 }))
+  if (opts.dailyDone) {
+    S.markRankedStarted(day(0))
+    runs.push(dailyRun(day(0), true, { time: 420, kills: 1500, level: 16, score: 48210, damageTaken: 122 }))
+    runs.push(dailyRun(day(0), false, { end: 'quit', killer: null, time: 510, kills: 1800, level: 18, score: 61000, damageTaken: 31 }))
+    runs.push(dailyRun(day(0), false, { end: 'quit', killer: null, time: 300, kills: 1000, level: 13, score: 52000, damageTaken: 26 }))
+  }
+  for (const over of runs) {
+    const r = { ...base, ...over }
+    r.xpSum = r.kills * 2
+    r.killPts = r.kills * 10
+    S.fileRun(r)
+  }
   S.saveJSON('sel:char', 'nova')
   S.saveJSON('sel:arena', 'hive')
   S.saveJSON('sel:paint', 'hazard')
-  S.saveJSON('daily:streak', { last: yesterday, run: 3, played: 12 })
+  S.saveJSON('sel:threat', { hive: 1 })
   S.saveJSON('player:name', 'TESTER')
   S.saveJSON('lb:id', 'AAAAAAAAAAAAAAAAAAAAAA')
   S.saveJSON('lb:optIn', opts.posting)
   S.saveJSON('hints', { daily: 1, feats: 1 })
-  if (opts.dailyDone) S.saveJSON('daily:' + today, { rankedStarted: true, ranked: { mode: 'daily', ranked: true, score: 48210, date: today }, practiceBest: 61000, practiceRuns: 2 })
-  else S.saveJSON('daily:' + today, { rankedStarted: false })
+  // Self-check: every run counted, the save is the scenario above, and no feat
+  // the stats meet is left open.
+  const L = S.loadJSON('stats', {})
+  const left = S.metOpenFeats()
+  const bad = []
+  if (L.runs !== runs.length) bad.push('stats.runs ' + L.runs + ' != ' + runs.length)
+  if (left.length) bad.push('open feats already met: ' + left.join(','))
+  if (S.isOwned('vesper') || !S.isOwned('ember') || !S.isOwned('depths') || !S.isOwned('paint:hazard')) bad.push('unlocks differ from the scenario')
+  if (S.loadJSON('threat', {}).hive !== 2) bad.push('THREAT on hive is not 2')
+  if (!L.importedV1) bad.push('the v1 migration did not run')
+  if (bad.length) throw new Error('seed: ' + bad.join('; '))
+  const done = Object.keys(S.loadJSON('feats', {}).done || {}).length
+  return { runs: L.runs, damage: L.damage, kills: L.kills, done, paints: S.loadJSON('unlocks', []).filter((k) => k.startsWith('paint:')).length + 1 }
 }
 
 async function runSize(browser, size) {
@@ -347,7 +400,9 @@ async function runSize(browser, size) {
     }
   }
   const seed = async (opts) => {
-    await page.evaluate(seedSave, opts)
+    await page.evaluate(seedV1)
+    await reload()
+    ;(meta.seeds ??= []).push(await page.evaluate(seedSave, opts))
     await reload()
   }
 
@@ -379,6 +434,25 @@ async function runSize(browser, size) {
     await sleep(300)
     await shot('04b-menu-toast')
     await page.evaluate(() => window.__SWARM.toast.hide())
+  })
+  // UTC midnight under an open menu: a card built for yesterday (number, unranked)
+  // must rebuild itself for today on the next tick.
+  await step('04c-menu-new-day', async () => {
+    const r = await page.evaluate(() => {
+      const S = window.__SWARM
+      const menu = S.mainMenu
+      const card = menu.daily
+      const read = () => [card.title.text, card.status.text, card.play.view.visible, card.practice.view.visible].join(' | ')
+      const today = read()
+      const m = menu.model
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+      menu.setModel({ ...m, daily: { ...m.daily, date: yesterday, number: m.daily.number - 1, rankedOpen: true, rankedScore: null } })
+      const stale = read()
+      menu.tick(Date.now(), 0.016)
+      return { today, stale, after: read() }
+    })
+    meta.checks['04c-menu-new-day'] = { newDay: r.after === r.today && r.stale !== r.today ? [] : [JSON.stringify(r)] }
+    console.log(size.name, '04c-menu-new-day', JSON.stringify(r))
   })
   for (const tab of ['AUDIO', 'VISUALS', 'CONTROLS', 'ACCOUNT']) {
     await step('05-settings-' + tab.toLowerCase(), async () => {
@@ -480,6 +554,67 @@ async function runSize(browser, size) {
     await sleep(400) // past the 140 ms entrance; the run keeps going so the touch guides show
     await shot('16-run-hint')
     if (!shown) throw new Error('the gem hint line never showed')
+    await page.evaluate(() => window.__SWARM.endRun('quit', 'menu'))
+    await sleep(300)
+  })
+  // The `Pause` chip (first touch run, 20 s in) against every HUD node, the touch
+  // banner and the callout lane; then a LEVEL UP chip takes its slot, and the
+  // chip comes back when the LEVEL UP chip goes.
+  await step('17-run-pause-chip', async () => {
+    if (!size.touch) return
+    await page.evaluate(() => {
+      const S = window.__SWARM
+      S.hints.reset()
+      S.startRun('endless')
+      S.world.player.maxHp = S.world.player.hp = 1e9
+      for (let k = 0; k < 80 && S.world.time < 20.5; k++) {
+        S.step(30)
+        if (S.world.draft.open) S.pickCard(0)
+      }
+      S.world.pendingLevelUps = 0
+    })
+    let shown = false
+    for (let i = 0; i < 30 && !shown; i++) {
+      await sleep(100)
+      shown = await page.evaluate(() => window.__SWARM.hints.chip.visible)
+    }
+    if (!shown) throw new Error('the Pause chip never showed')
+    const hits = await page.evaluate(() => {
+      const S = window.__SWARM
+      const c = S.hints.chip.getBounds()
+      const out = []
+      const test = (o, label) => {
+        if (!o.visible || o.alpha <= 0.02) return
+        const b = o.getBounds()
+        const ox = Math.min(c.maxX, b.maxX) - Math.max(c.minX, b.minX)
+        const oy = Math.min(c.maxY, b.maxY) - Math.max(c.minY, b.minY)
+        if (b.width > 0 && ox > 0.5 && oy > 0.5) out.push(`${label} [${Math.round(b.minX)},${Math.round(b.minY)},${Math.round(b.maxX)},${Math.round(b.maxY)}]`)
+      }
+      S.hud.view.children.forEach((k, i) => {
+        if (k !== S.hud.plate.view) test(k, typeof k.text === 'string' ? k.text : `hud#${i}`)
+      })
+      if (S.touchHint.view.visible) S.touchHint.view.children.forEach((k, i) => test(k, `touch hint#${i}`))
+      S.callouts.view.children.forEach((k, i) => test(k, `callout#${i}`))
+      out.unshift(`chip [${Math.round(c.minX)},${Math.round(c.minY)},${Math.round(c.maxX)},${Math.round(c.maxY)}]`)
+      return out
+    })
+    await shot('17-run-pause-chip')
+    meta.checks['17-run-pause-chip'].chipBox = hits[0]
+    meta.checks['17-run-pause-chip'].chipOverlaps = hits.slice(1)
+    const yielded = await page.evaluate(async () => {
+      const S = window.__SWARM
+      // The draft gap holds the draft back, so the sim stays live.
+      S.world.draft.index = Math.max(1, S.world.draft.index)
+      S.world.draft.lastOpenAt = S.world.time
+      S.world.pendingLevelUps = 2
+      await new Promise((r) => setTimeout(r, 250))
+      const under = { pending: S.hud.pendingShown, chip: S.hints.chip.visible, paused: S.world.paused }
+      S.world.pendingLevelUps = 0
+      await new Promise((r) => setTimeout(r, 250))
+      return { under, back: S.hints.chip.visible }
+    })
+    const ok = yielded.under.pending && !yielded.under.chip && !yielded.under.paused && yielded.back
+    meta.checks['17-run-pause-chip'].chipUnderLevelUp = ok ? [] : [JSON.stringify(yielded)]
     await page.evaluate(() => window.__SWARM.endRun('quit', 'menu'))
     await sleep(300)
   })

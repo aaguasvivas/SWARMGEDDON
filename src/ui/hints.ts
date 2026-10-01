@@ -1,4 +1,4 @@
-import { Container, Graphics, Text, type Rectangle } from 'pixi.js'
+import { Container, Graphics, Text } from 'pixi.js'
 import { FeelKind, type FeelQueue } from '../effects/feelQueue.ts'
 import type { World } from '../game/world.ts'
 import { loadJSON, saveJSON } from '../platform/storage.ts'
@@ -41,7 +41,7 @@ const CHIP_S = 3.5
  * they are lines in the callout lane, one at a time with a queue of 2, never
  * during a draft or a boss intro. They read the FeelQueue before the
  * FeelDirector drains it and never touch the sim. The gem hint keeps the v1
- * `seenGemHint` key. The `pause` hint is a chip beside the pause button.
+ * `seenGemHint` key. The `pause` hint is a chip under the pause button.
  */
 export class Hints {
   /** The `Pause` chip (screen space, in the UI layer). */
@@ -85,6 +85,7 @@ export class Hints {
     this.queuedAt.length = 0
     this.quietUntil = 0
     this.dashDone = this.pauseDone = false
+    this.chipLeft = 0
     this.chip.visible = false
     if (!touch) this.want('controls_kbm')
   }
@@ -122,19 +123,23 @@ export class Hints {
     }
   }
 
-  /** Advance by `fd` real seconds; start the next hint when the lane is free. */
-  update(fd: number, w: World, playing: boolean): void {
+  /** Advance by `fd` real seconds; start the next hint when the lane is free.
+   *  `chipFree`: the chip's slot is empty (no LEVEL UP chip in it). */
+  update(fd: number, w: World, playing: boolean, chipFree: boolean): void {
     this.clock += fd
-    if (this.chip.visible) {
-      this.chipLeft -= fd
-      if (this.chipLeft <= 0 || !playing || w.paused) this.chip.visible = false
+    // The chip's 3.5 s count down only while it can show: a draft, a pause or
+    // a LEVEL UP chip in its slot holds them.
+    if (this.chipLeft > 0) {
+      const show = playing && !w.paused && chipFree
+      if (show) this.chipLeft -= fd
+      this.chip.visible = show && this.chipLeft > 0
     }
     if (!playing || w.paused || w.pendingGameOver) return
     if (this.touch && !this.dashDone && w.time >= DASH_AT_S) {
       this.dashDone = true
       this.want('dash')
     }
-    if (this.touch && !this.pauseDone && w.time >= PAUSE_AT_S) {
+    if (this.touch && !this.pauseDone && chipFree && w.time >= PAUSE_AT_S) {
       this.pauseDone = true
       if (this.take('pause')) {
         this.chip.visible = true
@@ -170,13 +175,16 @@ export class Hints {
     return this.take('draft') ? HINTS.draft.text : ''
   }
 
-  /** Put the chip right of the pause button's hit rect (screen px). */
-  layoutChip(pause: Rectangle): void {
+  /** Put the chip's top-left at (x, y) screen px, under the pause button in the
+   *  HUD row the LEVEL UP chip uses (the plate beside the button holds the level
+   *  chip and the XP bar), scaled like the HUD. */
+  layoutChip(x: number, y: number, s: number): void {
     const w = this.chipText.width + 16
     this.chipBg.clear()
     this.chipBg.roundRect(0, -12, w, 24, RADIUS.chip).fill(T.accentGold)
     this.chipText.position.set(8, 0)
-    this.chip.position.set(pause.x + pause.width + 2, pause.y + pause.height / 2)
+    this.chip.scale.set(s)
+    this.chip.position.set(x, y + 12 * s)
   }
 
   private load(): void {

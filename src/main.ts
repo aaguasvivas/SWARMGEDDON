@@ -308,6 +308,7 @@ async function boot(): Promise<void> {
       const yesterday = dayOf(Date.parse(date + 'T00:00:00Z') - 86_400_000)
       const ranked = rankedRun(date)
       daily = {
+        date,
         number: spec.number,
         world: arenaById(spec.world).name,
         pilot: characterById(spec.pilot).name,
@@ -491,6 +492,17 @@ async function boot(): Promise<void> {
     else startRun('endless')
   }
 
+  /** File a finished run in the save: lifetime stats, THREAT, world bests,
+   *  feats and the Daily record. */
+  function fileRun(r: RunResult) {
+    const lifetime = updateLifetime(r)
+    recordThreatClear(r)
+    const gains = recordWorldBest(r)
+    const done = evaluateFeats(r, lifetime)
+    if (r.mode === 'daily') recordDailyEnd(r)
+    return { lifetime, gains, done }
+  }
+
   /** Every exit from a live run comes through here (death, quit, clear,
    *  stalemate, a page closed mid-run): the run is recorded exactly once, then
    *  the player moves on to the recap, the menu or a fresh run. */
@@ -503,11 +515,7 @@ async function boot(): Promise<void> {
     const result = buildRunResult(world, end, runMeta())
     lastResult = result
     feel.time.reset()
-    const lifetime = updateLifetime(result)
-    recordThreatClear(result)
-    const gains = recordWorldBest(result)
-    const done = evaluateFeats(result, lifetime)
-    if (result.mode === 'daily') recordDailyEnd(result)
+    const { lifetime, gains, done } = fileRun(result)
     if (done.length > 0) refreshLoadoutUI()
     if (after === 'menu') {
       void postRun(result, false)
@@ -681,6 +689,7 @@ async function boot(): Promise<void> {
     if (canPlay()) startRun('endless')
   }
   mainMenu.onDaily = playDaily
+  mainMenu.onNewDay = refreshLoadoutUI
   mainMenu.onSettings = openSettings
   mainMenu.onRecords = toRecords
   mainMenu.onLeaderboard = toLeaderboard
@@ -853,7 +862,7 @@ async function boot(): Promise<void> {
     settingsPanel.layout(w, h, insets)
     leaderboard.layout(w, h, insets)
     records.layout(w, h, insets)
-    hints.layoutChip(hud.pauseRect)
+    hints.layoutChip(hud.hintSlot.x, hud.hintSlot.y, hud.hintSlot.s)
     confirm.layout(w, h, insets)
     toast.layout(w, insets, toastSlot())
     // Pin the bloom to the visible window (not the whole 2800x1900 arena).
@@ -1139,7 +1148,8 @@ async function boot(): Promise<void> {
         writeCheckpoint()
       }
 
-      hints.update(fd, world, playing)
+      hints.update(fd, world, playing, !hud.pendingShown)
+      hud.hintHeld = hints.chip.visible
 
       renderEntities(world, alpha)
       hazardView.update(world, alpha)
@@ -1404,6 +1414,16 @@ async function boot(): Promise<void> {
       dropCore: (row = 0) => dropHiveCore(world, player.x + 60, player.y, row),
       /** Close the core reveal as a tap would: the evolution (when offered) or the levels. */
       takeCore: (evolve: boolean) => closeCore(evolve),
+      /** Harness: file a RunResult as endRun does (no recap, no post). */
+      fileRun: (r: RunResult) => void fileRun(r),
+      markRankedStarted,
+      isOwned,
+      /** Harness: open total feats whose target the saved stats already meet. */
+      metOpenFeats: () => {
+        const s = loadFeats()
+        const L = loadStats()
+        return FEATS.filter((f) => f.kind === 'total' && !s.done[f.id] && f.value(L) >= f.target).map((f) => f.id)
+      },
       saveJSON,
       loadJSON,
     }

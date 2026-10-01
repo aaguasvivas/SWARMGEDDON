@@ -14,7 +14,10 @@ import { FONT, INK, RADIUS, T, TARGET, uiScale } from './tokens.ts'
 import { fetchBoard, getPlayerName, optInState, type BoardResult, type BoardRow } from '../net/leaderboard.ts'
 
 const LIMIT = 50
-const ROW_H = 30
+/** Two lines: the name, then the THREAT chip and the country under it. */
+const ROW_H = 36
+const LINE1_Y = 11
+const LINE2_Y = 27
 const BAR_H = 52
 const HEAD_H = 18
 const LEFT_W = 260
@@ -48,8 +51,8 @@ function clock(ms: number): string {
   return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0')
 }
 
-/** One board row: rank chip, pilot glyph in the row's paint, name and country,
- *  THREAT chip, TIME, KILLS and SCORE. Pooled; filled at event rate. */
+/** One board row: rank chip, pilot glyph in the row's paint, the name over the
+ *  THREAT chip and the country, TIME, KILLS and SCORE. Pooled; filled at event rate. */
 class RowView {
   readonly view = new Container()
   private readonly chip = new Graphics()
@@ -107,25 +110,25 @@ class RowView {
     this.time.position.set(x, cy)
     x -= C_TIME + GAP
 
-    // Name, then the THREAT chip, then the country, all left of the TIME column.
+    // The name takes the whole width left of the TIME column; the THREAT chip
+    // and the country sit on the line under it.
     const nx = C_RANK + GAP + C_GLYPH + GAP
     const right = x
-    const chipW = e.threat > 0 ? THREAT_W + 6 : 0
     this.name.text = e.name
-    this.name.position.set(nx, cy)
-    clip(this.name, right - nx - chipW)
-    let cx = nx + this.name.width + 6
+    this.name.position.set(nx, LINE1_Y)
+    clip(this.name, right - nx)
+    let cx = nx
     this.threatBg.clear()
     this.threat.visible = e.threat > 0
     if (e.threat > 0) {
       this.threat.text = 'T' + e.threat
-      this.threatBg.roundRect(cx, cy - 9, THREAT_W, 18, RADIUS.chip).fill(T.accentDanger)
-      this.threat.position.set(cx + THREAT_W / 2, cy)
+      this.threatBg.roundRect(cx, LINE2_Y - 8, THREAT_W, 16, RADIUS.chip).fill(T.accentDanger)
+      this.threat.position.set(cx + THREAT_W / 2, LINE2_Y)
       cx += THREAT_W + 6
     }
     this.country.text = e.country ?? ''
-    this.country.position.set(cx, cy)
-    this.country.visible = !!e.country && cx + this.country.width <= right
+    this.country.position.set(cx, LINE2_Y)
+    this.country.visible = !!e.country
   }
 }
 

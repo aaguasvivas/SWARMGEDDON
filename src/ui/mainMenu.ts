@@ -90,6 +90,8 @@ export class MainMenu {
   readonly view = new Container()
   onPlay: () => void = () => {}
   onDaily: () => void = () => {}
+  /** The UTC day changed under an open menu: rebuild the model. */
+  onNewDay: () => void = () => {}
   onSettings: () => void = () => {}
   onRecords: () => void = () => {}
   onLeaderboard: () => void = () => {}
@@ -176,6 +178,7 @@ export class MainMenu {
     // A locked pick reads LOCKED at full contrast and does nothing.
     this.locked = new Button('LOCKED', PLAY_W, PLAY_H, 'secondary', 20)
     this.daily.onPlay = () => this.onDaily()
+    this.daily.onNewDay = () => this.onNewDay()
 
     this.paintCaption = new Text({ text: 'PAINT', style: { fontFamily: FONT.mono, fontWeight: '800', fontSize: 12, letterSpacing: 1, fill: T.textMuted } })
     this.paintCaption.anchor.set(0.5, 1)
