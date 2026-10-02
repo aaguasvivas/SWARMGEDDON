@@ -22,17 +22,27 @@
 //   --out=DIR         where <label>.json and <label>.md go (default docs/tuning)
 //   --daily=DATE      A14 also runs det and det-death of that day's Daily with a
 //                     fresh save (375x667) and the unlocked save (667x375)
-//   --skip-perf       leave A15 and A16 out (they need an idle machine)
+//   --baseline=FILE   an earlier matrix JSON (docs/tuning/baseline.json): the
+//                     Markdown table gets its value and result per metric and
+//                     a Change column, and each metric in the JSON its baseline
+//   --skip-perf       leave A15, A16, BENCH and S3.2 out (they need an idle machine)
+//   --report-from=FILE  run nothing: re-render FILE (a matrix JSON) as JSON and
+//                     Markdown into --out under its own label (with --baseline,
+//                     the comparison is recomputed)
 // The dev server must serve the build under test (SWG_URL, default
 // http://localhost:5176). Every headless step takes the machine-wide Chrome
-// lock, so the steps run one at a time; A15 and A16 run last.
+// lock, so the steps run one at a time; the timing steps run last, after a
+// cool-down: perf (A15), bench (BENCH, CPU per tick, reported only), the GC
+// trace (A16) and the section 3.2 allocation profile and heap growth (S3.2,
+// reported only).
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync, closeSync } from 'node:fs'
+import { existsSync, mkdirSync, openSync, readFileSync, closeSync } from 'node:fs'
 import os from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { a10Stats, a13Stats, a3Stats, fightStats, ladderStats, median, summarize } from './analyze.mjs'
 import { parseConfig, runFile } from './configs.mjs'
+import { fmt, mmss, writeReport } from './report.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '../..')
@@ -54,8 +64,22 @@ const LABEL = flags.label ?? 'baseline'
 const RUNS = resolve(flags.runs ?? `/tmp/swg-matrix/${LABEL}`)
 const OUT = resolve(flags.out ?? join(ROOT, 'docs/tuning'))
 const DAILY = flags.daily ?? null
-const ALL = ['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'A10', 'A11', 'A12', 'A13', 'A14', 'A15', 'A16', 'A17', 'A18']
-const ONLY = flags.only ? flags.only.split(',') : ALL.filter((id) => !(flags['skip-perf'] && (id === 'A15' || id === 'A16')))
+const BASELINE = flags.baseline ? JSON.parse(readFileSync(resolve(flags.baseline), 'utf8')) : null
+const ALL = ['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'A10', 'A11', 'A12', 'A13', 'A14', 'A15', 'A16', 'A17', 'A18', 'BENCH', 'S3.2']
+const TIMING = ['A15', 'A16', 'BENCH', 'S3.2']
+const ONLY = flags.only ? flags.only.split(',') : ALL.filter((id) => !(flags['skip-perf'] && TIMING.includes(id)))
+if (flags['report-from']) {
+  const saved = JSON.parse(readFileSync(resolve(flags['report-from']), 'utf8'))
+  for (const m of saved.metrics) {
+    delete m.baseline
+    delete m.change
+  }
+  saved.meta.renderedFrom = `${flags['report-from']} (node scripts/playtest/matrix.mjs ${process.argv.slice(2).join(' ')})`
+  writeReport({ meta: saved.meta, metrics: saved.metrics, baseline: BASELINE, baselineFile: flags.baseline, out: resolve(flags.out ?? join(ROOT, 'docs/tuning')) })
+  console.error(`[matrix] re-rendered ${saved.meta.label}.md and .json from ${flags['report-from']}`)
+  process.exit(0)
+}
+const PERF_PERKS = 'piercing,cryo_rounds,explosive_rounds,arc_rounds,incendiary,ricochet,f_shatter,f_firestorm'
 const SETTINGS = '{"shake":0,"reduceMotion":true,"damageNumbers":"off","flashes":false,"glow":0}'
 const BOSS_IDS = /^(queen|queenPrime|voidMatron|voidMatronPrime|emberTyrant|emberTyrantPrime)$/
 mkdirSync(RUNS, { recursive: true })
@@ -116,6 +140,8 @@ const NEEDS = {
   A16: { steps: ['gc'] },
   A17: {},
   A18: { sets: ['smartP', 'dash', 'evolve', 'roam', 'focus'] },
+  BENCH: { steps: ['bench'] },
+  'S3.2': { steps: ['alloc'] },
 }
 const wantSets = [...new Set(ONLY.flatMap((id) => NEEDS[id]?.sets ?? []))]
 const wantSteps = new Set(ONLY.flatMap((id) => NEEDS[id]?.steps ?? []))
@@ -226,8 +252,8 @@ if (wantSteps.has('det')) {
   for (const mode of ['det', 'det-long', 'det-death']) {
     d.push({ mode, view: '375x667', ...measure(['375', '667', mode], { mode, W: 375, H: 667 }, 'measure-det.log') })
     d.push({ mode, view: '667x375', ...measure(['667', '375', mode], { mode, W: 667, H: 375 }, 'measure-det.log') })
+    d.push({ mode, view: '375x667 settings', ...measure(['375', '667', mode, `--settings=${SETTINGS}`], { mode, W: 375, H: 667 }, 'measure-det.log') })
   }
-  d.push({ mode: 'det', view: '375x667 settings', ...measure(['375', '667', 'det', `--settings=${SETTINGS}`], { mode: 'det', W: 375, H: 667 }, 'measure-det.log') })
   if (DAILY) {
     for (const mode of ['det', 'det-death']) {
       d.push({ mode, daily: true, view: '375x667 fresh', ...measure(['375', '667', mode, '--mode=daily', `--date=${DAILY}`], { mode, W: 375, H: 667, runMode: 'daily', save: 'fresh' }, 'measure-det.log') })
@@ -246,6 +272,15 @@ const machine = () => {
   const swap = spawnSync('sysctl', ['-n', 'vm.swapusage'], { encoding: 'utf8' }).stdout.trim()
   return { load: os.loadavg().map((x) => +x.toFixed(2)), swap }
 }
+// The timing steps run after every bot run and headless check. A cool-down
+// first: up to 180 s for the 1-minute load average to fall under 3.
+let coolDown = null
+if (['perf', 'bench', 'gc', 'alloc'].some((s) => wantSteps.has(s))) {
+  const t0 = Date.now()
+  while (os.loadavg()[0] >= 3 && Date.now() - t0 < 180000) spawnSync('sleep', ['15'])
+  coolDown = { waitedSec: Math.round((Date.now() - t0) / 1000), ...machine() }
+  log(`cool-down ${coolDown.waitedSec} s, load ${coolDown.load.join(' ')}`)
+}
 if (wantSteps.has('perf')) {
   steps.perf = [
     { ...measure(['390', '844', 'perf', 'nova', 'hive'], { mode: 'perf', W: 390, H: 844, arenaId: 'hive' }, 'measure-perf.log'), machine: machine() },
@@ -253,21 +288,36 @@ if (wantSteps.has('perf')) {
     { ...measure(['390', '844', 'perf-final', 'nova', 'hive'], { mode: 'perf-final', W: 390, H: 844, arenaId: 'hive' }, 'measure-perf.log'), machine: machine() },
   ]
 }
+if (wantSteps.has('bench')) {
+  const m = machine()
+  steps.bench = { ...measure(['390', '844', 'bench', 'nova', 'hive', '10', `--perks=${PERF_PERKS}`], { mode: 'bench', W: 390, H: 844, arenaId: 'hive' }, 'measure-bench.log'), machine: m }
+}
 if (wantSteps.has('gc')) {
   const m = machine()
   const r = runNode('scripts/probe-alloc.mjs', ['x', 'x', '--gc', '--perks='], 'probe-alloc-gc.log')
   steps.gc = { lines: r.lines.filter((l) => l.mode === 'gc'), pageErrors: r.lines.filter((l) => l.pageErrors).flatMap((l) => l.pageErrors), machine: m }
 }
+if (wantSteps.has('alloc')) {
+  // Section 3.2: the allocation rate per scene (the PA and PB lanes' command)
+  // and the heap growth over 60 s of flood(500) after an 80 s warm-up.
+  const m = machine()
+  const r = runNode('scripts/probe-alloc.mjs', ['all', 'all', '--budget=1.0'], 'probe-alloc.log')
+  const g = runNode('scripts/probe-alloc.mjs', ['flood', 'hive', '--growth=60', '--warm=80'], 'probe-alloc-growth.log')
+  steps.alloc = {
+    lines: r.lines.filter((l) => l.mode === 'alloc'),
+    growth: g.lines.filter((l) => !l.pageErrors),
+    pageErrors: [...r.lines, ...g.lines].filter((l) => l.pageErrors).flatMap((l) => l.pageErrors),
+    machine: m,
+  }
+}
 
 // ---- metrics ------------------------------------------------------------------
-const fmt = (x, d = 2) => (x === null || x === undefined || Number.isNaN(x) ? '-' : typeof x === 'number' ? +x.toFixed(d) : x)
-const mmss = (s) => (s === null ? '-' : `${Math.floor(Math.round(s) / 60)}:${String(Math.round(s) % 60).padStart(2, '0')}`)
 const pct = (a, b) => (b ? Math.round((100 * a) / b) : 0)
 /** Seconds survived: a death's time, else the whole run (a win or a stalemate survived). */
 const survival = (s) => (s.dead ? s.endTime : (s.minutes ?? 14) * 60)
 const metrics = []
 function add(id, name, value, target, pass, details = null) {
-  metrics.push({ id, name, value, target, result: pass === null ? 'n/a' : pass === 'owner' ? 'owner' : pass ? 'PASS' : 'FAIL', details })
+  metrics.push({ id, name, value, target, result: pass === null ? 'n/a' : pass === 'owner' || pass === 'info' ? pass : pass ? 'PASS' : 'FAIL', details })
 }
 
 /** A7.2 "Target alive" bands per world and minute row, read from the appendix (it stays authoritative). */
@@ -412,19 +462,26 @@ if (has('A6')) {
     const focus = f ? { mid1: fm(f.stages.mid1), mid2: fm(f.stages.mid2), final: fm(f.stages.final) } : null
     const defLongest = d ? Math.max(0, ...d.fights.filter((x) => x.how !== 'stalemate').map((x) => x.len)) : null
     const defOver = d ? d.fights.filter((x) => x.how !== 'stalemate' && x.len > 150).map((x) => `${x.stage} ${x.len} s (${x.how}, ${x.run})`) : []
+    // Decided rule (P19, section 11 A6): the default bot's 150 s cap applies to
+    // the mid1 and mid2 fights, at most 5% of them over 150 s per world; a PRIME
+    // fight may run to the 210 s stalemate (its fights over 150 s are reported).
+    const mids = d ? d.fights.filter((x) => (x.stage === 'mid1' || x.stage === 'mid2') && x.how !== 'stalemate') : []
+    const midOver = mids.filter((x) => x.len > 150)
+    const finalOver = d ? d.fights.filter((x) => x.stage === 'final' && x.how !== 'stalemate' && x.len > 150).length : 0
+    const finals = d ? d.fights.filter((x) => x.stage === 'final').length : 0
     const defDeaths = d ? d.fights.filter((x) => x.how === 'death').length : 0
     for (const x of [f, d]) if (x && x.gaps.min !== null) gapMin = Math.min(gapMin, x.gaps.min)
     const inR = (st, lo, hi) => st && st.median !== null && st.median >= lo && st.median <= hi
-    const ok = !!focus && inR(focus.mid1, 20, 40) && inR(focus.mid2, 20, 40) && inR(focus.final, 40, 75) && defOver.length === 0
+    const ok = !!focus && inR(focus.mid1, 20, 40) && inR(focus.mid2, 20, 40) && inR(focus.final, 40, 75) && midOver.length <= 0.05 * mids.length
     if (!ok) pass = false
-    per[w] = { focus, defaultLongest: defLongest, defaultOver150: defOver, defaultFightsEndedByDeath: defDeaths, defaultFights: d ? d.fights.length : 0 }
+    per[w] = { focus, defaultLongest: defLongest, defaultMidOver150: `${midOver.length}/${mids.length}`, defaultFinalOver150: `${finalOver}/${finals}`, defaultOver150: defOver, defaultFightsEndedByDeath: defDeaths, defaultFights: d ? d.fights.length : 0 }
   }
   if (gapMin < 20) pass = false
   const v = WORLDS.map((w) => {
     const f = per[w].focus
-    return `${w} focus ${fmt(f?.mid1?.median, 1)}/${fmt(f?.mid2?.median, 1)}/${fmt(f?.final?.median, 1)} s (kills ${f?.mid1?.kills ?? 0}/${f?.mid2?.kills ?? 0}/${f?.final?.kills ?? 0}), default longest ${fmt(per[w].defaultLongest, 1)} s`
+    return `${w} focus ${fmt(f?.mid1?.median, 1)}/${fmt(f?.mid2?.median, 1)}/${fmt(f?.final?.median, 1)} s (kills ${f?.mid1?.kills ?? 0}/${f?.mid2?.kills ?? 0}/${f?.final?.kills ?? 0}), default mid fights over 150 s ${per[w].defaultMidOver150} (PRIME ${per[w].defaultFinalOver150}, longest ${fmt(per[w].defaultLongest, 1)} s)`
   })
-  add('A6', 'Fights (focus bot medians mid1/mid2/final; default bot = smart+P)', v.join('; ') + `; kill-to-next-arrival min ${gapMin === Infinity ? '-' : fmt(gapMin, 1)} s`, 'focus mid1/mid2 median 20 to 40 s, final 40 to 75 s; default bot none over 150 s except stalemate; gap >= 20 s', pass, per)
+  add('A6', 'Fights (focus bot medians mid1/mid2/final; default bot = smart+P)', v.join('; ') + `; kill-to-next-arrival min ${gapMin === Infinity ? '-' : fmt(gapMin, 1)} s`, 'focus mid1/mid2 median 20 to 40 s, final 40 to 75 s; default bot at most 5% of mid1 and mid2 fights over 150 s, a PRIME fight may run to the 210 s stalemate (P19 decision); gap >= 20 s', pass, per)
 }
 
 if (has('A7')) {
@@ -561,9 +618,9 @@ if (has('A14')) {
     }
   }
   const split = Object.entries(groups).filter(([, v]) => new Set(v.map((x) => x.hash)).size !== 1)
-  const expected = 3 * 7 + (DAILY ? 4 : 0)
+  const expected = 3 * 9 + (DAILY ? 4 : 0)
   const count = Object.values(groups).reduce((n, v) => n + v.length, 0)
-  add('A14', `Determinism (det, det-long, det-death at 375x667 and 667x375, det with the settings injection${DAILY ? ', Daily fresh and unlocked' : ''}; each with its rerun)`, `${Object.keys(groups).length} groups, ${split.length} split; reruns ${rerun ? 'match' : 'DIFFER'}; ${count}/${expected} lines`, 'one hash per mode and world across views, settings, reruns', echo && rerun && split.length === 0 && count === expected, groups)
+  add('A14', `Determinism (det, det-long, det-death at 375x667, 667x375 and 375x667 with the settings injection${DAILY ? `; det and det-death of the ${DAILY} Daily, fresh save 375x667 and unlocked save 667x375` : ''}; each with its rerun)`, `${Object.keys(groups).length} groups, ${split.length} split; reruns ${rerun ? 'match' : 'DIFFER'}; ${count}/${expected} lines`, 'one hash per mode and world across views, settings, reruns', echo && rerun && split.length === 0 && count === expected, groups)
 }
 
 if (has('A15')) {
@@ -646,6 +703,30 @@ if (has('A18')) {
   )
 }
 
+if (has('BENCH')) {
+  // Not a gate: CPU per tick under the vsync cap, to compare builds on one machine.
+  const b = steps.bench
+  const l = b.lines.find((x) => x.sim) ?? null
+  const ms = (s) => `median ${s.median}, p95 ${s.p95}, mean ${s.mean} ms`
+  add('BENCH', `CPU per tick (bench 390x844, Hive, 10 s, the 8-perk build; reported only)`, l ? `stepSim ${ms(l.sim)}; render update ${ms(l.renderUpdate)}; Pixi draw ${ms(l.pixi)}; ${l.enemies} enemies, ${l.particles} particles` : 'no result', 'none (compares builds on one machine)', 'info', { line: l, echoOk: b.echoOk, machine: b.machine, pageErrors: b.pageErrors.length })
+}
+
+if (has('S3.2')) {
+  // Not a section 11 metric: the section 3.2 allocation rates and heap growth, reported.
+  const a = steps.alloc
+  const scenes = a.lines.map((l) => ({ scene: `${l.scenario} ${l.arena}`, totalMBs: l.totalMBs, gameMBs: l.gameMBs, simOver: l.simOver, pass: l.pass }))
+  const g = a.growth[0] ?? null
+  const simOver = scenes.filter((s) => s.simOver.length)
+  add(
+    'S3.2',
+    'Allocation (probe-alloc all all --budget=1.0; heap growth over 60 s of flood(500) after an 80 s warm-up; reported only)',
+    scenes.length ? `${scenes.length} scenes, total ${Math.min(...scenes.map((s) => s.totalMBs))} to ${Math.max(...scenes.map((s) => s.totalMBs))} MB/s, game ${Math.min(...scenes.map((s) => s.gameMBs))} to ${Math.max(...scenes.map((s) => s.gameMBs))} MB/s, ${scenes.filter((s) => s.pass).length}/${scenes.length} within the probe's budget; sim functions over 0.1 MB/s in ${simOver.length} scenes; growth ${g ? `${g.growthMB} MB` : '-'}` : 'no result',
+    'section 3.2: no sim function over 0.1 MB/s; no heap growth over 60 s',
+    'info',
+    { scenes, growth: g ? { growthMB: g.growthMB, beforeMB: g.beforeMB, afterMB: g.afterMB, keptMB: g.keptMB } : null, machine: a.machine, pageErrors: a.pageErrors.length },
+  )
+}
+
 // ---- report -------------------------------------------------------------------
 const git = (...a) => spawnSync('git', a, { cwd: ROOT, encoding: 'utf8' }).stdout.trim()
 const meta = {
@@ -663,69 +744,11 @@ const meta = {
   only: ONLY,
   runsDir: RUNS,
   machineAtEnd: machine(),
+  coolDown,
   sets: Object.fromEntries(wantSets.map((id) => [id, { label: SETS[id].label, pattern: SETS[id].pattern, worlds: worldsOf(id), runs: runs.filter((r) => r.set === id).length }])),
   commands,
+  shownCommands,
 }
-writeFileSync(join(OUT, `${LABEL}.json`), JSON.stringify({ meta, metrics }, null, 1))
-
-const esc = (s) => String(s).replace(/\|/g, '\\|')
-const md = []
-md.push(`# P19 ${LABEL} matrix`, '')
-md.push(`- Commit: \`${meta.commit}\`${meta.srcDirty ? ' (src has uncommitted changes)' : ' (src clean)'}${meta.scriptsDirty ? '; the harness in scripts/ is the working tree, committed with this report' : ''}, ${meta.date}`)
-md.push(`- Command: \`${meta.command}\` (dev server at ${process.env.SWG_URL || 'http://localhost:5176'})`)
-md.push(`- Seeds: ${meta.seeds}; A12 Hive ${meta.threatSeeds}; A13 OVERTIME sets ${OT_SETS.join(', ')} (set n: T0 1001 x 30(n-1)+1..30n, T1 to T3 1001 x 10(n-1)+1..10n${OT_SEEDS ? `; quick check: the first ${OT_SEEDS} T0 and ${Math.min(OT_SEEDS, 10)} T1 to T3 seeds of each set` : ''})`)
-md.push(`- Machine at the end: load ${meta.machineAtEnd.load.join(' ')}, swap ${meta.machineAtEnd.swap}`)
-md.push('')
-md.push('| ID | Metric | Value | Target | Result |', '|---|---|---|---|---|')
-for (const m of metrics) md.push(`| ${m.id} | ${esc(m.name)} | ${esc(m.value)} | ${esc(m.target)} | ${m.result} |`)
-md.push('', '## Bot sets', '', '| Set | Config | Worlds | Runs |', '|---|---|---|---|')
-for (const [, s] of Object.entries(meta.sets)) md.push(`| ${esc(s.label)} | \`${s.pattern}\` | ${s.worlds.join(', ')} | ${s.runs} |`)
-md.push('', 'SEED is 1001 x k. Each set runs as `node scripts/playtest/playtest.mjs <world> <config>... --out=<runs dir>`; the matrix command above repeats every step.', '')
-md.push('## Details', '')
-const det = (id) => metrics.find((m) => m.id === id)?.details
-if (det('A4')) {
-  md.push('### A4 median alive per minute (smart+P)', '', 'Columns are the A7.2 rows (row 0 is 0:00 to 1:00). Each cell: median free-field alive [target band], x outside it, (n) runs alive through the minute with 10 s or more of free field; then the median over every step of the minute (cage and lull steps included).', '', `| World | ${Array.from({ length: 12 }, (_, i) => `${i}`).join(' | ')} |`, `|---|${'---|'.repeat(12)}`)
-  for (const w of WORLDS) md.push(`| ${w} | ${det('A4')[w].mins.map((x) => `${x.median === null ? '-' : fmt(x.median, 0)}${x.band === 'cage' ? ' cage' : ` [${x.band}]${x.ok === false ? ' x' : ''}`} (${x.runs}); ${x.minuteMean === null ? '-' : fmt(x.minuteMean, 0)}${x.okMinute === false ? ' x' : ''}`).join(' | ')} |`)
-  md.push('')
-}
-if (det('A6')) {
-  md.push('### A6 fights per world', '', '| World | Focus mid1 | Focus mid2 | Focus final | Default longest | Default fights over 150 s | Default fights ended by death |', '|---|---|---|---|---|---|---|')
-  const c = (s) => (s ? `${fmt(s.median, 1)} s (${s.kills} kills, ${fmt(s.min, 1)} to ${fmt(s.max, 1)}; ${s.deaths} deaths)` : '-')
-  for (const w of WORLDS) {
-    const x = det('A6')[w]
-    md.push(`| ${w} | ${c(x.focus?.mid1)} | ${c(x.focus?.mid2)} | ${c(x.focus?.final)} | ${fmt(x.defaultLongest, 1)} s | ${x.defaultOver150.length ? esc(x.defaultOver150.join('; ')) : 'none'} | ${x.defaultFightsEndedByDeath}/${x.defaultFights} |`)
-  }
-  md.push('')
-}
-if (det('A10')) {
-  md.push('### A10 deaths by set and world', '', '| Group | Deaths | Median s | Min s |', '|---|---|---|---|')
-  for (const [k, v] of Object.entries(det('A10').bySet)) md.push(`| ${esc(k)} | ${v.deaths} | ${fmt(v.median)} | ${fmt(v.min)} |`)
-  for (const [k, v] of Object.entries(det('A10').byWorld)) md.push(`| ${k} (smart family) | ${v.deaths} | ${fmt(v.median)} | ${fmt(v.min)} |`)
-  const a10 = det('A10')
-  md.push('', `Smart-family deaths under 1.2 s: ${a10.under['1.2']}; under 3.0 s: ${a10.under['3.0']}. Damage by kind inside the windows (last step at 50%+ HP to death), summed: ${esc(JSON.stringify(a10.windowDmg))}`)
-  md.push('', 'Fastest smart-family deaths (HP at the window start / max HP, damage by kind inside the window; older runs: the last 3 s):', '')
-  for (const f of a10.fastest) md.push(`- ${f.run}: ${fmt(f.fromHalfHp)} s at ${mmss(f.t)}, ${f.hpAtHalf ?? '-'}/${f.maxHp} HP, ${esc(JSON.stringify(f.dmgFromHalfByKind ?? f.dmgLast3sByKind))}`)
-  md.push('')
-}
-if (det('A3')) {
-  md.push('### A3 by set', '', '| Set | Runs | Off-rule beats | Alive max | Over row max (cage row) | Over row max (row of the minute) | Saturated share max (run) |', '|---|---|---|---|---|---|---|')
-  for (const [k, v] of Object.entries(det('A3').bySet)) md.push(`| ${esc(k)} | ${v.runs} | ${v.offRule} | ${v.maxAlive} | ${v.overRowCageMax ?? '-'} | ${v.overRowMax} | ${v.satMax} (${v.worst}) |`)
-  md.push('', 'Saturated share per minute row, all A3 runs of the world summed (steps outside a cage and an event window at 95%+ of maxAlive):', '', `| World | ${Array.from({ length: 12 }, (_, i) => `${i}`).join(' | ')} |`, `|---|${'---|'.repeat(12)}`)
-  for (const [w, rows] of Object.entries(det('A3').byRow)) md.push(`| ${w} | ${rows.map((x) => (x === null ? '-' : x)).join(' | ')} |`)
-  md.push('')
-}
-if (det('A14')) {
-  md.push('### A14 hashes', '', '| Mode and world | Hashes (view) |', '|---|---|')
-  for (const [k, v] of Object.entries(det('A14'))) md.push(`| ${k} | ${v.map((x) => `${x.hash} (${x.view}${x.end ? `, ${x.end} at ${x.time} s` : ''}${x.rerunMatch ? '' : ', RERUN DIFFERS'})`).join('; ')} |`)
-  md.push('')
-}
-if (det('A15')) {
-  md.push('### A15 machine state per perf run', '')
-  for (const x of det('A15')) md.push(`- \`${x.args.join(' ')}\`: load ${x.machine.load.join(' ')}, ${x.machine.swap}; sim ${x.line?.simTimeStart} to ${x.line?.simTimeEnd} s; echo ${x.echoOk ? 'ok' : 'MISMATCH'}`)
-  md.push('')
-}
-md.push('## Commands run', '', 'Each config pattern stands for one config per seed in its range (meta.commands in the JSON lists them in full).', '', '```', ...shownCommands, '```', '')
-md.push(`Raw runs: \`${RUNS}\` (not kept). The JSON next to this file holds every metric's details.`, '')
-writeFileSync(join(OUT, `${LABEL}.md`), md.join('\n'))
+writeReport({ meta, metrics, baseline: BASELINE, baselineFile: flags.baseline, out: OUT })
 for (const m of metrics) console.log(`${m.id.padEnd(4)} ${m.result.padEnd(5)} ${m.value}`)
 log(`wrote ${join(OUT, LABEL + '.md')} and ${LABEL}.json`)
