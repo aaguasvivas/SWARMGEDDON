@@ -204,7 +204,7 @@ Depths, `smart+human:SEED:14:nova:priority` (smart+P) and `smart+human:SEED:14` 
 | x1.5 (chosen) | 25/60 (11, 14) | 10/60 (7, 3) | 3.97 s (33), 0.83 s | 20/60, 4.05 s (39) | 9:27 | 6:00 to 7:00, 0.42 (0.44) | shot 1,767.6, bite 2,133.9 (53.6, 64.7) |
 | x1.45 | 24/60 (8, 16) | 14/60 (9, 5) | 4.05 s (33), 0.82 s | - | 10:11 | 6:00 to 7:00, 0.33 | shot 1,817.9, bite 1,939.6 (55.1, 58.8) |
 
-At x1.5 the median window rises by about a second on both seed sets, and the bites inside the windows fall from 2,578 to 2,134 HP on seeds 1 to 60 (on the holdout the per-death bite damage rose, 61.8 to 68.3 HP, while the window still lengthened). A7 stays in band (smart+P 42%, smart 17%). The busiest-minute share moves inside its seed spread: x1.55 already reads 0.41 on the holdout.
+At x1.5 the median window rises by about a second on both seed sets, and the bites inside the windows fall from 2,578 to 2,134 HP on seeds 1 to 60 (on the holdout the per-death bite damage rose, 61.8 to 68.3 HP, while the window still lengthened). A7 stays in band (smart+P 42%, smart 17%). The busiest-minute share rose on both seed sets (0.31 to 0.42, and 0.41 to 0.44 on the holdout), so these two sets could not call the rise noise, as this section first did; the closeout fixes (7.6) measure two more 60-seed sets per aura: the share's spread between sets is as large at every aura value, and x1.5 is the one value whose A10 median passes on all four sets.
 
 ### 7.2 A13 from the OVERTIME start (decision 3)
 
@@ -217,11 +217,11 @@ The closeout matrix's OVERTIME runs (sets 1 and 2; Depths and Wastes T0 of the s
 | Depths sets 1+2 | 25 | 21 (84%) | 22 (88%) | 24 (96%) | 25 (100%) | 25 (100%) | 0 | 10:47 to 13:53 | 6:37, 7:46, 6:09 |
 | Wastes sets 1+2 | 25 | 19 (76%) | 20 (80%) | 23 (92%) | 25 (100%) | 21 (84%) | 0 | 10:48 to 14:01 | 6:17, 7:08, 6:44, 6:15, 7:04 |
 
-**A13 fails under the decided window in every set.** Cycle 3 starts 6:00 into OVERTIME, and every run that lives past the window dies early in it (6:09 to 7:46). The four Wastes late winners that failed the 20:00 clock (OVERTIME from 13:16 to 14:01) die 6:15 to 7:08 into OVERTIME, so they fail the new window too, and earlier winners that died before 20:00 but more than 6:00 into OVERTIME (17:38 to 19:27) now fail as well: 14 runs miss the window against 7 that missed the clock. A 7:00 window passes every set (92% or more); 8:00 gives 100%. Owner decision: the window, or a faster end of cycle 2 (`speedMul`, the phone check of finding 8).
+**A13 fails under the decided window in every set.** (The main session then set the window to 7:00; the closeout fixes, 7.6, score it: PASS.) Cycle 3 starts 6:00 into OVERTIME, and every run that lives past the window dies early in it (6:09 to 7:46). The four Wastes late winners that failed the 20:00 clock (OVERTIME from 13:16 to 14:01) die 6:15 to 7:08 into OVERTIME, so they fail the new window too, and earlier winners that died before 20:00 but more than 6:00 into OVERTIME (17:38 to 19:27) now fail as well: 14 runs miss the window against 7 that missed the clock. A 7:00 window passes every set (92% or more); 8:00 gives 100%. Owner decision: the window, or a faster end of cycle 2 (`speedMul`, the phone check of finding 8).
 
 ### 7.3 OVERTIME cycle banner (decision 8)
 
-No cycle banner existed (OVERTIME advanced `otCycle` silently), so the closeout adds one to the callout lane, the one banner system (C17): `FeelDirector.update` watches `world.director.otCycle` and, once play resumes, shows `OVERTIME` over `CYCLE n` (priority 3, 3.0 s, `accentDanger`); from cycle 2 the sub takes a second line with the healing cut, `1 - OVERTIME.healMul^(c-1)`: `HEALING -75%` in cycle 2, `HEALING -94%` in cycle 3. Regen, kill healing and draft heals take that cut, and the kill medkit drop chance falls by the same factor (`medkitMul` equals `healMul`), so the line holds for the healing the player gets; a medkit that drops still heals in full. The title and sub use the lane's fonts and INK stroke.
+No cycle banner existed (OVERTIME advanced `otCycle` silently), so the closeout adds one to the callout lane, the one banner system (C17): `FeelDirector.update` watches `world.director.otCycle` and, once play resumes, shows `OVERTIME` over `CYCLE n` (priority 3, 3.0 s, `accentDanger`); from cycle 2 the sub takes a second line with the healing cut, `1 - OVERTIME.healMul^(c-1)`: `HEALING -75%` in cycle 2, `HEALING -94%` in cycle 3. Regen, kill healing and draft heals take that cut, and the kill medkit drop chance falls by the same factor (`medkitMul` equals `healMul`); a medkit that drops still heals in full. The title and sub use the lane's fonts and INK stroke. Corrected in the closeout fixes (7.6): elite and boss medkits are neither cut nor thinned, so this line did not hold for the healing a player gets, and the copy is now `FEWER MEDKITS · OTHER HEALING -75%`.
 
 `node scripts/probe-ot-banner.mjs --prefix=p19-ot-banner- --out=docs/v2-shots` plays a Hive run into OVERTIME (the ship held alive), screenshots the cycle 1 and cycle 2 banners at 375x667, 667x375 and 390x844 (safe-area insets 47 top, 34 bottom), and checks the text, the safe width, the HUD stack (the boss plate in cycle 2), 12 px text and the rendered contrast. Result: no fails at any size; the title fill #ff5a6e reads 6.66:1 and the sub #f8949e 9.32:1 on the INK stroke. The six screenshots (`docs/v2-shots/p19-ot-banner-c1-375x667.png` and the rest) show no overlap or clipping; in cycle 2 the banner sits under the boss plate.
 
@@ -233,9 +233,9 @@ No cycle banner existed (OVERTIME advanced `otCycle` silently), so the closeout 
 |---|---|---|
 | A6 | PASS, re-scored | the PRIME median is reported (Hive 166.7, Depths 116.7, Wastes 162.2 s); Depths focus 21.6 / 22.6 / 54.3 s (kills 89 / 55 / 30; was 24.1 and 44.6 s for mid2 and PRIME) |
 | A7 | FAIL (Hive only, decision 2) | Depths smart+P 24/60 to 25/60, smart 13/60 to 10/60; Hive and Wastes unchanged |
-| A8 | FAIL, re-scored | Wastes crude no longer scored; Depths smart 7:06 to 8:19, smart+P 9:55 to 9:27; Depths busiest minute 0.31 to 0.42 (7.1); Hive crude 3:12 under Depths 3:17 (unchanged) |
-| A10 | FAIL (minimum only) | pooled 4.1 to 4.7 s; Depths smart+P 2.72 to 3.97 s; minimum 0.42 s (Hive smart seed 8008) |
-| A13 | FAIL, re-scored | 7.2 |
+| A8 | FAIL, re-scored | Wastes crude no longer scored; Depths smart 7:06 to 8:19, smart+P 9:55 to 9:27; Depths busiest minute 0.31 to 0.42 (7.1; over four 60-seed sets 0.25 to 0.41 at x1.55 and 0.29 to 0.44 at x1.5, 7.6); Hive crude 3:12 under Depths 3:17 (unchanged) |
+| A10 | FAIL (minimum only) | pooled 4.1 to 4.7 s; Depths smart+P 2.72 to 3.97 s; minimum 0.42 s (Hive smart seed 8008); the Depths smart+P minimum fell from 1.22 to 0.83 s, under the 1.2 s floor (closeout fixes; the Depths smart-family minimum was already 0.82 s and reads 0.83 s; deaths under 1.2 s 7 to 8) |
+| A13 | PASS, re-scored (closeout fixes: 7:00 window) | 7.2; at 6:00 it read FAIL (16/19, 22/25, 22/25, 20/25), at the decided 7:00 18/19, 25/25, 24/25, 23/25 |
 | A14 | PASS | 31/31 lines; det-long Depths ba6215aa to ac3ded04, every other hash kept |
 | A18 | PASS | Depths dash 5.62x to 2.7x per death; XP min 0.933 to 0.912 |
 | A1 to A5, A9, A11, A12 | unchanged results | A5 398 arrivals (was 400); Depths A9 L9 / L17 / L22 (was L21.5 at 11:00) |
@@ -256,3 +256,40 @@ node scripts/probe-ot-banner.mjs --prefix=p19-ot-banner- --out=docs/v2-shots
 ```
 
 Raw runs are deleted after this report; the tables above are the record.
+
+### 7.6 Closeout fixes (adversarial verification of the closeout)
+
+Commit `v2 P19: closeout fixes`. Five findings; each was checked against the runs, the code or the stored matrix.
+
+| # | Finding | Verdict | Applied |
+|---|---|---|---|
+| 1 | The Depths busiest-minute rise (0.31 to 0.42 on seeds 1 to 60) is the aura's, not seed noise, and x1.45 avoids it | Partly right. The closeout's claim that the share "is not the aura's" was not shown by its two sets, which both rose. On two more 60-seed sets the rise does not repeat (table below), and x1.45 fails the same clause on one set and the A10 median on two | x1.5 kept; the table below; 7.1, 7.4 and the section 11 closeout note corrected |
+| 2 | A13 is scored at 6:00, but the decision after the closeout is 7:00 | Right | `A13_OT_WINDOW` 420, exported from `analyze.mjs` and imported by `otreport.mjs`, `matrix.mjs` and `report.mjs`; the field `within6` is now `inWindow` and every label comes from the constant; `matrix.mjs --report-from` re-scores A13 from the runs its details keep; `final.md`, `final.json` and the A13 cells of `final-ot.md` re-scored: PASS |
+| 3 | `HEALING -75%` and the doc claim leave out elite and boss medkits | Right: `collision.ts` drops a 14 HP medkit on every elite kill and five of them on a boss kill, which `medkitMul` does not touch, and `pickups.ts` heals them in full; in 6 of the 14 runs that died in cycle 3, the cycle-2 healing equals the cycle-2 damage within 1 HP (`final-ot.md`) | Copy, not the sim: `FEWER MEDKITS · OTHER HEALING -75%` (`-94%` in cycle 3). Thinning elite and boss medkits would be a new OVERTIME balance change that no decision covers, and A13 would need new runs. Section 4.1, A15 and 7.3 corrected. The callout lane now places a sub of any line count under the title (the sub breaks at its `·` on a screen too narrow for 12 px) |
+| 4 | The Depths A10 minimum fell under 1.2 s and the closeout report did not say so | Right: Depths smart+P minimum 1.22 to 0.83 s (seeds 1 to 60) | 7.4 A10 cell; section 11 closeout note |
+| 5 | WORLDS-SPEC wraith speed under the aura is stale | Right: 116 x 1.5 = 174 | `docs/WORLDS-SPEC.md` ~174 |
+
+**Depths aura on four disjoint 60-seed sets** (`smart+human:SEED:14:nova:priority`, smart+P; seeds 1 to 60 and the x1.55 and x1.5 holdout are the 7.1 runs, the rest are new):
+
+| Aura | Seeds | smart+P wins | A10 smart+P median (deaths), min | Deaths at 6:00 to 7:00 (share; the busiest minute in every set) | smart+P median survival |
+|---|---|---|---|---|---|
+| x1.55 | 1..60 | 24/60 | 2.72 s (35), 1.22 s | 11/35 (0.31) | 9:55 |
+| x1.55 | 61..120 | 24/60 | 3.02 s (34), 1.65 s | 14/34 (0.41) | 9:33 |
+| x1.55 | 121..180 | 27/60 | 3.13 s (31), 1.13 s | 12/31 (0.39) | 10:35 |
+| x1.55 | 181..240 | 23/60 | 2.73 s (36), 0.97 s | 9/36 (0.25) | 9:17 |
+| x1.55 | all 240 | 98/240 (41%) | 2 of 4 sets pass 3.0 s | 46/136 (0.34) | |
+| x1.5 (committed) | 1..60 | 25/60 | 3.97 s (33), 0.83 s | 14/33 (0.42) | 9:27 |
+| x1.5 | 61..120 | 20/60 | 4.05 s (39), 1.22 s | 17/39 (0.44) | 8:48 |
+| x1.5 | 121..180 | 30/60 | 3.53 s (29), 0.92 s | 9/29 (0.31) | 14:00 |
+| x1.5 | 181..240 | 24/60 | 3.37 s (34), 0.98 s | 10/34 (0.29) | 9:40 |
+| x1.5 | all 240 | 99/240 (41%) | 4 of 4 sets pass 3.0 s | 50/135 (0.37) | |
+| x1.45 | 1..60 | 24/60 | 4.05 s (33), 0.82 s | 11/33 (0.33) | 10:11 |
+| x1.45 | 61..120 | 23/60 | 3.37 s (35), 1.17 s | 8/35 (0.23) | 9:41 |
+| x1.45 | 121..180 | 32/60 | 2.78 s (26), 1.18 s | 11/26 (0.42) | 14:00 |
+| x1.45 | 181..240 | 25/60 | 2.73 s (33), 0.97 s | 11/33 (0.33) | 10:04 |
+| x1.45 | all 240 | 104/240 (43%) | 2 of 4 sets pass 3.0 s | 41/127 (0.32) | |
+
+- The minute-6 share spreads 0.25 to 0.41 between sets at x1.55, 0.29 to 0.44 at x1.5 and 0.23 to 0.42 at x1.45. Over 240 seeds it reads 0.34, 0.37 and 0.32; one standard error of a difference between two of these is about 0.06, so the aura step does not move it beyond the noise. The 6:00 to 7:00 concentration is a property of the Depths rows at every aura value, and at 60 seeds the 35% clause passes or fails by seed set. Owner: accept it like decision 6 (Wastes), or change Depths content in minute 6.
+- x1.5 is the one value whose Depths A10 median passes 3.0 s on all four sets; x1.45 reads 2.78 and 2.73 s on seeds 121 to 240. The wins and survival that fell at x1.5 on the holdout (24 to 20 of 60; 9:33 to 8:48) rise on the new sets (30 and 24 of 60 against 27 and 23 at x1.55): 98, 99 and 104 of 240 in all, inside the spread. x1.5 stays.
+- The A10 minimum stays under 1.2 s in some set at every aura value (0.82 to 1.65 s); the pooled matrix minimum, 0.42 s, is a Hive smart death.
+- Commands: the aura set in `src/content/enemies.ts` per arm, then `node scripts/playtest/playtest.mjs depths smart+human:SEED:14:nova:priority --out=/tmp/swg-cf/<arm>` with SEED = 1001 x 61..120 (x1.45) and 1001 x 121..240 (each value); A13: `node scripts/playtest/matrix.mjs --report-from=docs/tuning/final.json --baseline=docs/tuning/baseline.json --out=docs/tuning`; the banner: `node scripts/probe-ot-banner.mjs --prefix=p19-ot-banner-fix- --out=docs/v2-shots` (PASS at 375x667, 667x375 and 390x844: the cycle-2 sub is 323.6 px wide at 14 px, title 6.66:1 and sub 9.32:1 on the INK stroke). det at 375x667 keeps 642fbc46, 1365ccb6 and d3c8cef6, and det-long af0a9917, ac3ded04 and 2ee8fbee (presentation only). Raw runs deleted after this report.

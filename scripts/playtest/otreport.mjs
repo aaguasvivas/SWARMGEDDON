@@ -14,6 +14,7 @@
 // cycles are counted per world (P19 review: A13 in Depths and Wastes too).
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { A13_OT_WINDOW, A13_OT_WINDOW_TEXT } from './analyze.mjs'
 
 const args = process.argv.slice(2)
 const dir = args.find((a) => !a.startsWith('--'))
@@ -23,8 +24,6 @@ const perRun = args.includes('--runs')
 if (!dir) throw new Error('usage: otreport.mjs <runs dir>')
 
 const CYCLE = 180
-/** A13: OVERTIME runs must end within this many seconds of their OVERTIME start. */
-const OT_WINDOW = 360
 const setOf = (threat, k) => Math.ceil(k / (threat === 0 ? 30 : 10))
 const median = (a) => {
   if (!a.length) return null
@@ -88,9 +87,9 @@ for (const f of readdirSync(dir)) {
     dead: r.dead,
     otSec: r1(otSec),
     deathCycle: r.dead ? Math.floor((end - ot0) / CYCLE) + 1 : null,
-    // A13 (re-scored in the P19 closeout): dead within 6:00 of the OVERTIME
-    // start; by20 is the old measure, dead by 20:00 of the run clock.
-    within6: r.dead && end - ot0 <= OT_WINDOW,
+    // A13 (re-scored in the P19 closeout): dead within A13_OT_WINDOW of the
+    // OVERTIME start; by20 is the old measure, dead by 20:00 of the run clock.
+    inWindow: r.dead && end - ot0 <= A13_OT_WINDOW,
     by20: r.dead && end <= 1200,
     past24: !r.dead || end > 1440,
     caged: r.otSteps ? r2(r.otCagedSteps / r.otSteps) : null,
@@ -113,9 +112,9 @@ runs.sort((a, b) => wi(a.world) - wi(b.world) || a.set - b.set || a.threat - b.t
 const sets = {}
 for (const r of runs) {
   const key = `${r.world} ${r.set}`
-  const e = (sets[key] ??= { n: 0, within6: 0, by20: 0, past24: 0 })
+  const e = (sets[key] ??= { n: 0, inWindow: 0, by20: 0, past24: 0 })
   e.n++
-  if (r.within6) e.within6++
+  if (r.inWindow) e.inWindow++
   if (r.by20) e.by20++
   if (r.past24) e.past24++
 }
@@ -125,7 +124,7 @@ for (const r of both) {
   const key = `${r.world} ${r.dead ? `c${r.deathCycle}` : 'alive'}`
   deathCycles[key] = (deathCycles[key] ?? 0) + 1
 }
-const late = both.filter((r) => r.dead && !r.within6)
+const late = both.filter((r) => r.dead && !r.inWindow)
 const rates = both.map((r) => r.bonus.perMin).filter((x) => x !== null)
 const beatAll = both.flatMap((r) => r.beats.map((b) => ({ ...b, run: r.file })))
 const beatStats = {
@@ -136,7 +135,7 @@ const beatStats = {
 const out = {
   dir,
   sets,
-  total: { n: both.length, within6: both.filter((r) => r.within6).length, by20: both.filter((r) => r.by20).length, past24: both.filter((r) => r.past24).length },
+  total: { n: both.length, inWindow: both.filter((r) => r.inWindow).length, by20: both.filter((r) => r.by20).length, past24: both.filter((r) => r.past24).length },
   deathCycles,
   medianOtSec: median(both.map((r) => r.otSec)),
   medianCaged: median(both.map((r) => r.caged).filter((x) => x !== null)),
@@ -158,8 +157,8 @@ if (jsonOut) writeFileSync(jsonOut, JSON.stringify(out, null, 1))
 
 const mmss = (s) => `${Math.floor(Math.round(s) / 60)}:${String(Math.round(s) % 60).padStart(2, '0')}`
 const pct = (a, b) => (b ? Math.round((100 * a) / b) : 0)
-for (const [s, e] of Object.entries(sets)) console.log(`set ${s}: ${e.within6}/${e.n} (${pct(e.within6, e.n)}%) dead within 6:00 of the OVERTIME start, ${e.past24} alive past 24:00 (old measure: ${e.by20}/${e.n} dead by 20:00)`)
-console.log(`A13 sets ${Object.keys(sets).join('+')}: ${out.total.within6}/${out.total.n} (${pct(out.total.within6, out.total.n)}%) dead within 6:00 of the OVERTIME start, ${out.total.past24} past 24:00 (old measure: ${out.total.by20}/${out.total.n} dead by 20:00); death cycle ${JSON.stringify(deathCycles)}; median OT ${out.medianOtSec} s, caged ${out.medianCaged}`)
+for (const [s, e] of Object.entries(sets)) console.log(`set ${s}: ${e.inWindow}/${e.n} (${pct(e.inWindow, e.n)}%) dead within ${A13_OT_WINDOW_TEXT} of the OVERTIME start, ${e.past24} alive past 24:00 (old measure: ${e.by20}/${e.n} dead by 20:00)`)
+console.log(`A13 sets ${Object.keys(sets).join('+')}: ${out.total.inWindow}/${out.total.n} (${pct(out.total.inWindow, out.total.n)}%) dead within ${A13_OT_WINDOW_TEXT} of the OVERTIME start, ${out.total.past24} past 24:00 (old measure: ${out.total.by20}/${out.total.n} dead by 20:00); death cycle ${JSON.stringify(deathCycles)}; median OT ${out.medianOtSec} s, caged ${out.medianCaged}`)
 console.log(`bonus in OT: median ${out.bonus.medianPerMin}/min, max ${out.bonus.maxPerMin}/min, busiest 120 s ${out.bonus.max120} (median ${out.bonus.medianMax120}), 180 s ${out.bonus.max180}; runs over 3/min: ${out.bonus.over3.length ? out.bonus.over3.join('; ') : 'none'}; same runs 2:00 to the win: median ${out.bonus.pre.medianPerMin}/min, max ${out.bonus.pre.maxPerMin}, busiest 120 s ${out.bonus.pre.max120} (median ${out.bonus.pre.medianMax120})`)
 console.log(`OT beats: ${out.beats.fired} fired (latest ${out.beats.lateMax} s late), ${out.beats.dropped} dropped${out.beats.dropped ? ': ' + out.beats.droppedList.slice(0, 12).join('; ') : ''}`)
 for (const r of [...late, ...both.filter((x) => !x.dead)]) {
@@ -174,8 +173,8 @@ if (perRun) {
 
 if (mdOut) {
   const md = [`# OVERTIME report: ${dir}`, '', `Command: \`node scripts/playtest/otreport.mjs ${args.join(' ')}\``, '']
-  md.push('| World and set | Dead within 6:00 of the OVERTIME start (A13, re-scored in the P19 closeout) | Alive past 24:00 | Dead by 20:00 (old measure) |', '|---|---|---|---|')
-  for (const [s, e] of Object.entries(sets)) md.push(`| ${s} | ${e.within6}/${e.n} (${pct(e.within6, e.n)}%) | ${e.past24} | ${e.by20}/${e.n} (${pct(e.by20, e.n)}%) |`)
+  md.push(`| World and set | Dead within ${A13_OT_WINDOW_TEXT} of the OVERTIME start (A13, re-scored in the P19 closeout) | Alive past 24:00 | Dead by 20:00 (old measure) |`, '|---|---|---|---|')
+  for (const [s, e] of Object.entries(sets)) md.push(`| ${s} | ${e.inWindow}/${e.n} (${pct(e.inWindow, e.n)}%) | ${e.past24} | ${e.by20}/${e.n} (${pct(e.by20, e.n)}%) |`)
   md.push('', `- Death cycle: ${JSON.stringify(deathCycles)}; median time in OVERTIME ${out.medianOtSec} s; median caged share ${out.medianCaged}.`)
   md.push(`- Bonus drops in OVERTIME (per run with 120 s or more of it): median ${out.bonus.medianPerMin} a minute, max ${out.bonus.maxPerMin}; busiest 120 s window ${out.bonus.max120} (median ${out.bonus.medianMax120}), busiest 180 s ${out.bonus.max180}; runs over 3 a minute: ${out.bonus.over3.length ? out.bonus.over3.join('; ') : 'none'}. The same runs from 2:00 to the win: median ${out.bonus.pre.medianPerMin} a minute, max ${out.bonus.pre.maxPerMin}; busiest 120 s window ${out.bonus.pre.max120} (median ${out.bonus.pre.medianMax120}).`)
   md.push(`- OVERTIME beats: ${out.beats.fired} fired (the latest ${out.beats.lateMax} s late), ${out.beats.dropped} dropped${out.beats.dropped ? ': ' + out.beats.droppedList.join('; ') : ''}.`, '')

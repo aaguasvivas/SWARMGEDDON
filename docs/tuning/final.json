@@ -2939,9 +2939,9 @@
   {
    "id": "A13",
    "name": "Overtime, re-scored from the OVERTIME start (P19 closeout; runs that won: Hive OVERTIME sets 1 and 2; depths and wastes T0 of the same sets)",
-   "value": "hive set 1 16/19 (84%) dead within 6:00 of the OVERTIME start, 0 past 24:00 [old measure: 18/19 (95%) dead by 20:00]; set 2 22/25 (88%) dead within 6:00 of the OVERTIME start, 0 past 24:00 [old measure: 23/25 (92%) dead by 20:00]; all 38/44 (86%) [old measure: 41/44 (93%) dead by 20:00]; depths T0 sets 1 and 2 22/25 (88%) dead within 6:00 of the OVERTIME start, 0 past 24:00 [old measure: 25/25 (100%) dead by 20:00]; wastes T0 sets 1 and 2 20/25 (80%) dead within 6:00 of the OVERTIME start, 0 past 24:00 [old measure: 21/25 (84%) dead by 20:00]",
-   "target": ">= 90% dead within 6:00 of their OVERTIME start and none past 24:00, in each Hive set and in depths and wastes (sets pooled)",
-   "result": "FAIL",
+   "value": "hive set 1 18/19 (95%) dead within 7:00 of the OVERTIME start, 0 past 24:00 [old measure: 18/19 (95%) dead by 20:00]; set 2 25/25 (100%) dead within 7:00 of the OVERTIME start, 0 past 24:00 [old measure: 23/25 (92%) dead by 20:00]; all 43/44 (98%) [old measure: 41/44 (93%) dead by 20:00]; depths T0 sets 1 and 2 24/25 (96%) dead within 7:00 of the OVERTIME start, 0 past 24:00 [old measure: 25/25 (100%) dead by 20:00]; wastes T0 sets 1 and 2 23/25 (92%) dead within 7:00 of the OVERTIME start, 0 past 24:00 [old measure: 21/25 (84%) dead by 20:00]",
+   "target": ">= 90% dead within 7:00 of their OVERTIME start and none past 24:00, in each Hive set and in depths and wastes (sets pooled)",
+   "result": "PASS",
    "details": {
     "hive": {
      "runs": [
@@ -3343,19 +3343,19 @@
       }
      ],
      "n": 44,
-     "within6": 38,
+     "inWindow": 43,
      "by20": 41,
      "past24": 0,
      "bySet": {
       "1": {
        "n": 19,
-       "within6": 16,
+       "inWindow": 18,
        "by20": 18,
        "past24": 0
       },
       "2": {
        "n": 25,
-       "within6": 22,
+       "inWindow": 25,
        "by20": 23,
        "past24": 0
       }
@@ -3590,19 +3590,19 @@
       }
      ],
      "n": 25,
-     "within6": 22,
+     "inWindow": 24,
      "by20": 25,
      "past24": 0,
      "bySet": {
       "1": {
        "n": 11,
-       "within6": 10,
+       "inWindow": 11,
        "by20": 11,
        "past24": 0
       },
       "2": {
        "n": 14,
-       "within6": 12,
+       "inWindow": 13,
        "by20": 14,
        "past24": 0
       }
@@ -3837,19 +3837,19 @@
       }
      ],
      "n": 25,
-     "within6": 20,
+     "inWindow": 23,
      "by20": 21,
      "past24": 0,
      "bySet": {
       "1": {
        "n": 13,
-       "within6": 10,
+       "inWindow": 11,
        "by20": 11,
        "past24": 0
       },
       "2": {
        "n": 12,
-       "within6": 10,
+       "inWindow": 12,
        "by20": 10,
        "past24": 0
       }
@@ -3863,7 +3863,7 @@
     "targetChanged": true,
     "nameThen": "Overtime (Hive OVERTIME sets 1 and 2, runs that won)"
    },
-   "change": "re-scored, FAIL, same: Hive dead by 20:00 76% to 93%; alive past 24:00 4 to 0"
+   "change": "re-scored, FAIL to PASS: Hive dead by 20:00 76% to 93%; alive past 24:00 4 to 0"
   },
   {
    "id": "A14",

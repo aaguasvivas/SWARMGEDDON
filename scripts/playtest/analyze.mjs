@@ -382,27 +382,35 @@ export function ladderStats(out) {
   }))
 }
 
-/** A13 OVERTIME end over the runs that won and went on (cfg.ot): dead within 6:00 of the OVERTIME start
- *  (P19 closeout re-score), alive past 24:00 (1440 s), and the old measure, dead by 20:00 (1200 s).
- *  Per OVERTIME set too: set n holds T0 seeds 1001 x 30(n-1)+1..30n and T1 to T3 seeds 1001 x 10(n-1)+1..10n. */
-export const A13_OT_WINDOW = 360
-export function a13Stats(out) {
-  const runs = out.filter((s) => s.ot && s.won)
-  if (!runs.length) return null
+/** A13 (re-scored in the P19 closeout): an OVERTIME run must end within this many seconds of its own
+ *  OVERTIME start. 7:00, decided after the closeout: the original target, dead by 20:00, assumed
+ *  OVERTIME starts near 13:00. otreport.mjs, matrix.mjs and report.mjs read it from here. */
+export const A13_OT_WINDOW = 420
+/** The A13 window as m:ss, for labels. */
+export const A13_OT_WINDOW_TEXT = `${Math.floor(A13_OT_WINDOW / 60)}:${String(A13_OT_WINDOW % 60).padStart(2, '0')}`
+
+/** A13 tallies over OVERTIME runs in the shape the matrix JSON keeps ({ set, otStart, dead, endTime }):
+ *  dead within A13_OT_WINDOW of the OVERTIME start (inWindow), the old measure, dead by 20:00 (1200 s),
+ *  and alive past 24:00 (1440 s); in all and per set. A saved matrix is re-scored from these runs. */
+export function a13Tally(runs) {
   const count = (rs) => ({
     n: rs.length,
-    within6: rs.filter((s) => s.dead && s.otStart !== null && s.endTime - s.otStart <= A13_OT_WINDOW).length,
+    inWindow: rs.filter((s) => s.dead && s.otStart !== null && s.endTime - s.otStart <= A13_OT_WINDOW).length,
     by20: rs.filter((s) => s.dead && s.endTime <= 1200).length,
     past24: rs.filter((s) => !s.dead || s.endTime > 1440).length,
   })
-  const setOf = (s) => Math.ceil(s.seed / 1001 / (s.threat ? 10 : 30))
   const bySet = {}
-  for (const k of [...new Set(runs.map(setOf))].sort((a, b) => a - b)) bySet[k] = count(runs.filter((s) => setOf(s) === k))
-  return {
-    runs: runs.map((s) => ({ file: s.file, set: setOf(s), otStart: s.otStart, otCycle: s.otCycle, dead: s.dead, endTime: s.endTime, level: s.finalLevel })),
-    ...count(runs),
-    bySet,
-  }
+  for (const k of [...new Set(runs.map((s) => s.set))].sort((a, b) => a - b)) bySet[k] = count(runs.filter((s) => s.set === k))
+  return { runs, ...count(runs), bySet }
+}
+
+/** A13 OVERTIME end over the runs that won and went on (cfg.ot), per a13Tally.
+ *  Per OVERTIME set too: set n holds T0 seeds 1001 x 30(n-1)+1..30n and T1 to T3 seeds 1001 x 10(n-1)+1..10n. */
+export function a13Stats(out) {
+  const runs = out.filter((s) => s.ot && s.won)
+  if (!runs.length) return null
+  const setOf = (s) => Math.ceil(s.seed / 1001 / (s.threat ? 10 : 30))
+  return a13Tally(runs.map((s) => ({ file: s.file, set: setOf(s), otStart: s.otStart, otCycle: s.otCycle, dead: s.dead, endTime: s.endTime, level: s.finalLevel })))
 }
 
 function printReport(out) {
@@ -461,11 +469,11 @@ function printReport(out) {
     console.log(`A12 ${key}: ${byThreat.map((e) => `T${e.threat} ${e.wins}/${e.runs} (${Math.round((100 * e.wins) / e.runs)}%) median end ${e.medianEnd}`).join(' | ')}`)
   }
 
-  // A13 OVERTIME end: 90% or more dead within 6:00 of the OVERTIME start, none alive past 24:00 (P19 closeout).
+  // A13 OVERTIME end: 90% or more dead within A13_OT_WINDOW of the OVERTIME start, none alive past 24:00 (P19 closeout).
   const a13 = a13Stats(out)
   if (a13) {
     for (const s of a13.runs) console.log(`A13 ${s.file} clear->OT at ${s.otStart} cycle ${s.otCycle} ${s.dead ? 'dead' : 'ALIVE'} at ${s.endTime} (${(s.endTime / 60).toFixed(2)} min, ${s.otStart !== null ? ((s.endTime - s.otStart) / 60).toFixed(2) : '-'} min into OVERTIME) L${s.level}`)
-    console.log(`A13 OT runs=${a13.n} dead within 6:00 of the OVERTIME start ${a13.within6} (${Math.round((100 * a13.within6) / a13.n)}%, pass >= 90%); alive past 24:00 or unfinished ${a13.past24} (pass: 0); old measure, dead by 20:00 ${a13.by20} (${Math.round((100 * a13.by20) / a13.n)}%)`)
+    console.log(`A13 OT runs=${a13.n} dead within ${A13_OT_WINDOW_TEXT} of the OVERTIME start ${a13.inWindow} (${Math.round((100 * a13.inWindow) / a13.n)}%, pass >= 90%); alive past 24:00 or unfinished ${a13.past24} (pass: 0); old measure, dead by 20:00 ${a13.by20} (${Math.round((100 * a13.by20) / a13.n)}%)`)
   }
 }
 

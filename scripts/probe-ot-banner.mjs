@@ -1,12 +1,12 @@
 // OVERTIME cycle banner (P19 closeout): the callout each OVERTIME cycle opens
 // with, `OVERTIME` over `CYCLE n`, and from cycle 2 a second sub line naming
-// the healing cut (`HEALING -75%`, from OVERTIME.healMul). Plays a Hive run
-// into OVERTIME (the ship held alive), screenshots the cycle 1 and cycle 2
-// banners at each size, and checks per banner: the lines read as written, the
-// callout sits inside the safe width and clears the HUD stack, every Text is
-// at least 12 px, and the rendered fill of each line against its INK stroke
-// is 4.5:1 or more (the glyph and stroke pixels inside the line's box in the
-// screenshot).
+// the healing cuts (`FEWER MEDKITS · OTHER HEALING -75%`, the percentage from
+// OVERTIME.healMul). Plays a Hive run into OVERTIME (the ship held alive),
+// screenshots the cycle 1 and cycle 2 banners at each size, and checks per
+// banner: the lines read as written, the callout sits inside the safe width
+// and clears the HUD stack, every Text is at least 12 px, and the rendered
+// fill of each line against its INK stroke is 4.5:1 or more (the glyph and
+// stroke pixels inside the line's box in the screenshot).
 //
 // Usage: node scripts/probe-ot-banner.mjs [sizes] [--out=DIR] [--prefix=NAME]
 //   sizes  comma list of p375,l667,p390 (default all three; p390 has the
@@ -172,7 +172,7 @@ try {
     const out = []
     for (const [cycle, want] of [
       [1, 'CYCLE 1'],
-      [2, 'CYCLE 2\nHEALING -75%'],
+      [2, 'CYCLE 2\nFEWER MEDKITS \u00b7 OTHER HEALING -75%'],
     ]) {
       const st = await page.evaluate(toCycle, cycle)
       const file = path.join(OUT, `${PREFIX}c${cycle}-${size.file}.png`)

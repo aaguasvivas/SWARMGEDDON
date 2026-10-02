@@ -244,8 +244,8 @@ export class Callouts {
       sub.text = twoLines(this.subText)
       fitWidth(sub, this.maxW, minK)
     }
-    // A second line grows downward, so the title keeps its place.
-    sub.y = this.title.visible ? SUB_DY + (sub.text.indexOf('\n') >= 0 ? (SUB_LINE_PX * sub.scale.y) / 2 : 0) : 0
+    // Each extra line grows downward, so the title keeps its place.
+    sub.y = this.title.visible ? SUB_DY + ((sub.text.split('\n').length - 1) * SUB_LINE_PX * sub.scale.y) / 2 : 0
   }
 }
 

@@ -92,7 +92,7 @@ spawn rhythm world 1 never taught you. This is the highest-value-per-line
   so surges read as waves. Lulls are the resource (collect, reposition).
 - **Signature: DEEP CALLER**: aura remix at shoal scale: behavior aura, hp 40,
   speed 36, radius 20, scale 1.4, xp 8, `aura { radius 230, speedMul 1.5 }`
-  (1.55 until the v2 P19 closeout, NEXT-LEVEL.md A7.2; needs plumbing #2). Called wraith shoals hit ~180 speed, so kiting stops
+  (1.55 until the v2 P19 closeout, NEXT-LEVEL.md A7.2; needs plumbing #2). Called wraith shoals hit ~174 speed (116 x 1.5), so kiting stops
   working inside the bubble; break line, focus the caller through gaps.
   Sprite: jellyfish bell w/ glow crescent + scalloped rim, five wavy tendrils
   with bead dots, one bright lure core, no eyes.

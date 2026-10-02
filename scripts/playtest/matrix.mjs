@@ -37,7 +37,8 @@
 //   --skip-perf       leave A15, A16, BENCH and S3.2 out (they need an idle machine)
 //   --report-from=FILE  run nothing: re-render FILE (a matrix JSON) as JSON and
 //                     Markdown into --out under its own label (with --baseline,
-//                     the comparison is recomputed)
+//                     the comparison is recomputed; A13 is re-scored from the
+//                     runs its details keep)
 // The dev server must serve the build under test (SWG_URL, default
 // http://localhost:5176). Every headless step takes the machine-wide Chrome
 // lock, so the steps run one at a time; the timing steps run last, after a
@@ -49,7 +50,7 @@ import { existsSync, mkdirSync, openSync, readFileSync, closeSync } from 'node:f
 import os from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { a10Stats, a13Stats, a3Stats, fightStats, ladderStats, median, summarize } from './analyze.mjs'
+import { A13_OT_WINDOW_TEXT, a10Stats, a13Stats, a13Tally, a3Stats, fightStats, ladderStats, median, summarize } from './analyze.mjs'
 import { parseConfig, runFile } from './configs.mjs'
 import { fmt, mmss, writeReport } from './report.mjs'
 
@@ -89,6 +90,14 @@ if (flags['report-from']) {
   for (const m of saved.metrics) {
     delete m.baseline
     delete m.change
+  }
+  // A13 is re-scored from the runs its details keep, so a change of the A13 window reaches a saved matrix.
+  const a13 = saved.metrics.find((m) => m.id === 'A13')
+  if (a13?.details?.hive?.runs) {
+    const tally = (e) => (e?.runs ? a13Tally(e.runs) : null)
+    const others = Object.fromEntries(Object.keys(a13.details).filter((w) => w !== 'hive').map((w) => [w, tally(a13.details[w])]))
+    const m = a13Metric(tally(a13.details.hive), others, saved.meta.otSets)
+    Object.assign(a13, { name: m.name, value: m.value, target: m.target, result: m.pass ? 'PASS' : 'FAIL', details: m.details })
   }
   saved.meta.renderedFrom = `${flags['report-from']} (node scripts/playtest/matrix.mjs ${process.argv.slice(2).join(' ')})`
   writeReport({ meta: saved.meta, metrics: saved.metrics, baseline: BASELINE, baselineFile: flags.baseline, out: resolve(flags.out ?? join(ROOT, 'docs/tuning')) })
@@ -344,7 +353,9 @@ if (wantSteps.has('alloc')) {
 }
 
 // ---- metrics ------------------------------------------------------------------
-const pct = (a, b) => (b ? Math.round((100 * a) / b) : 0)
+function pct(a, b) {
+  return b ? Math.round((100 * a) / b) : 0
+}
 /** Seconds survived: a death's time, else the whole run (a win or a stalemate survived). */
 const survival = (s) => (s.dead ? s.endTime : (s.minutes ?? 14) * 60)
 const metrics = []
@@ -722,30 +733,34 @@ if (has('A12')) {
 }
 
 if (has('A13')) {
-  // Each Hive OVERTIME set must pass on its own (P19 ladder pass). Depths and
-  // Wastes (P19 review) run the T0 part of the same sets; with fewer winners
-  // per set, they are scored on their sets pooled.
-  const st = a13Stats(of(['ot'], 'hive'))
-  const sets = st ? Object.entries(st.bySet) : []
   const others = {}
   for (const w of OT_WORLDS) others[w] = a13Stats(of(['otWorlds'], w))
-  // P19 closeout (re-scored): dead within 6:00 of the run's own OVERTIME start.
-  // A late winner starts OVERTIME later, so the fixed 20:00 clock measured the
-  // win time as much as OVERTIME; the old measure is printed beside the new one.
-  const okOf = (e) => e.n > 0 && e.within6 / e.n >= 0.9 && e.past24 === 0
-  const cell = (e) => `${e.within6}/${e.n} (${pct(e.within6, e.n)}%) dead within 6:00 of the OVERTIME start, ${e.past24} past 24:00 [old measure: ${e.by20}/${e.n} (${pct(e.by20, e.n)}%) dead by 20:00]`
+  const m = a13Metric(a13Stats(of(['ot'], 'hive')), others, OT_SETS)
+  add('A13', m.name, m.value, m.target, m.pass, m.details)
+}
+
+/** A13 from the tallies (a13Tally): `hive` per OVERTIME set, each key of `others` (Depths and Wastes,
+ *  P19 review: the T0 part of the same sets) pooled. Each Hive set must pass on its own (P19 ladder
+ *  pass); the other worlds, with fewer winners per set, pass on their sets pooled. --report-from
+ *  re-scores a saved matrix with it, from the runs its A13 details keep. */
+function a13Metric(st, others, otSets) {
+  const worlds = Object.keys(others)
+  const sets = st ? Object.entries(st.bySet) : []
+  // P19 closeout (re-scored): dead within A13_OT_WINDOW of the run's own OVERTIME
+  // start. A late winner starts OVERTIME later, so the fixed 20:00 clock measured
+  // the win time as much as OVERTIME; the old measure is printed beside the new one.
+  const okOf = (e) => e.n > 0 && e.inWindow / e.n >= 0.9 && e.past24 === 0
+  const cell = (e) => `${e.inWindow}/${e.n} (${pct(e.inWindow, e.n)}%) dead within ${A13_OT_WINDOW_TEXT} of the OVERTIME start, ${e.past24} past 24:00 [old measure: ${e.by20}/${e.n} (${pct(e.by20, e.n)}%) dead by 20:00]`
   const value =
-    (st ? `hive ${sets.map(([k, e]) => `set ${k} ${cell(e)}`).join('; ')}; all ${st.within6}/${st.n} (${pct(st.within6, st.n)}%) [old measure: ${st.by20}/${st.n} (${pct(st.by20, st.n)}%) dead by 20:00]` : 'hive: no run reached OVERTIME') +
-    OT_WORLDS.map((w) => (others[w] ? `; ${w} T0 sets ${OT_SETS.join(' and ')} ${cell(others[w])}` : `; ${w}: no run reached OVERTIME`)).join('')
-  const pass = !!st && sets.every(([, e]) => okOf(e)) && OT_WORLDS.every((w) => others[w] && okOf(others[w]))
-  add(
-    'A13',
-    `Overtime, re-scored from the OVERTIME start (P19 closeout; runs that won: Hive OVERTIME sets ${OT_SETS.join(' and ')}${OT_WORLDS.length ? `; ${OT_WORLDS.join(' and ')} T0 of the same sets` : ''})`,
+    (st ? `hive ${sets.map(([k, e]) => `set ${k} ${cell(e)}`).join('; ')}; all ${st.inWindow}/${st.n} (${pct(st.inWindow, st.n)}%) [old measure: ${st.by20}/${st.n} (${pct(st.by20, st.n)}%) dead by 20:00]` : 'hive: no run reached OVERTIME') +
+    worlds.map((w) => (others[w] ? `; ${w} T0 sets ${otSets.join(' and ')} ${cell(others[w])}` : `; ${w}: no run reached OVERTIME`)).join('')
+  return {
+    name: `Overtime, re-scored from the OVERTIME start (P19 closeout; runs that won: Hive OVERTIME sets ${otSets.join(' and ')}${worlds.length ? `; ${worlds.join(' and ')} T0 of the same sets` : ''})`,
     value,
-    `>= 90% dead within 6:00 of their OVERTIME start and none past 24:00, in each Hive set${OT_WORLDS.length ? ` and in ${OT_WORLDS.join(' and ')} (sets pooled)` : ''}`,
-    pass,
-    { hive: st, ...others },
-  )
+    target: `>= 90% dead within ${A13_OT_WINDOW_TEXT} of their OVERTIME start and none past 24:00, in each Hive set${worlds.length ? ` and in ${worlds.join(' and ')} (sets pooled)` : ''}`,
+    pass: !!st && sets.every(([, e]) => okOf(e)) && worlds.every((w) => others[w] && okOf(others[w])),
+    details: { hive: st, ...others },
+  }
 }
 
 if (has('A14')) {

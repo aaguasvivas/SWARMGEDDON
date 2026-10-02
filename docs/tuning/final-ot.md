@@ -2,15 +2,16 @@
 
 Command: `node scripts/playtest/otreport.mjs /tmp/swg-co/final --md=docs/tuning/final-ot.md`
 
-| World and set | Dead within 6:00 of the OVERTIME start (A13, re-scored in the P19 closeout) | Alive past 24:00 | Dead by 20:00 (old measure) |
+| World and set | Dead within 7:00 of the OVERTIME start (A13, re-scored in the P19 closeout) | Alive past 24:00 | Dead by 20:00 (old measure) |
 |---|---|---|---|
-| hive 1 | 16/19 (84%) | 0 | 18/19 (95%) |
-| hive 2 | 22/25 (88%) | 0 | 23/25 (92%) |
-| depths 1 | 10/11 (91%) | 0 | 11/11 (100%) |
-| depths 2 | 12/14 (86%) | 0 | 14/14 (100%) |
-| wastes 1 | 10/13 (77%) | 0 | 11/13 (85%) |
-| wastes 2 | 10/12 (83%) | 0 | 10/12 (83%) |
+| hive 1 | 18/19 (95%) | 0 | 18/19 (95%) |
+| hive 2 | 25/25 (100%) | 0 | 23/25 (92%) |
+| depths 1 | 11/11 (100%) | 0 | 11/11 (100%) |
+| depths 2 | 13/14 (93%) | 0 | 14/14 (100%) |
+| wastes 1 | 11/13 (85%) | 0 | 11/13 (85%) |
+| wastes 2 | 12/12 (100%) | 0 | 10/12 (83%) |
 
+- A13 window: 7:00 from the OVERTIME start (decided after the closeout; the closeout scored 6:00, which gave 16/19, 22/25, 10/11, 12/14, 10/13 and 10/12). The cells above were re-scored in the commit `v2 P19: closeout fixes` from each run's OVERTIME start and end (the table below and `final.json`), because the raw runs are deleted. The four runs over 7:00 die 7:04 to 7:46 into OVERTIME, early in cycle 3: hive_smart_human_9009_priority_t1_ot, depths_smart_human_31031_priority_ot, wastes_smart_human_9009_priority_ot and wastes_smart_human_30030_priority_ot.
 - Death cycle: {"hive c3":6,"hive c2":26,"hive c1":12,"depths c2":18,"depths c1":4,"depths c3":3,"wastes c1":3,"wastes c2":17,"wastes c3":5}; median time in OVERTIME 242.7 s; median caged share 0.1.
 - Bonus drops in OVERTIME (per run with 120 s or more of it): median 1.9 a minute, max 3.24; busiest 120 s window 10 (median 5), busiest 180 s 11; runs over 3 a minute: hive_smart_human_20020_priority_ot.json 12 in 221.9 s. The same runs from 2:00 to the win: median 2.01 a minute, max 2.8; busiest 120 s window 10 (median 6).
 - OVERTIME beats: 472 fired (the latest 54.05 s late), 0 dropped.

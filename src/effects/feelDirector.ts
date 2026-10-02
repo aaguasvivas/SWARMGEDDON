@@ -671,13 +671,14 @@ export class FeelDirector {
   }
 }
 
-/** The OVERTIME banner's sub: the cycle, and from cycle 2 a second line with
- *  the cut to every heal but a medkit's, 1 - healMul^(c-1). The kill medkit
- *  drop chance falls by the same factor (medkitMul equals healMul), so the
- *  line holds for the healing the player gets. Called once per cycle. */
+/** The OVERTIME banner's sub: the cycle, and from cycle 2 a second line that
+ *  names the two healing cuts apart. Every heal but a medkit's takes
+ *  1 - healMul^(c-1); a medkit heals in full, and only the kill medkit drop
+ *  chance falls (medkitMul), while elite and boss medkits drop as before, so
+ *  one percentage for all healing would overstate the cut. Called once per cycle. */
 function overtimeSub(c: number): string {
   if (c < 2) return 'CYCLE ' + c
-  return 'CYCLE ' + c + '\nHEALING -' + Math.round(100 * (1 - Math.pow(OVERTIME.healMul, c - 1))) + '%'
+  return 'CYCLE ' + c + '\nFEWER MEDKITS \u00b7 OTHER HEALING -' + Math.round(100 * (1 - Math.pow(OVERTIME.healMul, c - 1))) + '%'
 }
 
 function onScreen(x: number, y: number, v: ViewRect): boolean {

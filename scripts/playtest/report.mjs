@@ -4,6 +4,7 @@
 // through it without running anything.
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { A13_OT_WINDOW_TEXT } from './analyze.mjs'
 
 export const fmt = (x, d = 2) => (x === null || x === undefined || Number.isNaN(x) ? '-' : typeof x === 'number' ? +x.toFixed(d) : x)
 export const mmss = (s) => (s === null ? '-' : `${Math.floor(Math.round(s) / 60)}:${String(Math.round(s) % 60).padStart(2, '0')}`)
@@ -101,7 +102,7 @@ function keyNumbers(id, v) {
       // brackets, the old one (dead by 20:00), which earlier reports printed alone.
       const n = /all \d+\/\d+ \((\d+)%\) \[old measure: \d+\/\d+ \((\d+)%\) dead by 20:00\]/.exec(v)
       const d = n ? [null, n[2]] : (/all \d+\/\d+ \((\d+)%\)/.exec(v) ?? /\((\d+)%\) dead by 20:00/.exec(v))
-      if (n) k.push(['Hive dead within 6:00 of the OVERTIME start', `${n[1]}%`])
+      if (n) k.push([`Hive dead within ${A13_OT_WINDOW_TEXT} of the OVERTIME start`, `${n[1]}%`])
       if (d) k.push(['Hive dead by 20:00', `${d[1]}%`])
       const p = all(/(\d+) (?:alive )?past 24:00/g)
       if (p.length) k.push(['alive past 24:00', `${p.reduce((a, b) => a + parseInt(b), 0)}`])
@@ -170,7 +171,7 @@ export function writeReport({ meta, metrics, baseline, baselineFile, out }) {
   md.push(`- Command: \`${meta.command}\` (dev server at ${process.env.SWG_URL || 'http://localhost:5176'})`)
   md.push(`- Seeds: ${meta.seeds}${meta.focusSeeds ? `; A6 focus set ${meta.focusSeeds}` : ''}${meta.rateSeeds ? `; A7 and A8 ${meta.rateSeeds}` : ''}; A12 Hive ${meta.threatSeeds}; A13 OVERTIME sets ${OT_SETS.join(', ')} (set n: T0 1001 x 30(n-1)+1..30n, T1 to T3 1001 x 10(n-1)+1..10n${OT_SEEDS ? `; quick check: the first ${OT_SEEDS} T0 and ${Math.min(OT_SEEDS, 10)} T1 to T3 seeds of each set` : ''})${meta.otWorlds?.length ? `; ${meta.otWorlds.join(' and ')}: the T0 part of the same sets` : ''}`)
   md.push(`- Machine at the end: load ${meta.machineAtEnd.load.join(' ')}, swap ${meta.machineAtEnd.swap}`)
-  if (meta.renderedFrom) md.push(`- Re-rendered from ${meta.renderedFrom}: same runs and steps, report text only`)
+  if (meta.renderedFrom) md.push(`- Re-rendered from ${meta.renderedFrom}: same runs and steps; A13 re-scored from the runs its details keep (window ${A13_OT_WINDOW_TEXT}), every other metric as saved`)
   for (const n of meta.notes ?? []) md.push(`- ${n}`)
   md.push('')
   if (baseline) {
