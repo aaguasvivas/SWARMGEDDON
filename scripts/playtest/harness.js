@@ -570,6 +570,15 @@
       // units are ordinary enemies after that).
       a3Base: 0,
       a3Sat: 0,
+      a3BaseChunk: 0,
+      a3SatChunk: 0,
+      freeAliveSumChunk: 0,
+      freeStepsChunk: 0,
+      // A3 over-row measured against the row in force when the current cage
+      // rose (P19 density: a row step inside a cage takes effect when it drops).
+      cageRow: -1,
+      overRowCage: -Infinity,
+      overRowCageChunk: -Infinity,
       eventStepsChunk: 0,
       eventUnitsMax: 0,
       /** HP lost to stream units' contact (the bite source stood on a stream unit). */
@@ -711,6 +720,9 @@
       const t0 = w.time
       const hp0 = w.player.hp
       const dropTimer0 = w.weaponDropTimer
+      // XP before this step (A18 up to the PRIME kill: the kill step drops the boss's own gem).
+      const xpDropped0 = w.xpDropped
+      const xpCollected0 = w.xpCollected
       // Damaging hazards before the step: a discrete hurt at one's anchor (the
       // FeelQueue stores float32 coordinates) is that hazard's hit.
       const hzPre = []
@@ -808,7 +820,7 @@
       // the bot answers the panel with OVERTIME once pending drafts are done.
       if (w.pendingEnd) {
         st.stalemate = true
-        st.events.push({ t: +w.time.toFixed(2), type: 'stalemate', clearTime: w.director.clearTime ? +w.director.clearTime.toFixed(2) : null })
+        st.events.push({ t: +w.time.toFixed(2), type: 'stalemate', clearTime: w.director.clearTime ? +w.director.clearTime.toFixed(2) : null, xpDropped: +w.xpDropped.toFixed(1), xpCollected: +w.xpCollected.toFixed(1) })
         break
       }
       if (w.pendingWin) {
@@ -863,6 +875,11 @@
       const lull = w.time < w.director.lullUntil
       const row = w.script.minutes[Math.min(11, Math.floor(w.time / 60))]
       if (lull) st.lullStepsChunk++
+      // A4 free field: steps where the row's minAlive is the floor (no cage, no lull).
+      if (scripted && !lull && !w.director.cage.active) {
+        st.freeAliveSumChunk += n
+        st.freeStepsChunk++
+      }
       if (w.bossAlive) st.bossStepsChunk++
       else if (scripted && !lull && n >= 0.95 * row.maxAlive) st.satStepsChunk++
       const runs = w.director.events
@@ -883,9 +900,18 @@
       if (evActive || streamAlive || w.time - lastEvent < EVENT_WINDOW) st.eventStepsChunk++
       else if (scripted && !w.director.cage.active) {
         st.a3Base++
-        if (n >= 0.95 * row.maxAlive) st.a3Sat++
+        st.a3BaseChunk++
+        if (n >= 0.95 * row.maxAlive) {
+          st.a3Sat++
+          st.a3SatChunk++
+        }
       }
       if (scripted && n - row.maxAlive > st.overRowChunk) st.overRowChunk = n - row.maxAlive
+      if (!w.director.cage.active) st.cageRow = -1
+      else if (st.cageRow < 0) st.cageRow = Math.min(11, Math.floor(w.time / 60))
+      const refMax = st.cageRow >= 0 ? w.script.minutes[st.cageRow].maxAlive : row.maxAlive
+      if (scripted && n - refMax > st.overRowCageChunk) st.overRowCageChunk = n - refMax
+      if (scripted && n - refMax > st.overRowCage) st.overRowCage = n - refMax
       while (st.alertSeq < w.alerts.seq) {
         const a = w.alerts.slots[st.alertSeq % w.alerts.slots.length]
         if (a.seq === st.alertSeq) {
@@ -928,7 +954,7 @@
       }
       if (w.director.bossesKilled > st.bossesKilled) {
         st.bossesKilled = w.director.bossesKilled
-        st.events.push({ t: +w.time.toFixed(2), type: 'bossKill', stage: w.bossFight.stage })
+        st.events.push({ t: +w.time.toFixed(2), type: 'bossKill', stage: w.bossFight.stage, xpDropped: +xpDropped0.toFixed(1), xpCollected: +xpCollected0.toFixed(1) })
       }
       st.lastBossAlive = w.bossAlive
       for (let i = 0; i < pk.length; i++) {
@@ -1044,6 +1070,11 @@
       bossSteps: st.bossStepsChunk,
       satSteps: st.satStepsChunk,
       overRowMax: st.overRowChunk === -Infinity ? null : st.overRowChunk,
+      overRowCageMax: st.overRowCageChunk === -Infinity ? null : st.overRowCageChunk,
+      a3Base: st.a3BaseChunk,
+      a3Sat: st.a3SatChunk,
+      freeAliveSum: st.freeAliveSumChunk,
+      freeSteps: st.freeStepsChunk,
       rowMaxAlive: w.script.minutes[Math.min(11, Math.floor(w.time / 60))].maxAlive,
       alerts: st.alertsChunk,
       eventSteps: st.eventStepsChunk,
@@ -1065,6 +1096,11 @@
     st.bossStepsChunk = 0
     st.satStepsChunk = 0
     st.overRowChunk = -Infinity
+    st.overRowCageChunk = -Infinity
+    st.a3BaseChunk = 0
+    st.a3SatChunk = 0
+    st.freeAliveSumChunk = 0
+    st.freeStepsChunk = 0
     st.eventStepsChunk = 0
     st.chunks.push(c)
     return c
@@ -1133,6 +1169,7 @@
       hzSteps: st.hzSteps,
       a3Base: st.a3Base,
       a3Sat: st.a3Sat,
+      overRowCage: st.overRowCage === -Infinity ? null : st.overRowCage,
       events: st.events,
       chunks: st.chunks,
       hpHist: st.hpHist,

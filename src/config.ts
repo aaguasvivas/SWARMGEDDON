@@ -189,7 +189,7 @@ export const FALLBACK = { sharpenMul: 1.04, repairFrac: 0.35 } as const
  *  farther than this from the player, so it stays in the phone view (short
  *  half-extent 280 u) even with the 78 u aim look-ahead. */
 export const XP = { firstLevelCost: 6, a: 5, b: 6, c: 1.2, surgeAfter: 40, surgeMul: 2,
-  gemSoftCap: 200, captureRadius: 125, homeStart: 260, homeMax: 900, homeRamp: 0.35, medkitLife: 10,
+  gemSoftCap: 150, captureRadius: 125, homeStart: 260, homeMax: 900, homeRamp: 0.35, medkitLife: 10,
   bankLeash: 150 } as const
 /** Berserker's medkit burst (A2): fire rate bonus and its length in seconds. */
 export const BERSERK_MEDKIT = { fireRate: 0.4, sec: 3 } as const

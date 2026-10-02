@@ -1,0 +1,392 @@
+{
+ "meta": {
+  "label": "density-confirm-a12-a13",
+  "date": "2026-10-01T23:57:02.545Z",
+  "commit": "7eaf81b",
+  "srcDirty": true,
+  "scriptsDirty": true,
+  "command": "node scripts/playtest/matrix.mjs --seeds=30 --only=A12,A13 --label=density-confirm-a12-a13 --runs=/tmp/swg-density/confirm --out=/tmp/swg-density/reports",
+  "seeds": "1001 x 1..30 per world",
+  "worlds": [
+   "hive",
+   "depths",
+   "wastes"
+  ],
+  "threatSeeds": "1001 x 1..30",
+  "otSets": [
+   1,
+   2
+  ],
+  "only": [
+   "A12",
+   "A13"
+  ],
+  "runsDir": "/tmp/swg-density/confirm",
+  "machineAtEnd": {
+   "load": [
+    3.03,
+    3.45,
+    3.45
+   ],
+   "swap": "total = 6656.00M  used = 5513.88M  free = 1142.12M  (encrypted)"
+  },
+  "sets": {
+   "smartP": {
+    "label": "smart+P",
+    "pattern": "smart:SEED:14:nova:priority",
+    "worlds": [
+     "hive",
+     "depths",
+     "wastes"
+    ],
+    "runs": 90
+   },
+   "threat": {
+    "label": "smart+P T1, T4 (Hive)",
+    "pattern": "smart:SEED:14:nova:priority:T (T 1 and 4)",
+    "worlds": [
+     "hive"
+    ],
+    "runs": 60
+   },
+   "ot": {
+    "label": "smart+P OVERTIME (Hive)",
+    "pattern": "smart:SEED:25:nova:priority:T:ot",
+    "worlds": [
+     "hive"
+    ],
+    "runs": 120
+   }
+  },
+  "commands": [
+   "node scripts/playtest/playtest.mjs hive smart:1001:14:nova:priority:1 smart:2002:14:nova:priority:1 smart:3003:14:nova:priority:1 smart:4004:14:nova:priority:1 smart:5005:14:nova:priority:1 smart:6006:14:nova:priority:1 smart:7007:14:nova:priority:1 smart:8008:14:nova:priority:1 smart:9009:14:nova:priority:1 smart:10010:14:nova:priority:1 smart:11011:14:nova:priority:1 smart:12012:14:nova:priority:1 smart:13013:14:nova:priority:1 smart:14014:14:nova:priority:1 smart:15015:14:nova:priority:1 smart:16016:14:nova:priority:1 smart:17017:14:nova:priority:1 smart:18018:14:nova:priority:1 smart:19019:14:nova:priority:1 smart:20020:14:nova:priority:1 smart:21021:14:nova:priority:1 smart:22022:14:nova:priority:1 smart:23023:14:nova:priority:1 smart:24024:14:nova:priority:1 smart:25025:14:nova:priority:1 smart:26026:14:nova:priority:1 smart:27027:14:nova:priority:1 smart:28028:14:nova:priority:1 smart:29029:14:nova:priority:1 smart:30030:14:nova:priority:1 smart:1001:14:nova:priority:4 smart:2002:14:nova:priority:4 smart:3003:14:nova:priority:4 smart:4004:14:nova:priority:4 smart:5005:14:nova:priority:4 smart:6006:14:nova:priority:4 smart:7007:14:nova:priority:4 smart:8008:14:nova:priority:4 smart:9009:14:nova:priority:4 smart:10010:14:nova:priority:4 smart:11011:14:nova:priority:4 smart:12012:14:nova:priority:4 smart:13013:14:nova:priority:4 smart:14014:14:nova:priority:4 smart:15015:14:nova:priority:4 smart:16016:14:nova:priority:4 smart:17017:14:nova:priority:4 smart:18018:14:nova:priority:4 smart:19019:14:nova:priority:4 smart:20020:14:nova:priority:4 smart:21021:14:nova:priority:4 smart:22022:14:nova:priority:4 smart:23023:14:nova:priority:4 smart:24024:14:nova:priority:4 smart:25025:14:nova:priority:4 smart:26026:14:nova:priority:4 smart:27027:14:nova:priority:4 smart:28028:14:nova:priority:4 smart:29029:14:nova:priority:4 smart:30030:14:nova:priority:4 --out=/tmp/swg-density/confirm",
+   "node scripts/playtest/playtest.mjs hive smart:1001:25:nova:priority:0:ot smart:2002:25:nova:priority:0:ot smart:3003:25:nova:priority:0:ot smart:4004:25:nova:priority:0:ot smart:5005:25:nova:priority:0:ot smart:6006:25:nova:priority:0:ot smart:7007:25:nova:priority:0:ot smart:8008:25:nova:priority:0:ot smart:9009:25:nova:priority:0:ot smart:10010:25:nova:priority:0:ot smart:11011:25:nova:priority:0:ot smart:12012:25:nova:priority:0:ot smart:13013:25:nova:priority:0:ot smart:14014:25:nova:priority:0:ot smart:15015:25:nova:priority:0:ot smart:16016:25:nova:priority:0:ot smart:17017:25:nova:priority:0:ot smart:18018:25:nova:priority:0:ot smart:19019:25:nova:priority:0:ot smart:20020:25:nova:priority:0:ot smart:21021:25:nova:priority:0:ot smart:22022:25:nova:priority:0:ot smart:23023:25:nova:priority:0:ot smart:24024:25:nova:priority:0:ot smart:25025:25:nova:priority:0:ot smart:26026:25:nova:priority:0:ot smart:27027:25:nova:priority:0:ot smart:28028:25:nova:priority:0:ot smart:29029:25:nova:priority:0:ot smart:30030:25:nova:priority:0:ot smart:1001:25:nova:priority:1:ot smart:2002:25:nova:priority:1:ot smart:3003:25:nova:priority:1:ot smart:4004:25:nova:priority:1:ot smart:5005:25:nova:priority:1:ot smart:6006:25:nova:priority:1:ot smart:7007:25:nova:priority:1:ot smart:8008:25:nova:priority:1:ot smart:9009:25:nova:priority:1:ot smart:10010:25:nova:priority:1:ot smart:1001:25:nova:priority:2:ot smart:2002:25:nova:priority:2:ot smart:3003:25:nova:priority:2:ot smart:4004:25:nova:priority:2:ot smart:5005:25:nova:priority:2:ot smart:6006:25:nova:priority:2:ot smart:7007:25:nova:priority:2:ot smart:8008:25:nova:priority:2:ot smart:9009:25:nova:priority:2:ot smart:10010:25:nova:priority:2:ot smart:1001:25:nova:priority:3:ot smart:2002:25:nova:priority:3:ot smart:3003:25:nova:priority:3:ot smart:4004:25:nova:priority:3:ot smart:5005:25:nova:priority:3:ot smart:6006:25:nova:priority:3:ot smart:7007:25:nova:priority:3:ot smart:8008:25:nova:priority:3:ot smart:9009:25:nova:priority:3:ot smart:10010:25:nova:priority:3:ot smart:31031:25:nova:priority:0:ot smart:32032:25:nova:priority:0:ot smart:33033:25:nova:priority:0:ot smart:34034:25:nova:priority:0:ot smart:35035:25:nova:priority:0:ot smart:36036:25:nova:priority:0:ot smart:37037:25:nova:priority:0:ot smart:38038:25:nova:priority:0:ot smart:39039:25:nova:priority:0:ot smart:40040:25:nova:priority:0:ot smart:41041:25:nova:priority:0:ot smart:42042:25:nova:priority:0:ot smart:43043:25:nova:priority:0:ot smart:44044:25:nova:priority:0:ot smart:45045:25:nova:priority:0:ot smart:46046:25:nova:priority:0:ot smart:47047:25:nova:priority:0:ot smart:48048:25:nova:priority:0:ot smart:49049:25:nova:priority:0:ot smart:50050:25:nova:priority:0:ot smart:51051:25:nova:priority:0:ot smart:52052:25:nova:priority:0:ot smart:53053:25:nova:priority:0:ot smart:54054:25:nova:priority:0:ot smart:55055:25:nova:priority:0:ot smart:56056:25:nova:priority:0:ot smart:57057:25:nova:priority:0:ot smart:58058:25:nova:priority:0:ot smart:59059:25:nova:priority:0:ot smart:60060:25:nova:priority:0:ot smart:11011:25:nova:priority:1:ot smart:12012:25:nova:priority:1:ot smart:13013:25:nova:priority:1:ot smart:14014:25:nova:priority:1:ot smart:15015:25:nova:priority:1:ot smart:16016:25:nova:priority:1:ot smart:17017:25:nova:priority:1:ot smart:18018:25:nova:priority:1:ot smart:19019:25:nova:priority:1:ot smart:20020:25:nova:priority:1:ot smart:11011:25:nova:priority:2:ot smart:12012:25:nova:priority:2:ot smart:13013:25:nova:priority:2:ot smart:14014:25:nova:priority:2:ot smart:15015:25:nova:priority:2:ot smart:16016:25:nova:priority:2:ot smart:17017:25:nova:priority:2:ot smart:18018:25:nova:priority:2:ot smart:19019:25:nova:priority:2:ot smart:20020:25:nova:priority:2:ot smart:11011:25:nova:priority:3:ot smart:12012:25:nova:priority:3:ot smart:13013:25:nova:priority:3:ot smart:14014:25:nova:priority:3:ot smart:15015:25:nova:priority:3:ot smart:16016:25:nova:priority:3:ot smart:17017:25:nova:priority:3:ot smart:18018:25:nova:priority:3:ot smart:19019:25:nova:priority:3:ot smart:20020:25:nova:priority:3:ot --out=/tmp/swg-density/confirm"
+  ]
+ },
+ "metrics": [
+  {
+   "id": "A12",
+   "name": "Ladder (Hive smart+P)",
+   "value": "T0 14/30 (47%), T1 8/30 (27%), T4 0/30 (0%)",
+   "target": "T4 win rate <= 15%; T1 <= T0",
+   "result": "PASS",
+   "details": {
+    "key": "hive smart+P",
+    "byThreat": [
+     {
+      "threat": 0,
+      "runs": 30,
+      "wins": 14,
+      "medianEnd": 763.1400000000001
+     },
+     {
+      "threat": 1,
+      "runs": 30,
+      "wins": 8,
+      "medianEnd": 817.665
+     },
+     {
+      "threat": 4,
+      "runs": 30,
+      "wins": 0,
+      "medianEnd": 268.565
+     }
+    ]
+   }
+  },
+  {
+   "id": "A13",
+   "name": "Overtime (Hive OVERTIME sets 1 and 2, runs that won)",
+   "value": "17/35 (49%) dead by 20:00; 9 alive past 24:00",
+   "target": ">= 90% dead by 20:00; none past 24:00",
+   "result": "FAIL",
+   "details": {
+    "runs": [
+     {
+      "file": "hive_smart_1001_priority_ot.json",
+      "otStart": 729.8,
+      "otCycle": 2,
+      "dead": true,
+      "endTime": 975.98,
+      "level": 27
+     },
+     {
+      "file": "hive_smart_3003_priority_ot.json",
+      "otStart": 782.82,
+      "otCycle": 3,
+      "dead": true,
+      "endTime": 1170.77,
+      "level": 22
+     },
+     {
+      "file": "hive_smart_5005_priority_ot.json",
+      "otStart": 788.52,
+      "otCycle": 3,
+      "dead": true,
+      "endTime": 1155.27,
+      "level": 24
+     },
+     {
+      "file": "hive_smart_7007_priority_ot.json",
+      "otStart": 635.78,
+      "otCycle": 3,
+      "dead": true,
+      "endTime": 1031.1,
+      "level": 28
+     },
+     {
+      "file": "hive_smart_9009_priority_ot.json",
+      "otStart": 829.38,
+      "otCycle": 4,
+      "dead": false,
+      "endTime": 1500.02,
+      "level": 29
+     },
+     {
+      "file": "hive_smart_12012_priority_ot.json",
+      "otStart": 715.2,
+      "otCycle": 2,
+      "dead": true,
+      "endTime": 967.82,
+      "level": 25
+     },
+     {
+      "file": "hive_smart_15015_priority_ot.json",
+      "otStart": 715.37,
+      "otCycle": 2,
+      "dead": true,
+      "endTime": 909.93,
+      "level": 30
+     },
+     {
+      "file": "hive_smart_17017_priority_ot.json",
+      "otStart": 759.45,
+      "otCycle": 4,
+      "dead": true,
+      "endTime": 1387.17,
+      "level": 30
+     },
+     {
+      "file": "hive_smart_19019_priority_ot.json",
+      "otStart": 773.13,
+      "otCycle": 1,
+      "dead": true,
+      "endTime": 797.23,
+      "level": 21
+     },
+     {
+      "file": "hive_smart_22022_priority_ot.json",
+      "otStart": 684.8,
+      "otCycle": 5,
+      "dead": false,
+      "endTime": 1500.02,
+      "level": 29
+     },
+     {
+      "file": "hive_smart_24024_priority_ot.json",
+      "otStart": 721.77,
+      "otCycle": 2,
+      "dead": true,
+      "endTime": 981.15,
+      "level": 24
+     },
+     {
+      "file": "hive_smart_25025_priority_ot.json",
+      "otStart": 838.38,
+      "otCycle": 4,
+      "dead": false,
+      "endTime": 1500.02,
+      "level": 28
+     },
+     {
+      "file": "hive_smart_29029_priority_ot.json",
+      "otStart": 766.83,
+      "otCycle": 1,
+      "dead": true,
+      "endTime": 893.27,
+      "level": 26
+     },
+     {
+      "file": "hive_smart_30030_priority_ot.json",
+      "otStart": 832.85,
+      "otCycle": 3,
+      "dead": true,
+      "endTime": 1283.13,
+      "level": 24
+     },
+     {
+      "file": "hive_smart_4004_priority_t1_ot.json",
+      "otStart": 779.22,
+      "otCycle": 2,
+      "dead": true,
+      "endTime": 1076.18,
+      "level": 29
+     },
+     {
+      "file": "hive_smart_5005_priority_t1_ot.json",
+      "otStart": 813.85,
+      "otCycle": 1,
+      "dead": true,
+      "endTime": 864.98,
+      "level": 19
+     },
+     {
+      "file": "hive_smart_7007_priority_t1_ot.json",
+      "otStart": 682.17,
+      "otCycle": 5,
+      "dead": true,
+      "endTime": 1482.4,
+      "level": 31
+     },
+     {
+      "file": "hive_smart_8008_priority_t1_ot.json",
+      "otStart": 665.73,
+      "otCycle": 2,
+      "dead": true,
+      "endTime": 944.77,
+      "level": 26
+     },
+     {
+      "file": "hive_smart_7007_priority_t3_ot.json",
+      "otStart": 773.05,
+      "otCycle": 3,
+      "dead": true,
+      "endTime": 1223.02,
+      "level": 30
+     },
+     {
+      "file": "hive_smart_32032_priority_ot.json",
+      "otStart": 740.13,
+      "otCycle": 2,
+      "dead": true,
+      "endTime": 958.22,
+      "level": 25
+     },
+     {
+      "file": "hive_smart_39039_priority_ot.json",
+      "otStart": 759.97,
+      "otCycle": 3,
+      "dead": true,
+      "endTime": 1253.38,
+      "level": 24
+     },
+     {
+      "file": "hive_smart_41041_priority_ot.json",
+      "otStart": 771.08,
+      "otCycle": 5,
+      "dead": false,
+      "endTime": 1500.02,
+      "level": 33
+     },
+     {
+      "file": "hive_smart_43043_priority_ot.json",
+      "otStart": 718.4,
+      "otCycle": 4,
+      "dead": true,
+      "endTime": 1364.25,
+      "level": 28
+     },
+     {
+      "file": "hive_smart_47047_priority_ot.json",
+      "otStart": 779.58,
+      "otCycle": 3,
+      "dead": true,
+      "endTime": 1251.52,
+      "level": 30
+     },
+     {
+      "file": "hive_smart_48048_priority_ot.json",
+      "otStart": 765.85,
+      "otCycle": 5,
+      "dead": false,
+      "endTime": 1500.02,
+      "level": 28
+     },
+     {
+      "file": "hive_smart_52052_priority_ot.json",
+      "otStart": 823.07,
+      "otCycle": 3,
+      "dead": true,
+      "endTime": 1249.55,
+      "level": 24
+     },
+     {
+      "file": "hive_smart_57057_priority_ot.json",
+      "otStart": 734.35,
+      "otCycle": 5,
+      "dead": false,
+      "endTime": 1500.02,
+      "level": 28
+     },
+     {
+      "file": "hive_smart_58058_priority_ot.json",
+      "otStart": 645.15,
+      "otCycle": 2,
+      "dead": true,
+      "endTime": 919.28,
+      "level": 24
+     },
+     {
+      "file": "hive_smart_59059_priority_ot.json",
+      "otStart": 677.87,
+      "otCycle": 1,
+      "dead": true,
+      "endTime": 716.93,
+      "level": 24
+     },
+     {
+      "file": "hive_smart_60060_priority_ot.json",
+      "otStart": 713.82,
+      "otCycle": 5,
+      "dead": false,
+      "endTime": 1500.02,
+      "level": 33
+     },
+     {
+      "file": "hive_smart_16016_priority_t1_ot.json",
+      "otStart": 804.22,
+      "otCycle": 4,
+      "dead": false,
+      "endTime": 1500.02,
+      "level": 28
+     },
+     {
+      "file": "hive_smart_11011_priority_t2_ot.json",
+      "otStart": 797.12,
+      "otCycle": 3,
+      "dead": true,
+      "endTime": 1237.78,
+      "level": 24
+     },
+     {
+      "file": "hive_smart_15015_priority_t2_ot.json",
+      "otStart": 702.78,
+      "otCycle": 1,
+      "dead": true,
+      "endTime": 775.78,
+      "level": 26
+     },
+     {
+      "file": "hive_smart_11011_priority_t3_ot.json",
+      "otStart": 811.95,
+      "otCycle": 3,
+      "dead": true,
+      "endTime": 1247.32,
+      "level": 27
+     },
+     {
+      "file": "hive_smart_15015_priority_t3_ot.json",
+      "otStart": 697,
+      "otCycle": 2,
+      "dead": true,
+      "endTime": 977.37,
+      "level": 30
+     }
+    ],
+    "n": 35,
+    "by20": 17,
+    "past24": 9
+   }
+  }
+ ]
+}

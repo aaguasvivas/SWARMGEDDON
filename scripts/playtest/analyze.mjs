@@ -35,6 +35,10 @@ export function summarize(r, f) {
       capFrac: c.length ? +(c.reduce((s, x) => s + x.capFrac, 0) / c.length).toFixed(2) : 0,
       dmgTaken: c.reduce((s, x) => s + x.dmgTaken, 0),
       aliveMean: c.length ? +(c.reduce((s, x) => s + x.aliveMean, 0) / c.length).toFixed(1) : null,
+      // A4 free field: mean alive over the steps with no cage and no lull (the
+      // row's minAlive in force); null when the minute had none or the run predates it.
+      freeAliveMean: c.some((x) => x.freeSteps) ? +(c.reduce((s, x) => s + x.freeAliveSum, 0) / c.reduce((s, x) => s + x.freeSteps, 0)).toFixed(1) : null,
+      freeSteps: c.reduce((s, x) => s + (x.freeSteps ?? 0), 0),
     })
   }
   // level-up gaps
@@ -82,6 +86,9 @@ export function summarize(r, f) {
     if (how === 'open' && sp.stage === 'final' && endT - sp.t >= STALEMATE_AFTER - RUN_END_STALE) how = 'stalemate'
     return { stage: sp.stage, spawnT: sp.t, endT, len: +(endT - sp.t).toFixed(2), how, dist: sp.dist, cage: sp.cage, inCage: sp.inCage, inArena: sp.inArena, hp: sp.hp }
   })
+  // A PRIME that ascends from a living mid boss spawns in that boss's place
+  // (section 4.1), not at the arrival distance; A5 leaves its distance out.
+  for (let i = 1; i < fights.length; i++) fights[i].ascended = fights[i - 1].how === 'ascend'
   const killGaps = []
   for (let i = 0; i < fights.length - 1; i++) {
     if (fights[i].how === 'kill') killGaps.push(+(fights[i + 1].spawnT - fights[i].endT).toFixed(2))
@@ -136,6 +143,7 @@ export function summarize(r, f) {
     xpCollected: r.xpCollected,
     xpCollectFrac: r.xpCollectFrac,
     xpCollectFrac30: r.xpCollectFrac30,
+    xpCollectFracPrime: xpToPrimeEnd(r),
     firstDraftAt: r.firstDraftAt,
     firstFusionAt: r.firstFusionAt,
     dmgTaken: r.dmgTaken,
@@ -149,8 +157,17 @@ export function summarize(r, f) {
     closeCallsPerMin: +((r.closeCalls ?? 0) / (r.endTime / 60)).toFixed(2),
     fromHalfHp: r.death?.fromHalfHp ?? null,
     a3: r.beats ? beatFidelity(r) : null,
-    a3Density: r.beats ? { maxAlive: r.maxEnemies, overRowMax: Math.max(-Infinity, ...r.chunks.map((c) => c.overRowMax ?? -Infinity)), satFrac: r.a3Base ? +(r.a3Sat / r.a3Base).toFixed(3) : 0, eventUnitsMax: r.eventUnitsMax } : null,
+    a3Density: r.beats
+      ? {
+          maxAlive: r.maxEnemies,
+          overRowMax: Math.max(-Infinity, ...r.chunks.map((c) => c.overRowMax ?? -Infinity)),
+          overRowCage: r.overRowCage ?? null,
+          satFrac: r.a3Base ? +(r.a3Sat / r.a3Base).toFixed(3) : 0,
+          eventUnitsMax: r.eventUnitsMax,
+        }
+      : null,
     frozenSteps: r.frozenSteps,
+    a3Chunks: r.chunks.filter((c) => c.a3Base !== undefined).map((c) => ({ t: c.t, a3Base: c.a3Base, a3Sat: c.a3Sat })),
     perMin,
     levelUpGapsOver60s: lvGaps,
     stallsOver40s: stalls,
@@ -160,6 +177,21 @@ export function summarize(r, f) {
     wallSeconds: r.wallSeconds,
   }
 }
+/**
+ * A18 XP up to the PRIME's end (P19 density): a win ends the run 2 s after
+ * the PRIME kill, so the PRIME's own gem (240 to 260 XP) is never collected.
+ * A run with a PRIME kill counts the XP dropped and collected just before the
+ * kill step; any other run (a stalemate, a death, a run still open at its
+ * end) counts the whole run. Null for an older run JSON whose bossKill events
+ * carry no XP.
+ */
+function xpToPrimeEnd(r) {
+  const k = r.events.find((e) => e.type === 'bossKill' && e.stage === 'final')
+  if (!k) return r.xpCollectFrac
+  if (k.xpDropped === undefined) return null
+  return +(k.xpCollected / Math.max(1, k.xpDropped)).toFixed(4)
+}
+
 /**
  * A3: replay the deferral rules (section 4.1) over the run's own cage
  * intervals and compare each beat's fire time with where the rules put it.
@@ -242,12 +274,21 @@ function beatFidelity(r) {
       const arrive = Math.max(b.at, (prior.length ? prior[prior.length - 1] : -Infinity) + 20)
       w = b.id === 'mid2' && arrive > 570 ? -1 : arrive
     }
-    const reached = w !== null && (w < 0 || w <= r.endTime + TICK)
+    // A beat due within a tick of the run's end may not have fired yet (the
+    // run's end time is rounded to 0.01 s): it counts as not reached when it
+    // did not fire (P19 density: Hive seed 4004 died at 374.98, the 6:15 elite).
     const fired = b.firedAt
+    const reached = w !== null && (w < 0 || w <= r.endTime + TICK) && !(fired === null && w >= 0 && w > r.endTime - TICK)
     let ok
     if (!reached) ok = fired === null
     else if (w < 0) ok = fired === -1 || fired === null
     else ok = fired !== null && fired >= 0 && Math.abs(fired - w) <= TICK
+    // A kill logged at the beat's own time (event times are rounded to 0.01 s)
+    // may have come in the tick before the beat was due: the beat then fires on
+    // time with the cage down, which the replay's order (beat before kill)
+    // cannot tell apart (P19 density: Wastes roam seed 10010, mid2 killed at
+    // 550.00, the 9:10 elite fired at 550.017).
+    if (!ok && (b.kind === 'elite' || b.kind === 'event') && fired !== null && fired >= 0 && Math.abs(fired - b.at) <= TICK && kills.some((k) => Math.abs(k - b.at) <= 0.01)) ok = true
     res.push({ i: b.i, label: b.kind === 'boss' || b.kind === 'event' ? b.id : b.kind, at: b.at, fired, want: w === null ? null : +w.toFixed(2), ok })
   }
   return res
@@ -265,8 +306,9 @@ export const median = (a) => {
 export function fightStats(out) {
   const fights = out.flatMap((s) => s.fights.map((f) => ({ ...f, run: s.file })))
   if (!fights.length) return null
-  const dists = fights.map((f) => f.dist)
-  const bad = fights.filter((f) => f.dist < 250 || f.dist > 340 || !f.cage || !f.inCage || !f.inArena)
+  const placed = fights.filter((f) => !f.ascended)
+  const dists = placed.map((f) => f.dist)
+  const bad = fights.filter((f) => (!f.ascended && (f.dist < 250 || f.dist > 340)) || !f.cage || !f.inCage || !f.inArena)
   const stages = {}
   for (const stage of ['mid1', 'mid2', 'final']) {
     const k = fights.filter((f) => f.stage === stage && f.how === 'kill').map((f) => f.len)
@@ -282,7 +324,7 @@ export function fightStats(out) {
   const gaps = out.flatMap((s) => s.killGaps)
   return {
     fights,
-    arrivals: { n: fights.length, distMin: Math.min(...dists), distMax: Math.max(...dists), cageInside: fights.filter((f) => f.cage && f.inCage).length, inArena: fights.filter((f) => f.inArena).length, bad },
+    arrivals: { n: fights.length, ascended: fights.length - placed.length, distMin: Math.min(...dists), distMax: Math.max(...dists), cageInside: fights.filter((f) => f.cage && f.inCage).length, inArena: fights.filter((f) => f.inArena).length, bad },
     stages,
     gaps: { n: gaps.length, min: gaps.length ? Math.min(...gaps) : null },
   }
@@ -302,6 +344,7 @@ export function a3Stats(out) {
     offRule: per.reduce((n, p) => n + p.off, 0),
     maxAlive: Math.max(...per.map((p) => p.maxAlive)),
     overRowMax: Math.max(...per.map((p) => p.overRowMax)),
+    overRowCageMax: per.some((p) => p.overRowCage === null) ? null : Math.max(...per.map((p) => p.overRowCage)),
     satMax: Math.max(...per.map((p) => p.satFrac)),
   }
 }

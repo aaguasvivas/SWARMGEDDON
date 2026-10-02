@@ -314,15 +314,36 @@ if (has('A3')) {
   const bySet = {}
   for (const id of sets) {
     const x = a3Stats(of([id]))
-    if (x) bySet[SETS[id].label] = { runs: x.runs.length, offRule: x.offRule, maxAlive: x.maxAlive, overRowMax: x.overRowMax, satMax: x.satMax, worst: x.runs.reduce((a, b) => (b.satFrac > a.satFrac ? b : a)).file }
+    if (x) bySet[SETS[id].label] = { runs: x.runs.length, offRule: x.offRule, maxAlive: x.maxAlive, overRowMax: x.overRowMax, overRowCageMax: x.overRowCageMax, satMax: x.satMax, worst: x.runs.reduce((a, b) => (b.satFrac > a.satFrac ? b : a)).file }
   }
+  // Saturated share per world and minute row, summed over every A3 run (the
+  // steps outside a cage and an event window, and those at 95%+ of maxAlive;
+  // the chunk ending at t belongs to row floor((t - 0.01) / 60)).
+  const byRow = {}
+  for (const w of WORLDS) {
+    const rows = Array.from({ length: 12 }, () => ({ base: 0, sat: 0 }))
+    for (const r of runs) {
+      if (r.world !== w || !sets.includes(r.set) || r.s.ot) continue
+      for (const c of r.s.a3Chunks) {
+        const m = Math.min(11, Math.floor((c.t - 0.01) / 60))
+        rows[m].base += c.a3Base
+        rows[m].sat += c.a3Sat
+      }
+    }
+    byRow[w] = rows.map((x) => (x.base ? +(x.sat / x.base).toFixed(3) : null))
+  }
+  // Over-row rule (P19 density, section 11 A3 note): inside a cage the field is
+  // measured against the maxAlive of the row in force when that cage rose; a
+  // row step inside a cage takes effect when the cage drops. overRowMax (the
+  // row of the current minute) is kept in the details.
+  const overRow = st ? st.overRowCageMax ?? st.overRowMax : null
   add(
     'A3',
     'Beats and density (T0 runs of roam, smart, smart+P, focus, dash, evolve)',
-    st ? `beats off-rule ${st.offRule}; alive max ${st.maxAlive}; over row maxAlive ${st.overRowMax}; saturated share max ${st.satMax}` : 'no runs',
-    'beats on time or per deferral; alive <= row.maxAlive + 160 and <= 610; saturated share <= 0.25',
-    st ? st.offRule === 0 && st.maxAlive <= 610 && st.overRowMax <= 160 && st.satMax <= 0.25 : false,
-    { bySet, offRuleRuns: st ? st.runs.filter((r) => r.off > 0).map((r) => ({ file: r.file, off: r.beats.filter((b) => !b.ok) })) : [] },
+    st ? `beats off-rule ${st.offRule}; alive max ${st.maxAlive}; over row maxAlive ${overRow} (row of the minute: ${st.overRowMax}); saturated share max ${st.satMax}` : 'no runs',
+    'beats on time or per deferral; alive <= row.maxAlive + 160 (inside a cage, the row in force when it rose) and <= 610; saturated share <= 0.25',
+    st ? st.offRule === 0 && st.maxAlive <= 610 && overRow <= 160 && st.satMax <= 0.25 : false,
+    { bySet, byRow, offRuleRuns: st ? st.runs.filter((r) => r.off > 0).map((r) => ({ file: r.file, off: r.beats.filter((b) => !b.ok) })) : [] },
   )
 }
 
@@ -335,32 +356,42 @@ if (has('A4')) {
     const mins = []
     let scored = 0
     let inBand = 0
+    let inBandMinute = 0
     for (let m = 0; m < 12; m++) {
       const band = bands[w][m]
-      const v = rs.filter((s) => s.endTime >= (m + 1) * 60 && s.perMin[m]?.aliveMean != null).map((s) => s.perMin[m].aliveMean)
+      // Minute mean (every step of the minute, the cage and lull steps included).
+      const vm = rs.filter((s) => s.endTime >= (m + 1) * 60 && s.perMin[m]?.aliveMean != null).map((s) => s.perMin[m].aliveMean)
+      const medMinute = median(vm)
+      const okMinute = band && medMinute !== null ? medMinute >= band[0] && medMinute <= band[1] : null
+      if (okMinute) inBandMinute++
+      // Free field (P19 density, section 11 A4 note): the steps of the minute
+      // with no cage and no lull, where the row's minAlive is the floor; a run
+      // counts when it lived through the minute and had 10 s or more of them.
+      const v = rs.filter((s) => s.endTime >= (m + 1) * 60 && s.perMin[m]?.freeAliveMean != null && s.perMin[m].freeSteps >= 600).map((s) => s.perMin[m].freeAliveMean)
       const med = median(v)
       const ok = band && med !== null ? med >= band[0] && med <= band[1] : null
       if (band && med !== null) {
         scored++
         if (ok) inBand++
       }
-      mins.push({ min: m + 1, band: band ? band.join('-') : 'cage', median: med, runs: v.length, ok })
+      mins.push({ min: m + 1, band: band ? band.join('-') : 'cage', median: med, runs: v.length, ok, minuteMean: medMinute, minuteRuns: vm.length, okMinute })
     }
     // Section 11: "inside the band in 9 or more of 12 minutes". The cage
     // rows (4, 7, 11) have no band, so the same 3-in-4 share applies to the
     // scored minutes (ceil(0.75 x 9) = 7); a minute no run lived through is
     // not scored.
     const need = Math.ceil(0.75 * scored)
-    per[w] = { inBand, scored, need, mins }
-    if (inBand < need) pass = false
+    per[w] = { inBand, scored, need, mins, inBandMinuteMean: inBandMinute }
+    // A run JSON from before the free-field counters scores no minute: no result, not a pass.
+    if (scored === 0 || inBand < need) pass = false
   }
-  add('A4', 'Density band (smart+P median alive per minute vs the A7.2 Target alive)', WORLDS.map((w) => `${w} ${per[w].inBand}/${per[w].scored}`).join(', '), 'in band in 3 of 4 scored minutes (7 of 9; the cage rows 4, 7 and 11 have no band)', pass, per)
+  add('A4', 'Density band (smart+P median free-field alive per minute vs the A7.2 Target alive; free field = steps with no cage and no lull)', WORLDS.map((w) => `${w} ${per[w].inBand}/${per[w].scored} (minute mean ${per[w].inBandMinuteMean}/9)`).join(', '), 'in band in 3 of 4 scored minutes (7 of 9; the cage rows 4, 7 and 11 have no band)', pass, per)
 }
 
 if (has('A5')) {
   const fs = fightStats(of(NEEDS.A5.sets))
   const a = fs?.arrivals
-  add('A5', 'Boss arrival (smart+P and focus fights)', a ? `${a.n} arrivals, ${a.distMin} to ${a.distMax} u, cage active and inside ${a.cageInside}/${a.n}, in arena ${a.inArena}/${a.n}` : 'no fights', '250 to 340 u; cage active the same tick', a ? a.bad.length === 0 : false, a ? a.bad : null)
+  add('A5', 'Boss arrival (smart+P and focus fights)', a ? `${a.n} arrivals (${a.ascended} PRIME ascends, placed where the mid boss was), ${a.distMin} to ${a.distMax} u, cage active and inside ${a.cageInside}/${a.n}, in arena ${a.inArena}/${a.n}` : 'no fights', '250 to 340 u; cage active the same tick', a ? a.bad.length === 0 : false, a ? a.bad : null)
 }
 
 if (has('A6')) {
@@ -541,7 +572,11 @@ if (has('A18')) {
     const evo = of(['evolve'], w).filter((s) => s.fights.some((f) => f.stage === 'mid2'))
     const evolved = evo.filter((s) => s.evolutions.length > 0).length
     const roam = of(['roam'], w)
-    const xpMin = roam.length ? Math.min(...roam.map((s) => s.xpCollectFrac)) : null
+    // XP up to the PRIME's end (P19 density, section 11 A18 note); the
+    // whole-run share stays in the details.
+    const xpPrime = roam.map((s) => s.xpCollectFracPrime)
+    const xpMin = roam.length ? (xpPrime.includes(null) ? Math.min(...roam.map((s) => s.xpCollectFrac)) : Math.min(...xpPrime)) : null
+    const xpWholeMin = roam.length ? Math.min(...roam.map((s) => s.xpCollectFrac)) : null
     const xp30Min = roam.length ? Math.min(...roam.map((s) => s.xpCollectFrac30 ?? 1)) : null
     per[w] = {
       dashSurvivalRatio: ratio,
@@ -551,14 +586,16 @@ if (has('A18')) {
       fusionBy4: `${fused}/${prio.length}`,
       evolveAtBoss2: `${evolved}/${evo.length}`,
       roamXpMin: xpMin,
+      roamXpWholeRunMin: xpWholeMin,
+      roamXpUnder90: roam.filter((s) => (s.xpCollectFracPrime ?? s.xpCollectFrac) < 0.9).map((s) => `${s.file} ${s.xpCollectFracPrime ?? s.xpCollectFrac}`),
       roamXp30Min: xp30Min,
     }
     if (!(ratio >= 1.25 && ccMin >= 1 && ccMin <= 4 && prio.length && fused / prio.length >= 0.5 && evo.length && evolved / evo.length >= 0.4 && xpMin >= 0.9)) pass = false
   }
   add(
     'A18',
-    'Build systems (dash = smart+dash+P vs smart+P mean survival; fusion over priority runs that reach 4:00; evolve runs that reach mid2; XP = roam whole-run)',
-    WORLDS.map((w) => `${w} dash ${fmt(per[w].dashSurvivalRatio)}x, cc ${fmt(per[w].closeCallsPerMin)}/min, fusion by 4:00 ${per[w].fusionBy4}, evolve ${per[w].evolveAtBoss2}, XP min ${fmt(per[w].roamXpMin, 3)}`).join('; '),
+    'Build systems (dash = smart+dash+P vs smart+P mean survival; fusion over priority runs that reach 4:00; evolve runs that reach mid2; XP = roam, up to the PRIME kill)',
+    WORLDS.map((w) => `${w} dash ${fmt(per[w].dashSurvivalRatio)}x, cc ${fmt(per[w].closeCallsPerMin)}/min, fusion by 4:00 ${per[w].fusionBy4}, evolve ${per[w].evolveAtBoss2}, XP min ${fmt(per[w].roamXpMin, 3)} (whole run ${fmt(per[w].roamXpWholeRunMin, 3)})`).join('; '),
     'dash >= 1.25x; 1 to 4 close calls/min; >= 50% fusion by 4:00; >= 40% evolve; XP >= 90%',
     pass,
     per,
@@ -602,8 +639,8 @@ md.push('', 'SEED is 1001 x k. Each set runs as `node scripts/playtest/playtest.
 md.push('## Details', '')
 const det = (id) => metrics.find((m) => m.id === id)?.details
 if (det('A4')) {
-  md.push('### A4 median alive per minute (smart+P)', '', 'Columns are the A7.2 rows (row 0 is 0:00 to 1:00). Each cell: median alive [target band], x outside it, (n) runs alive through the minute.', '', `| World | ${Array.from({ length: 12 }, (_, i) => `${i}`).join(' | ')} |`, `|---|${'---|'.repeat(12)}`)
-  for (const w of WORLDS) md.push(`| ${w} | ${det('A4')[w].mins.map((x) => `${x.median === null ? '-' : fmt(x.median, 0)}${x.band === 'cage' ? ' cage' : ` [${x.band}]${x.ok === false ? ' x' : ''}`} (${x.runs})`).join(' | ')} |`)
+  md.push('### A4 median alive per minute (smart+P)', '', 'Columns are the A7.2 rows (row 0 is 0:00 to 1:00). Each cell: median free-field alive [target band], x outside it, (n) runs alive through the minute with 10 s or more of free field; then the median over every step of the minute (cage and lull steps included).', '', `| World | ${Array.from({ length: 12 }, (_, i) => `${i}`).join(' | ')} |`, `|---|${'---|'.repeat(12)}`)
+  for (const w of WORLDS) md.push(`| ${w} | ${det('A4')[w].mins.map((x) => `${x.median === null ? '-' : fmt(x.median, 0)}${x.band === 'cage' ? ' cage' : ` [${x.band}]${x.ok === false ? ' x' : ''}`} (${x.runs}); ${x.minuteMean === null ? '-' : fmt(x.minuteMean, 0)}${x.okMinute === false ? ' x' : ''}`).join(' | ')} |`)
   md.push('')
 }
 if (det('A6')) {
@@ -626,8 +663,10 @@ if (det('A10')) {
   md.push('')
 }
 if (det('A3')) {
-  md.push('### A3 by set', '', '| Set | Runs | Off-rule beats | Alive max | Over row max | Saturated share max (run) |', '|---|---|---|---|---|---|')
-  for (const [k, v] of Object.entries(det('A3').bySet)) md.push(`| ${esc(k)} | ${v.runs} | ${v.offRule} | ${v.maxAlive} | ${v.overRowMax} | ${v.satMax} (${v.worst}) |`)
+  md.push('### A3 by set', '', '| Set | Runs | Off-rule beats | Alive max | Over row max (cage row) | Over row max (row of the minute) | Saturated share max (run) |', '|---|---|---|---|---|---|---|')
+  for (const [k, v] of Object.entries(det('A3').bySet)) md.push(`| ${esc(k)} | ${v.runs} | ${v.offRule} | ${v.maxAlive} | ${v.overRowCageMax ?? '-'} | ${v.overRowMax} | ${v.satMax} (${v.worst}) |`)
+  md.push('', 'Saturated share per minute row, all A3 runs of the world summed (steps outside a cage and an event window at 95%+ of maxAlive):', '', `| World | ${Array.from({ length: 12 }, (_, i) => `${i}`).join(' | ')} |`, `|---|${'---|'.repeat(12)}`)
+  for (const [w, rows] of Object.entries(det('A3').byRow)) md.push(`| ${w} | ${rows.map((x) => (x === null ? '-' : x)).join(' | ')} |`)
   md.push('')
 }
 if (det('A14')) {
