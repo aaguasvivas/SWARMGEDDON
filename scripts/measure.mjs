@@ -271,7 +271,11 @@ const DET_HELPER = `(() => {
     /** det-death: end the run through endRun and hash its RunResult and the streams. */
     finishDeath() {
       const dead = w.pendingGameOver
+      // Enemy shots alive at the death and after the 60-tick death sequence
+      // (P19: no enemy fires once the sequence starts, so none are added).
+      const shotsAtDeath = w.enemyProjectiles.size
       if (dead) S.step(60)
+      const shotsAfterSequence = w.enemyProjectiles.size
       S.endRun(dead ? 'death' : 'quit', 'recap')
       inp.update = st.realUpdate
       const r = S.lastResult
@@ -289,7 +293,7 @@ const DET_HELPER = `(() => {
         mix32(s)
         streams[k] = s.toString(16)
       }
-      return { hash: (h >>> 0).toString(16), result: rest, streams, drafts: st.drafts, screen: S.screen, ...identity() }
+      return { hash: (h >>> 0).toString(16), result: rest, streams, drafts: st.drafts, screen: S.screen, shotsAtDeath, shotsAfterSequence, ...identity() }
     },
     finish() {
       inp.update = st.realUpdate
@@ -506,6 +510,7 @@ if (MODE === 'shot') {
       kills: x.kills, level: x.level, score: x.score, killPts: x.killPts, xpSum: x.xpSum, bestChain: x.bestChain,
       peakTier: x.peakTier, hits: x.hits, damageTaken: x.damageTaken, killer: x.killer, nextBeat: x.nextBeat,
       revivesUsed: x.revivesUsed, podsEquipped: x.podsEquipped, weapons: x.weapons, drafts: r.drafts, streams: r.streams,
+      shotsAtDeath: r.shotsAtDeath, shotsAfterSequence: r.shotsAfterSequence,
     }))
   }
   if (pageErrors.length) console.log(JSON.stringify({ mode: MODE, pageErrors }))
@@ -621,7 +626,12 @@ if (MODE === 'shot') {
       const cls = ['centered', 'aim', 'touch']
       const out = { ring: 0, elites: 0, duringBoss: 0, visible: {}, visibleDuringBoss: 0, visibleNoWallClamp: 0, maxInside: {}, worst: {},
         spawns: 0, inView: 0, emerged: 0, emergeMissing: 0, emergeDropped: 0, near: 0, nearById: {}, minDist: 1e9,
-        nearBySource: { director: 0, offspring: 0, kit: 0 }, directorMinDist: 1e9 }
+        nearBySource: { director: 0, offspring: 0, kit: 0 }, directorMinDist: 1e9, nearList: [], flakDraws: [] }
+      // Flak turret markers (P19 builds): the nearest marker's distance to the
+      // ship when the ring is drawn, and the ship's distance to that marker
+      // when it rises (the ring rule acts at the draw only).
+      const flakSeen = new Set()
+      const flakOpen = []
       const parents = []
       const union = [0, 0, 0, 0]
       const grow = (c) => {
@@ -645,6 +655,26 @@ if (MODE === 'shot') {
         window.__DET.run(1)
         const pl = w.player
         const boss = w.bossAlive && w.boss ? w.boss : null
+        let ring0 = null
+        for (const h of w.hazards.active) {
+          if (!h.alive || h.unit !== 'flakTurret' || flakSeen.has(h.seq)) continue
+          flakSeen.add(h.seq)
+          const d = Math.hypot(h.x - pl.x, h.y - pl.y)
+          if (!ring0) {
+            ring0 = { t: +w.time.toFixed(2), minDistAtDraw: Math.round(d), seqs: [] }
+            out.flakDraws.push(ring0)
+          }
+          ring0.minDistAtDraw = Math.min(ring0.minDistAtDraw, Math.round(d))
+          ring0.seqs.push(h.seq)
+          flakOpen.push({ h, seq: h.seq, ring: ring0, x: h.x, y: h.y })
+        }
+        for (let k = flakOpen.length - 1; k >= 0; k--) {
+          const o = flakOpen[k]
+          if (o.h.alive && o.h.seq === o.seq) continue
+          const d = Math.round(Math.hypot(o.x - pl.x, o.y - pl.y))
+          o.ring.minDistAtRise = Math.min(o.ring.minDistAtRise ?? 1e9, d)
+          flakOpen.splice(k, 1)
+        }
         // Decision 6: every new non-boss enemy in any view variant gets its emerge
         // effect; the scan sees the union of this step's views.
         union[0] = union[1] = 1e9
@@ -674,6 +704,7 @@ if (MODE === 'shot') {
             out.near++
             out.nearById[e.def.id] = (out.nearById[e.def.id] ?? 0) + 1
             out.nearBySource[src]++
+            if (out.nearList.length < 60) out.nearList.push({ t: +w.time.toFixed(2), id: e.def.id, src, dist: Math.round(dist), bossDist: boss ? Math.round(Math.hypot(boss.x - pl.x, boss.y - pl.y)) : null })
           }
           let seen = false
           for (const touch of touches) {

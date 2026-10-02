@@ -1,5 +1,5 @@
 import {
-  ARC_ROUNDS, BITE, BLAST_CRIT, BLAST_NO_BONUS, BONUS_FX, BOSS_SLOW_CAP, BURN_SEC, CLOSE_CALL, CORES, ENEMY_EMERGE, EVO,
+  ARC_ROUNDS, BITE, BLAST_CRIT, BLAST_NO_BONUS, BLAST_NO_SCORE, BONUS_FX, BOSS_SLOW_CAP, BURN_SEC, CLOSE_CALL, CORES, ENEMY_EMERGE, EVO,
   FUSION, GRACE, HEALTH_DROP_CHANCE, HEALTH_HEAL, HEALTH_HEAL_ELITE, MAX_ENEMIES, PODS, SEEK, SPAWN_ROOM,
 } from '../config.ts'
 import { distSq, hypot } from '../core/vec.ts'
@@ -49,6 +49,11 @@ let killNoBonus = false
 /** BLAST_NO_BONUS while the damage being resolved may drop no bonus. */
 function noBonusFlag(): number {
   return killNoBonus ? BLAST_NO_BONUS : 0
+}
+
+/** BLAST_NO_SCORE while the kill being resolved scores nothing (C40). */
+function noScoreFlag(): number {
+  return killSrc === KillSource.NoScore ? BLAST_NO_SCORE : 0
 }
 
 /**
@@ -441,11 +446,14 @@ function damageEnemy(world: World, e: Enemy, dmg: number): void {
 }
 
 /** A queued blast hits `e` (blasts.ts); AoE takes the elite and boss
- *  multipliers. A BLAST_NO_BONUS blast's kills drop no bonus. */
-export function blastHit(world: World, e: Enemy, dmg: number, noBonus: boolean): void {
+ *  multipliers. A BLAST_NO_BONUS blast's kills drop no bonus; a
+ *  BLAST_NO_SCORE blast's non-elite, non-boss kills score nothing (C40). */
+export function blastHit(world: World, e: Enemy, dmg: number, noBonus: boolean, noScore: boolean): void {
+  if (noScore && !e.def.elite && !e.def.boss) killSrc = KillSource.NoScore
   killNoBonus = noBonus
   dealDamage(world, e, vsTarget(world, e, dmg))
   killNoBonus = false
+  killSrc = KillSource.Weapon
 }
 
 /** A NUKE hit: flat damage, no multipliers, and its kills drop no bonus. The
@@ -572,7 +580,7 @@ function killEnemy(world: World, e: Enemy): void {
   const m = world.mods
   if (m.lifestealPerKill > 0) killHeal(world, m.lifestealPerKill)
   if (m.shatter > 0 && e.slow > 0 && !def.boss) {
-    queueBlast(world, e.x, e.y, FUSION.shatterR, (FUSION.shatterBase + FUSION.shatterFrac * e.maxHp) * m.damageMul, 0, noBonusFlag())
+    queueBlast(world, e.x, e.y, FUSION.shatterR, (FUSION.shatterBase + FUSION.shatterFrac * e.maxHp) * m.damageMul, 0, noBonusFlag() | noScoreFlag())
   }
 
   dropGem(world, e.x, e.y, (def.elite || def.boss ? def.xp : def.xp * world.xpScale) * killXpMul)

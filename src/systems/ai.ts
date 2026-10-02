@@ -422,9 +422,11 @@ function teleport(world: World, e: Enemy, range: number): void {
   world.feel.emit(FeelKind.Teleport, 0, e.x, e.y, 0, 0, e.def)
 }
 
-/** Enemy ranged shot (spitter acid / stinger / psychic blast). */
+/** Enemy ranged shot (spitter acid / stinger / psychic blast). None once the
+ *  player's death sequence starts: projectileSystem is off then, so a new shot
+ *  would hang frozen in the air (the boss idles in it too, bossStep). */
 function fireEnemyShot(world: World, e: Enemy, ux: number, uy: number): void {
-  if (world.enemyProjectiles.size >= MAX_ENEMY_PROJECTILES) return
+  if (world.pendingGameOver || world.enemyProjectiles.size >= MAX_ENEMY_PROJECTILES) return
   const def = e.def
   const speed = def.projectileSpeed ?? 300
   const p = world.enemyProjectiles.acquire()

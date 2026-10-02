@@ -1,0 +1,126 @@
+{
+ "meta": {
+  "label": "builds-a8-2",
+  "date": "2026-10-02T04:37:05.170Z",
+  "commit": "8e346d5",
+  "srcDirty": true,
+  "scriptsDirty": true,
+  "command": "node scripts/playtest/matrix.mjs --label=builds-a8-2 --runs=/tmp/swg-builds/a8-2 --seeds=10 --only=A8,A7",
+  "seeds": "1001 x 1..10 per world",
+  "worlds": [
+   "hive",
+   "depths",
+   "wastes"
+  ],
+  "threatSeeds": "1001 x 1..60",
+  "otSets": [
+   1,
+   2
+  ],
+  "otSeeds": null,
+  "only": [
+   "A8",
+   "A7"
+  ],
+  "runsDir": "/tmp/swg-builds/a8-2",
+  "machineAtEnd": {
+   "load": [
+    4.84,
+    5.18,
+    10.12
+   ],
+   "swap": "total = 4096.00M  used = 3123.88M  free = 972.12M  (encrypted)"
+  },
+  "sets": {
+   "smart": {
+    "label": "smart",
+    "pattern": "smart:SEED:14",
+    "worlds": [
+     "hive",
+     "depths",
+     "wastes"
+    ],
+    "runs": 30
+   },
+   "smartP": {
+    "label": "smart+P",
+    "pattern": "smart:SEED:14:nova:priority",
+    "worlds": [
+     "hive",
+     "depths",
+     "wastes"
+    ],
+    "runs": 30
+   },
+   "crude": {
+    "label": "crude",
+    "pattern": "crude:SEED:14",
+    "worlds": [
+     "hive",
+     "depths",
+     "wastes"
+    ],
+    "runs": 30
+   }
+  },
+  "commands": [
+   "node scripts/playtest/playtest.mjs hive smart:1001:14 smart:2002:14 smart:3003:14 smart:4004:14 smart:5005:14 smart:6006:14 smart:7007:14 smart:8008:14 smart:9009:14 smart:10010:14 --out=/tmp/swg-builds/a8-2",
+   "node scripts/playtest/playtest.mjs depths smart:1001:14 smart:2002:14 smart:3003:14 smart:4004:14 smart:5005:14 smart:6006:14 smart:7007:14 smart:8008:14 smart:9009:14 smart:10010:14 --out=/tmp/swg-builds/a8-2",
+   "node scripts/playtest/playtest.mjs wastes smart:1001:14 smart:2002:14 smart:3003:14 smart:4004:14 smart:5005:14 smart:6006:14 smart:7007:14 smart:8008:14 smart:9009:14 smart:10010:14 --out=/tmp/swg-builds/a8-2",
+   "node scripts/playtest/playtest.mjs hive smart:1001:14:nova:priority smart:2002:14:nova:priority smart:3003:14:nova:priority smart:4004:14:nova:priority smart:5005:14:nova:priority smart:6006:14:nova:priority smart:7007:14:nova:priority smart:8008:14:nova:priority smart:9009:14:nova:priority smart:10010:14:nova:priority --out=/tmp/swg-builds/a8-2",
+   "node scripts/playtest/playtest.mjs depths smart:1001:14:nova:priority smart:2002:14:nova:priority smart:3003:14:nova:priority smart:4004:14:nova:priority smart:5005:14:nova:priority smart:6006:14:nova:priority smart:7007:14:nova:priority smart:8008:14:nova:priority smart:9009:14:nova:priority smart:10010:14:nova:priority --out=/tmp/swg-builds/a8-2",
+   "node scripts/playtest/playtest.mjs wastes smart:1001:14:nova:priority smart:2002:14:nova:priority smart:3003:14:nova:priority smart:4004:14:nova:priority smart:5005:14:nova:priority smart:6006:14:nova:priority smart:7007:14:nova:priority smart:8008:14:nova:priority smart:9009:14:nova:priority smart:10010:14:nova:priority --out=/tmp/swg-builds/a8-2",
+   "node scripts/playtest/playtest.mjs hive crude:1001:14 crude:2002:14 crude:3003:14 crude:4004:14 crude:5005:14 crude:6006:14 crude:7007:14 crude:8008:14 crude:9009:14 crude:10010:14 --out=/tmp/swg-builds/a8-2",
+   "node scripts/playtest/playtest.mjs depths crude:1001:14 crude:2002:14 crude:3003:14 crude:4004:14 crude:5005:14 crude:6006:14 crude:7007:14 crude:8008:14 crude:9009:14 crude:10010:14 --out=/tmp/swg-builds/a8-2",
+   "node scripts/playtest/playtest.mjs wastes crude:1001:14 crude:2002:14 crude:3003:14 crude:4004:14 crude:5005:14 crude:6006:14 crude:7007:14 crude:8008:14 crude:9009:14 crude:10010:14 --out=/tmp/swg-builds/a8-2"
+  ]
+ },
+ "metrics": [
+  {
+   "id": "A7",
+   "name": "Win rate (10 seeds per world)",
+   "value": "hive smart+P 5/10, smart 0/10; depths smart+P 1/10, smart 1/10; wastes smart+P 5/10, smart 2/10",
+   "target": "smart+P 25 to 45%; smart 5 to 25%",
+   "result": "FAIL",
+   "details": {
+    "hive": {
+     "smartP": "5/10",
+     "smart": "0/10"
+    },
+    "depths": {
+     "smartP": "1/10",
+     "smart": "1/10"
+    },
+    "wastes": {
+     "smartP": "5/10",
+     "smart": "2/10"
+    }
+   }
+  },
+  {
+   "id": "A8",
+   "name": "Median survival (a win or a stalemate counts as the whole 14:00)",
+   "value": "hive smart 8:25, smart+P 14:00, crude 3:14; depths smart 7:37, smart+P 6:25, crude 3:20; wastes smart 11:35, smart+P 14:00, crude 1:43",
+   "target": "smart >= 5:30; smart+P >= 8:00; crude >= 2:30; Hive crude >= Depths and Wastes",
+   "result": "FAIL",
+   "details": {
+    "hive": {
+     "smart": 504.985,
+     "smartP": 840,
+     "crude": 194.41500000000002
+    },
+    "depths": {
+     "smart": 456.57500000000005,
+     "smartP": 385.095,
+     "crude": 199.575
+    },
+    "wastes": {
+     "smart": 695.11,
+     "smartP": 840,
+     "crude": 103.38
+    },
+    "hiveCrudeAtLeastOthers": false
+   }
+  }
+ ]
+}

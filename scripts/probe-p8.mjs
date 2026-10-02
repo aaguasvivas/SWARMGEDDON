@@ -11,7 +11,8 @@
 //               inset, one timer pod at a time, inside cage.r - 40 while the cage is
 //               up (the P6a carry-over), a pass at full speed never takes one,
 //               standing takes it in 0.4 s (0.1 s with Quartermaster 3), the fill
-//               decays at 2/s, life 20 s + 5 s per Quartermaster stack, the
+//               decays at 2/s (these four on EMBER: NOVA takes pods at once and
+//               they home in), life 20 s + 5 s per Quartermaster stack, the
 //               affinity share, the held weapon never drops, elites drop at 0.35,
 //               the boss pod lands 60 u from the corpse and prefers a 2+ pair
 //   fusions     one check per A3 fusion, asserting its numbers
@@ -237,6 +238,10 @@ function podChecks() {
   const { S, w, pl, ctl, DT, CX, CY, fresh, step, near, r3, pods, enemyAt, shot, clearField } = window.__P8
   const out = {}
   const b = w.arena.bounds
+  // NOVA takes pods at once and they home in (SALVAGER, P9), so the checks of
+  // the default pod rule (the cage clamp of a pod that stays where it lands,
+  // the hold to take and its fill) fly a pilot on that rule.
+  const POD_PILOT = 'ember'
 
   // First timer pod at 20 s; the 35 s slot is skipped while it is still there.
   fresh()
@@ -298,7 +303,8 @@ function podChecks() {
   let worst = -1e9
   let cageN = 0
   const cage = w.director.cage
-  fresh()
+  fresh([], POD_PILOT)
+  if (w.character.rules.podHold <= 0 || w.character.rules.podHoming) throw new Error(`${POD_PILOT} is not on the default pod rule`)
   for (let i = 0; i < 300; i++) {
     clearField()
     const r = 340 + rnd() * 180
@@ -337,7 +343,8 @@ function podChecks() {
     p.y = p.prevY = y
     return p
   }
-  fresh()
+  fresh([], POD_PILOT)
+  const base = w.weapon.id
   let p = podAt(CX, CY)
   pl.x = pl.prevX = CX - 200
   pl.y = pl.prevY = CY
@@ -348,13 +355,13 @@ function podChecks() {
     if (p.alive && p.hold > maxFill) maxFill = p.hold
   }
   ctl.mx = 0
-  const crossed = { taken: w.weapon.id !== 'pistol', podAlive: p.alive, maxFill: r3(maxFill), shipX: r3(pl.x - CX) }
+  const crossed = { pilot: POD_PILOT, taken: w.weapon.id !== base, podAlive: p.alive, maxFill: r3(maxFill), shipX: r3(pl.x - CX) }
   const decayFrom = p.hold
   out.crossNoTake = { ...crossed, pass: !crossed.taken && crossed.podAlive && crossed.shipX > 200 && maxFill > 0.5 && maxFill < 1 }
   out.fillDecay = { fillAfter90Ticks: r3(decayFrom), pass: decayFrom === 0 }
 
   const standTicks = (perks) => {
-    fresh(perks)
+    fresh(perks, POD_PILOT)
     const pod = podAt(CX, CY)
     pl.x = pl.prevX = CX
     pl.y = pl.prevY = CY
@@ -366,10 +373,10 @@ function podChecks() {
   }
   const s0 = standTicks([])
   const s3 = standTicks(['quartermaster', 'quartermaster', 'quartermaster'])
-  out.holdTime = { plain: s0, quartermaster3: s3, pass: s0.ticks === 24 && s3.ticks === 6 && s0.weapon !== 'pistol' }
+  out.holdTime = { pilot: POD_PILOT, plain: s0, quartermaster3: s3, pass: s0.ticks === 24 && s3.ticks === 6 && s0.weapon !== base }
 
   // Decay: fill 2/s off the pod.
-  fresh()
+  fresh([], POD_PILOT)
   p = podAt(CX, CY)
   p.hold = 0.8
   step(15)

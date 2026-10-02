@@ -253,7 +253,7 @@ export const WORLD_SCRIPTS: Readonly<Record<string, WorldScript>> = {
     minutes: [
       row([['swarmer', 10], ['biter', 4]], 16, 40, 1.0, 2, 1.0),
       row([['swarmer', 10], ['biter', 6], ['flyer', 3]], 24, 80, 0.8, 3, 0.51),
-      row([['swarmer', 9], ['biter', 6], ['flyer', 4], ['spitter', 3]], 40, 120, 0.75, 4, 0.47),
+      row([['swarmer', 9], ['biter', 6], ['flyer', 4]], 40, 120, 0.75, 4, 0.47),
       row(HIVE_R3, 40, 140, 0.8, 4, 0.38),
       row(HIVE_R4, 55, 180, 0.7, 5, 0.36),
       row(HIVE_R5, 70, 250, 0.65, 5, 0.32),
@@ -287,7 +287,7 @@ export const WORLD_SCRIPTS: Readonly<Record<string, WorldScript>> = {
     minutes: [
       row([['biter', 8], ['flyer', 3]], 14, 40, 3.0, 6, 1.0),
       row([['biter', 8], ['flyer', 5], ['wraith', 6]], 20, 70, 3.0, 9, 0.51),
-      row(DEPTHS_R2, 30, 100, 3.0, 12, 0.44),
+      row([['biter', 6], ['flyer', 5], ['wraith', 8]], 30, 100, 3.0, 12, 0.44),
       row(DEPTHS_R3, 30, 110, 3.2, 14, 0.36, 'abyssalMaw'),
       row(DEPTHS_R3, 40, 140, 3.0, 16, 0.34),
       row(DEPTHS_R5, 50, 170, 3.0, 18, 0.34, 'deepCaller'),

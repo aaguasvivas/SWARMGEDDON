@@ -1,0 +1,190 @@
+{
+ "meta": {
+  "label": "builds-final-a14",
+  "date": "2026-10-02T08:18:50.797Z",
+  "commit": "8e346d5",
+  "srcDirty": true,
+  "scriptsDirty": true,
+  "command": "node scripts/playtest/matrix.mjs --only=A14 --label=builds-final-a14 --runs=/tmp/swg-builds/final-a14b",
+  "seeds": "1001 x 1..10 per world",
+  "worlds": [
+   "hive",
+   "depths",
+   "wastes"
+  ],
+  "threatSeeds": "1001 x 1..60",
+  "otSets": [
+   1,
+   2
+  ],
+  "otSeeds": null,
+  "only": [
+   "A14"
+  ],
+  "runsDir": "/tmp/swg-builds/final-a14b",
+  "machineAtEnd": {
+   "load": [
+    2.52,
+    2.57,
+    3.14
+   ],
+   "swap": "total = 4096.00M  used = 2544.75M  free = 1551.25M  (encrypted)"
+  },
+  "sets": {},
+  "commands": [
+   "node scripts/measure.mjs 375 667 det",
+   "node scripts/measure.mjs 667 375 det",
+   "node scripts/measure.mjs 375 667 det-long",
+   "node scripts/measure.mjs 667 375 det-long",
+   "node scripts/measure.mjs 375 667 det-death",
+   "node scripts/measure.mjs 667 375 det-death",
+   "node scripts/measure.mjs 375 667 det '--settings={\"shake\":0,\"reduceMotion\":true,\"damageNumbers\":\"off\",\"flashes\":false,\"glow\":0}'"
+  ]
+ },
+ "metrics": [
+  {
+   "id": "A14",
+   "name": "Determinism (det, det-long, det-death at 375x667 and 667x375, det with the settings injection; each with its rerun)",
+   "value": "9 groups, 0 split; reruns match; 21/21 lines",
+   "target": "one hash per mode and world across views, settings, reruns",
+   "result": "PASS",
+   "details": {
+    "det hive": [
+     {
+      "view": "375x667",
+      "hash": "642fbc46",
+      "rerunMatch": true
+     },
+     {
+      "view": "667x375",
+      "hash": "642fbc46",
+      "rerunMatch": true
+     },
+     {
+      "view": "375x667 settings",
+      "hash": "642fbc46",
+      "rerunMatch": true
+     }
+    ],
+    "det depths": [
+     {
+      "view": "375x667",
+      "hash": "1365ccb6",
+      "rerunMatch": true
+     },
+     {
+      "view": "667x375",
+      "hash": "1365ccb6",
+      "rerunMatch": true
+     },
+     {
+      "view": "375x667 settings",
+      "hash": "1365ccb6",
+      "rerunMatch": true
+     }
+    ],
+    "det wastes": [
+     {
+      "view": "375x667",
+      "hash": "d3c8cef6",
+      "rerunMatch": true
+     },
+     {
+      "view": "667x375",
+      "hash": "d3c8cef6",
+      "rerunMatch": true
+     },
+     {
+      "view": "375x667 settings",
+      "hash": "d3c8cef6",
+      "rerunMatch": true
+     }
+    ],
+    "det-long hive": [
+     {
+      "view": "375x667",
+      "hash": "af0a9917",
+      "rerunMatch": true
+     },
+     {
+      "view": "667x375",
+      "hash": "af0a9917",
+      "rerunMatch": true
+     }
+    ],
+    "det-long depths": [
+     {
+      "view": "375x667",
+      "hash": "ba6215aa",
+      "rerunMatch": true
+     },
+     {
+      "view": "667x375",
+      "hash": "ba6215aa",
+      "rerunMatch": true
+     }
+    ],
+    "det-long wastes": [
+     {
+      "view": "375x667",
+      "hash": "ab4f477",
+      "rerunMatch": true
+     },
+     {
+      "view": "667x375",
+      "hash": "ab4f477",
+      "rerunMatch": true
+     }
+    ],
+    "det-death hive": [
+     {
+      "view": "375x667",
+      "hash": "4e549672",
+      "rerunMatch": true,
+      "end": "death",
+      "time": 142.5
+     },
+     {
+      "view": "667x375",
+      "hash": "4e549672",
+      "rerunMatch": true,
+      "end": "death",
+      "time": 142.5
+     }
+    ],
+    "det-death depths": [
+     {
+      "view": "375x667",
+      "hash": "7f0eec9a",
+      "rerunMatch": true,
+      "end": "death",
+      "time": 201.7
+     },
+     {
+      "view": "667x375",
+      "hash": "7f0eec9a",
+      "rerunMatch": true,
+      "end": "death",
+      "time": 201.7
+     }
+    ],
+    "det-death wastes": [
+     {
+      "view": "375x667",
+      "hash": "224be1c",
+      "rerunMatch": true,
+      "end": "death",
+      "time": 168.1
+     },
+     {
+      "view": "667x375",
+      "hash": "224be1c",
+      "rerunMatch": true,
+      "end": "death",
+      "time": 168.1
+     }
+    ]
+   }
+  }
+ ]
+}

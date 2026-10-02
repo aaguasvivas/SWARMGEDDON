@@ -127,8 +127,11 @@ export const RIFT_STORM = { tele: 0.7, active: 0.15, recover: 1.0, damage: 22, r
 
 /** THE EMBER TYRANT's attacks (A10.3). */
 export const MAGMA_MORTAR = { tele: 1.0, active: 0.15, recover: 0.8, damage: 22, r: 70, ring: 4, ringR: 120 } as const
-/** `decal`: the marker circle at each turret spot. */
-export const FLAK_TURRETS = { tele: 0.8, recover: 0.6, unit: 'flakTurret', count: 3, ringR: 170, maxAlive: 6, decal: 34 } as const
+/** `decal`: the marker circle at each turret spot. A ring whose draw puts a
+ *  spot within `shipClear` of the ship turns so the ship's bearing from the
+ *  boss falls midway between two spots (P19; count 3 at ringR 170 keeps every
+ *  spot 147 u or more from the ship, before the wall and cage clamp). */
+export const FLAK_TURRETS = { tele: 0.8, recover: 0.6, unit: 'flakTurret', count: 3, ringR: 170, maxAlive: 6, decal: 34, shipClear: 120 } as const
 export const SCORCH_SWEEP = { tele: 0.9, active: 1.4, recover: 0.8, damage: 28, arc: 120 * DEG, reach: 460, halfW: 30 } as const
 /** Circle k lands `r0 + rStep * k` from the player's spot at the cast start,
  *  at `angStep * k` plus one boss draw, `gap` seconds after circle k - 1. */

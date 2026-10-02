@@ -13,6 +13,8 @@
 //                     decided A12 sample; section 11)
 //   --ot-sets=1,2     OVERTIME sets for A13 (default 1,2; section 11 A12/A13 note;
 //                     set 3 is a holdout: T0 1001 x 61..90, T1 to T3 x 21..30)
+//   --ot-seeds=N      a quick A13 check: each OVERTIME set runs only its first N
+//                     T0 seeds and its first min(N, 10) seeds of T1 to T3
 //   --label=NAME      names the outputs (default baseline)
 //   --runs=DIR        raw run JSONs and logs (default /tmp/swg-matrix/<label>);
 //                     a run already there with the same config is reused, so an
@@ -47,6 +49,7 @@ const SEED_FROM = parseInt(flags['seed-from'] ?? '1')
 const WORLDS = (flags.worlds ?? 'hive,depths,wastes').split(',')
 const THREAT_SEEDS = parseInt(flags['threat-seeds'] ?? '60')
 const OT_SETS = (flags['ot-sets'] ?? '1,2').split(',').map(Number)
+const OT_SEEDS = flags['ot-seeds'] ? parseInt(flags['ot-seeds']) : null
 const LABEL = flags.label ?? 'baseline'
 const RUNS = resolve(flags.runs ?? `/tmp/swg-matrix/${LABEL}`)
 const OUT = resolve(flags.out ?? join(ROOT, 'docs/tuning'))
@@ -87,8 +90,8 @@ const SETS = {
     hiveOnly: true,
     configs: () =>
       OT_SETS.flatMap((set) => [
-        ...seedsN(30, 30 * (set - 1) + 1).map((s) => `smart:${s}:25:nova:priority:0:ot`),
-        ...[1, 2, 3].flatMap((t) => seedsN(10, 10 * (set - 1) + 1).map((s) => `smart:${s}:25:nova:priority:${t}:ot`)),
+        ...seedsN(OT_SEEDS ?? 30, 30 * (set - 1) + 1).map((s) => `smart:${s}:25:nova:priority:0:ot`),
+        ...[1, 2, 3].flatMap((t) => seedsN(Math.min(OT_SEEDS ?? 10, 10), 10 * (set - 1) + 1).map((s) => `smart:${s}:25:nova:priority:${t}:ot`)),
       ]),
   },
 }
@@ -463,12 +466,25 @@ if (has('A9')) {
     const rs = of(['smartP'], w)
     const at = {}
     for (const t of [180, 480, 660]) at[t] = median(rs.map((s) => levelAt(s, t)).filter((x) => x != null))
-    const gaps = rs.flatMap((s) => s.levelUpGapsOver60s.filter((g) => g.from >= 60).map((g) => ({ ...g, run: s.file })))
-    per[w] = { L3: at[180], L8: at[480], L11: at[660], gapRuns: new Set(gaps.map((g) => g.run)).size, runs: rs.length, longestGap: gaps.length ? Math.max(...gaps.map((g) => g.gap)) : 0, gaps }
+    // Gaps are measured outside boss fights (P19 decision, section 11 A9): the
+    // seconds of a gap between two level-ups (or the last one and the run's
+    // end) that fall inside a fight, spawn to its end, do not count.
+    const outside = (s, g) => {
+      let inFight = 0
+      for (const f of s.fights) inFight += Math.max(0, Math.min(g.to, f.endT) - Math.max(g.from, f.spawnT))
+      return +(g.to - g.from - inFight).toFixed(1)
+    }
+    const all = rs.flatMap((s) => s.levelUpGapsOver60s.filter((g) => g.from >= 60).map((g) => ({ ...g, outside: outside(s, g), run: s.file })))
+    const gaps = all.filter((g) => g.outside > 60)
+    per[w] = {
+      L3: at[180], L8: at[480], L11: at[660],
+      gapRuns: new Set(gaps.map((g) => g.run)).size, runs: rs.length, longestGap: gaps.length ? Math.max(...gaps.map((g) => g.outside)) : 0, gaps,
+      gapRunsWithFights: new Set(all.map((g) => g.run)).size, gapsWithFights: all,
+    }
     const inR = (x, lo, hi) => x !== null && x >= lo && x <= hi
-    if (!(inR(at[180], 9, 12) && inR(at[480], 18, 23) && inR(at[660], 23, 28) && gaps.length === 0)) pass = false
+    if (!(inR(at[180], 9, 12) && inR(at[480], 16, 20) && inR(at[660], 19, 24) && gaps.length === 0)) pass = false
   }
-  add('A9', 'Level curve (smart+P median level; a run that won earlier counts its final level)', WORLDS.map((w) => `${w} L${fmt(per[w].L3, 1)}/L${fmt(per[w].L8, 1)}/L${fmt(per[w].L11, 1)} at 3:00/8:00/11:00, gap over 60 s in ${per[w].gapRuns}/${per[w].runs} runs`).join('; '), 'L9 to 12 at 3:00; L18 to 23 at 8:00; L23 to 28 at 11:00; no gap over 60 s after 1:00', pass, per)
+  add('A9', 'Level curve (smart+P median level; a run that won earlier counts its final level; gaps outside boss fights)', WORLDS.map((w) => `${w} L${fmt(per[w].L3, 1)}/L${fmt(per[w].L8, 1)}/L${fmt(per[w].L11, 1)} at 3:00/8:00/11:00, gap over 60 s outside fights in ${per[w].gapRuns}/${per[w].runs} runs (fights counted: ${per[w].gapRunsWithFights})`).join('; '), 'L9 to 12 at 3:00; L16 to 20 at 8:00; L19 to 24 at 11:00; no gap over 60 s after 1:00 outside boss fights', pass, per)
 }
 
 if (has('A10')) {
@@ -576,6 +592,16 @@ if (has('A18')) {
     const dash = of(['dash'], w)
     const base = of(['smartP'], w)
     const ratio = mean(dash.map(survival)) / mean(base.map(survival))
+    // The 14:00 end censors survival, so the mean ratio cannot exceed
+    // 14:00 / (no-dash mean). Minutes alive per death (all minutes played over
+    // the deaths, the exponential estimate of the mean lifetime) is not capped
+    // (P19 builds pass, section 11 A18 note).
+    const lifePerDeath = (a) => {
+      const deaths = a.filter((s) => s.dead).length
+      return deaths ? a.reduce((n, s) => n + survival(s), 0) / 60 / deaths : Infinity
+    }
+    const lifeRatio = lifePerDeath(dash) / lifePerDeath(base)
+    const ceiling = Math.max(...base.map((s) => (s.minutes ?? 14) * 60)) / mean(base.map(survival))
     const ccMin = dash.reduce((n, s) => n + s.closeCalls, 0) / (dash.reduce((n, s) => n + s.endTime, 0) / 60)
     const prio = of(['smartP', 'focus', 'dash'], w).filter((s) => s.endTime >= 240)
     const fused = prio.filter((s) => s.firstFusionAt !== null && s.firstFusionAt <= 240).length
@@ -592,6 +618,12 @@ if (has('A18')) {
       dashSurvivalRatio: ratio,
       dashMeanSurvival: mean(dash.map(survival)),
       baseMeanSurvival: mean(base.map(survival)),
+      dashMeanRatioCeiling: ceiling,
+      dashLifeRatio: lifeRatio,
+      dashMinPerDeath: lifePerDeath(dash),
+      baseMinPerDeath: lifePerDeath(base),
+      dashDeaths: `${dash.filter((s) => s.dead).length}/${dash.length}`,
+      baseDeaths: `${base.filter((s) => s.dead).length}/${base.length}`,
       closeCallsPerMin: ccMin,
       fusionBy4: `${fused}/${prio.length}`,
       evolveAtBoss2: `${evolved}/${evo.length}`,
@@ -600,13 +632,15 @@ if (has('A18')) {
       roamXpUnder90: roam.filter((s) => (s.xpCollectFracPrime ?? s.xpCollectFrac) < 0.9).map((s) => `${s.file} ${s.xpCollectFracPrime ?? s.xpCollectFrac}`),
       roamXp30Min: xp30Min,
     }
-    if (!(ratio >= 1.25 && ccMin >= 1 && ccMin <= 4 && prio.length && fused / prio.length >= 0.5 && evo.length && evolved / evo.length >= 0.4 && xpMin >= 0.9)) pass = false
+    // Scored on minutes alive per death (P19 decision); the mean ratio and its
+    // ceiling are information.
+    if (!(lifeRatio >= 1.25 && ccMin >= 1 && ccMin <= 4 && prio.length && fused / prio.length >= 0.5 && evo.length && evolved / evo.length >= 0.4 && xpMin >= 0.9)) pass = false
   }
   add(
     'A18',
-    'Build systems (dash = smart+dash+P vs smart+P mean survival; fusion over priority runs that reach 4:00; evolve runs that reach mid2; XP = roam, up to the PRIME kill)',
-    WORLDS.map((w) => `${w} dash ${fmt(per[w].dashSurvivalRatio)}x, cc ${fmt(per[w].closeCallsPerMin)}/min, fusion by 4:00 ${per[w].fusionBy4}, evolve ${per[w].evolveAtBoss2}, XP min ${fmt(per[w].roamXpMin, 3)} (whole run ${fmt(per[w].roamXpWholeRunMin, 3)})`).join('; '),
-    'dash >= 1.25x; 1 to 4 close calls/min; >= 50% fusion by 4:00; >= 40% evolve; XP >= 90%',
+    'Build systems (dash = smart+dash+P vs smart+P minutes alive per death; fusion over priority runs that reach 4:00; evolve runs that reach mid2; XP = roam, up to the PRIME kill)',
+    WORLDS.map((w) => `${w} dash ${fmt(per[w].dashLifeRatio)}x per death (deaths ${per[w].dashDeaths} vs ${per[w].baseDeaths}; mean ${fmt(per[w].dashSurvivalRatio)}x, ceiling ${fmt(per[w].dashMeanRatioCeiling)}x), cc ${fmt(per[w].closeCallsPerMin)}/min, fusion by 4:00 ${per[w].fusionBy4}, evolve ${per[w].evolveAtBoss2}, XP min ${fmt(per[w].roamXpMin, 3)} (whole run ${fmt(per[w].roamXpWholeRunMin, 3)})`).join('; '),
+    'dash >= 1.25x minutes alive per death; 1 to 4 close calls/min; >= 50% fusion by 4:00; >= 40% evolve; XP >= 90%',
     pass,
     per,
   )
@@ -625,6 +659,7 @@ const meta = {
   worlds: WORLDS,
   threatSeeds: `1001 x ${SEED_FROM}..${SEED_FROM + THREAT_SEEDS - 1}`,
   otSets: OT_SETS,
+  otSeeds: OT_SEEDS,
   only: ONLY,
   runsDir: RUNS,
   machineAtEnd: machine(),
@@ -638,7 +673,7 @@ const md = []
 md.push(`# P19 ${LABEL} matrix`, '')
 md.push(`- Commit: \`${meta.commit}\`${meta.srcDirty ? ' (src has uncommitted changes)' : ' (src clean)'}${meta.scriptsDirty ? '; the harness in scripts/ is the working tree, committed with this report' : ''}, ${meta.date}`)
 md.push(`- Command: \`${meta.command}\` (dev server at ${process.env.SWG_URL || 'http://localhost:5176'})`)
-md.push(`- Seeds: ${meta.seeds}; A12 Hive ${meta.threatSeeds}; A13 OVERTIME sets ${OT_SETS.join(', ')} (set n: T0 1001 x 30(n-1)+1..30n, T1 to T3 1001 x 10(n-1)+1..10n)`)
+md.push(`- Seeds: ${meta.seeds}; A12 Hive ${meta.threatSeeds}; A13 OVERTIME sets ${OT_SETS.join(', ')} (set n: T0 1001 x 30(n-1)+1..30n, T1 to T3 1001 x 10(n-1)+1..10n${OT_SEEDS ? `; quick check: the first ${OT_SEEDS} T0 and ${Math.min(OT_SEEDS, 10)} T1 to T3 seeds of each set` : ''})`)
 md.push(`- Machine at the end: load ${meta.machineAtEnd.load.join(' ')}, swap ${meta.machineAtEnd.swap}`)
 md.push('')
 md.push('| ID | Metric | Value | Target | Result |', '|---|---|---|---|---|')

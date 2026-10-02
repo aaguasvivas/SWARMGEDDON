@@ -255,6 +255,9 @@ export const BLAST_CAP = 64
 export const BLAST_NO_BONUS = 1
 export const BLAST_KNOCK = 2
 export const BLAST_CRIT = 4
+/** A blast set off by a kill that scores nothing (a NUKE's outright kill, C40):
+ *  its non-elite, non-boss kills give kills and XP but no points or chain. */
+export const BLAST_NO_SCORE = 8
 export const BLAST_KNOCK_PX = 40
 /** Ricochet: a spent bullet seeks the nearest unhit enemy within radius and
  *  lives at least minLife more. */

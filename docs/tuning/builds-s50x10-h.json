@@ -1,0 +1,813 @@
+{
+ "meta": {
+  "label": "builds-s50x10-h",
+  "date": "2026-10-02T07:12:30.263Z",
+  "commit": "8e346d5",
+  "srcDirty": true,
+  "scriptsDirty": true,
+  "command": "node scripts/playtest/matrix.mjs --label=builds-s50x10-h --runs=/tmp/swg-builds/s50x10-h --seeds=30 --seed-from=31 --only=A7,A9",
+  "seeds": "1001 x 31..60 per world",
+  "worlds": [
+   "hive",
+   "depths",
+   "wastes"
+  ],
+  "threatSeeds": "1001 x 31..90",
+  "otSets": [
+   1,
+   2
+  ],
+  "otSeeds": null,
+  "only": [
+   "A7",
+   "A9"
+  ],
+  "runsDir": "/tmp/swg-builds/s50x10-h",
+  "machineAtEnd": {
+   "load": [
+    7.6,
+    8.98,
+    8.21
+   ],
+   "swap": "total = 4096.00M  used = 3176.06M  free = 919.94M  (encrypted)"
+  },
+  "sets": {
+   "smart": {
+    "label": "smart",
+    "pattern": "smart:SEED:14",
+    "worlds": [
+     "hive",
+     "depths",
+     "wastes"
+    ],
+    "runs": 90
+   },
+   "smartP": {
+    "label": "smart+P",
+    "pattern": "smart:SEED:14:nova:priority",
+    "worlds": [
+     "hive",
+     "depths",
+     "wastes"
+    ],
+    "runs": 90
+   }
+  },
+  "commands": [
+   "node scripts/playtest/playtest.mjs hive smart:31031:14 smart:32032:14 smart:33033:14 smart:34034:14 smart:35035:14 smart:36036:14 smart:37037:14 smart:38038:14 smart:39039:14 smart:40040:14 smart:41041:14 smart:42042:14 smart:43043:14 smart:44044:14 smart:45045:14 smart:46046:14 smart:47047:14 smart:48048:14 smart:49049:14 smart:50050:14 smart:51051:14 smart:52052:14 smart:53053:14 smart:54054:14 smart:55055:14 smart:56056:14 smart:57057:14 smart:58058:14 smart:59059:14 smart:60060:14 --out=/tmp/swg-builds/s50x10-h",
+   "node scripts/playtest/playtest.mjs depths smart:31031:14 smart:32032:14 smart:33033:14 smart:34034:14 smart:35035:14 smart:36036:14 smart:37037:14 smart:38038:14 smart:39039:14 smart:40040:14 smart:41041:14 smart:42042:14 smart:43043:14 smart:44044:14 smart:45045:14 smart:46046:14 smart:47047:14 smart:48048:14 smart:49049:14 smart:50050:14 smart:51051:14 smart:52052:14 smart:53053:14 smart:54054:14 smart:55055:14 smart:56056:14 smart:57057:14 smart:58058:14 smart:59059:14 smart:60060:14 --out=/tmp/swg-builds/s50x10-h",
+   "node scripts/playtest/playtest.mjs wastes smart:31031:14 smart:32032:14 smart:33033:14 smart:34034:14 smart:35035:14 smart:36036:14 smart:37037:14 smart:38038:14 smart:39039:14 smart:40040:14 smart:41041:14 smart:42042:14 smart:43043:14 smart:44044:14 smart:45045:14 smart:46046:14 smart:47047:14 smart:48048:14 smart:49049:14 smart:50050:14 smart:51051:14 smart:52052:14 smart:53053:14 smart:54054:14 smart:55055:14 smart:56056:14 smart:57057:14 smart:58058:14 smart:59059:14 smart:60060:14 --out=/tmp/swg-builds/s50x10-h",
+   "node scripts/playtest/playtest.mjs hive smart:31031:14:nova:priority smart:32032:14:nova:priority smart:33033:14:nova:priority smart:34034:14:nova:priority smart:35035:14:nova:priority smart:36036:14:nova:priority smart:37037:14:nova:priority smart:38038:14:nova:priority smart:39039:14:nova:priority smart:40040:14:nova:priority smart:41041:14:nova:priority smart:42042:14:nova:priority smart:43043:14:nova:priority smart:44044:14:nova:priority smart:45045:14:nova:priority smart:46046:14:nova:priority smart:47047:14:nova:priority smart:48048:14:nova:priority smart:49049:14:nova:priority smart:50050:14:nova:priority smart:51051:14:nova:priority smart:52052:14:nova:priority smart:53053:14:nova:priority smart:54054:14:nova:priority smart:55055:14:nova:priority smart:56056:14:nova:priority smart:57057:14:nova:priority smart:58058:14:nova:priority smart:59059:14:nova:priority smart:60060:14:nova:priority --out=/tmp/swg-builds/s50x10-h",
+   "node scripts/playtest/playtest.mjs depths smart:31031:14:nova:priority smart:32032:14:nova:priority smart:33033:14:nova:priority smart:34034:14:nova:priority smart:35035:14:nova:priority smart:36036:14:nova:priority smart:37037:14:nova:priority smart:38038:14:nova:priority smart:39039:14:nova:priority smart:40040:14:nova:priority smart:41041:14:nova:priority smart:42042:14:nova:priority smart:43043:14:nova:priority smart:44044:14:nova:priority smart:45045:14:nova:priority smart:46046:14:nova:priority smart:47047:14:nova:priority smart:48048:14:nova:priority smart:49049:14:nova:priority smart:50050:14:nova:priority smart:51051:14:nova:priority smart:52052:14:nova:priority smart:53053:14:nova:priority smart:54054:14:nova:priority smart:55055:14:nova:priority smart:56056:14:nova:priority smart:57057:14:nova:priority smart:58058:14:nova:priority smart:59059:14:nova:priority smart:60060:14:nova:priority --out=/tmp/swg-builds/s50x10-h",
+   "node scripts/playtest/playtest.mjs wastes smart:31031:14:nova:priority smart:32032:14:nova:priority smart:33033:14:nova:priority smart:34034:14:nova:priority smart:35035:14:nova:priority smart:36036:14:nova:priority smart:37037:14:nova:priority smart:38038:14:nova:priority smart:39039:14:nova:priority smart:40040:14:nova:priority smart:41041:14:nova:priority smart:42042:14:nova:priority smart:43043:14:nova:priority smart:44044:14:nova:priority smart:45045:14:nova:priority smart:46046:14:nova:priority smart:47047:14:nova:priority smart:48048:14:nova:priority smart:49049:14:nova:priority smart:50050:14:nova:priority smart:51051:14:nova:priority smart:52052:14:nova:priority smart:53053:14:nova:priority smart:54054:14:nova:priority smart:55055:14:nova:priority smart:56056:14:nova:priority smart:57057:14:nova:priority smart:58058:14:nova:priority smart:59059:14:nova:priority smart:60060:14:nova:priority --out=/tmp/swg-builds/s50x10-h"
+  ]
+ },
+ "metrics": [
+  {
+   "id": "A7",
+   "name": "Win rate (30 seeds per world)",
+   "value": "hive smart+P 21/30, smart 9/30; depths smart+P 12/30, smart 5/30; wastes smart+P 19/30, smart 1/30",
+   "target": "smart+P 25 to 45%; smart 5 to 25%",
+   "result": "FAIL",
+   "details": {
+    "hive": {
+     "smartP": "21/30",
+     "smart": "9/30"
+    },
+    "depths": {
+     "smartP": "12/30",
+     "smart": "5/30"
+    },
+    "wastes": {
+     "smartP": "19/30",
+     "smart": "1/30"
+    }
+   }
+  },
+  {
+   "id": "A9",
+   "name": "Level curve (smart+P median level; a run that won earlier counts its final level; gaps outside boss fights)",
+   "value": "hive L8/L15.5/L19.5 at 3:00/8:00/11:00, gap over 60 s outside fights in 6/30 runs (fights counted: 25); depths L9/L17/L22 at 3:00/8:00/11:00, gap over 60 s outside fights in 0/30 runs (fights counted: 9); wastes L10/L16/L21 at 3:00/8:00/11:00, gap over 60 s outside fights in 0/30 runs (fights counted: 18)",
+   "target": "L9 to 12 at 3:00; L16 to 20 at 8:00; L19 to 24 at 11:00; no gap over 60 s after 1:00 outside boss fights",
+   "result": "FAIL",
+   "details": {
+    "hive": {
+     "L3": 8,
+     "L8": 15.5,
+     "L11": 19.5,
+     "gapRuns": 6,
+     "runs": 30,
+     "longestGap": 77,
+     "gaps": [
+      {
+       "from": 355.5,
+       "to": 420.2,
+       "gap": 64.7,
+       "outside": 64.7,
+       "run": "hive_smart_35035_priority.json"
+      },
+      {
+       "from": 535.3,
+       "to": 612.3,
+       "gap": 76.9,
+       "outside": 77,
+       "run": "hive_smart_35035_priority.json"
+      },
+      {
+       "from": 563.8,
+       "to": 630.4,
+       "gap": 66.6,
+       "outside": 66.2,
+       "run": "hive_smart_39039_priority.json"
+      },
+      {
+       "from": 370.9,
+       "to": 439.6,
+       "gap": 68.7,
+       "outside": 68.7,
+       "run": "hive_smart_40040_priority.json"
+      },
+      {
+       "from": 389.1,
+       "to": 455.6,
+       "gap": 66.4,
+       "outside": 60.9,
+       "run": "hive_smart_52052_priority.json"
+      },
+      {
+       "from": 564.1,
+       "to": 632.4,
+       "gap": 68.3,
+       "outside": 65.9,
+       "run": "hive_smart_52052_priority.json"
+      },
+      {
+       "from": 357,
+       "to": 419.1,
+       "gap": 62.1,
+       "outside": 62.1,
+       "run": "hive_smart_53053_priority.json"
+      },
+      {
+       "from": 479.7,
+       "to": 542.7,
+       "gap": 63,
+       "outside": 63,
+       "run": "hive_smart_58058_priority.json"
+      }
+     ],
+     "gapRunsWithFights": 25,
+     "gapsWithFights": [
+      {
+       "from": 660,
+       "to": 728.2,
+       "gap": 68.2,
+       "outside": 0,
+       "run": "hive_smart_31031_priority.json"
+      },
+      {
+       "from": 728.2,
+       "to": 797.7,
+       "gap": 69.5,
+       "outside": 0,
+       "run": "hive_smart_31031_priority.json"
+      },
+      {
+       "from": 462.5,
+       "to": 522.6,
+       "gap": 60.1,
+       "outside": 0,
+       "run": "hive_smart_32032_priority.json"
+      },
+      {
+       "from": 702.3,
+       "to": 765.5,
+       "gap": 63.2,
+       "outside": 0,
+       "run": "hive_smart_32032_priority.json"
+      },
+      {
+       "from": 204.1,
+       "to": 270.2,
+       "gap": 66.2,
+       "outside": 35.9,
+       "run": "hive_smart_33033_priority.json"
+      },
+      {
+       "from": 630.4,
+       "to": 709,
+       "gap": 78.6,
+       "outside": 0,
+       "run": "hive_smart_33033_priority.json"
+      },
+      {
+       "from": 709,
+       "to": 774.8,
+       "gap": 65.8,
+       "outside": 0,
+       "run": "hive_smart_33033_priority.json"
+      },
+      {
+       "from": 774.8,
+       "to": 840,
+       "gap": 65.2,
+       "outside": 0,
+       "run": "hive_smart_33033_priority.json"
+      },
+      {
+       "from": 214.7,
+       "to": 276,
+       "gap": 61.3,
+       "outside": 30.3,
+       "run": "hive_smart_34034_priority.json"
+      },
+      {
+       "from": 355.5,
+       "to": 420.2,
+       "gap": 64.7,
+       "outside": 64.7,
+       "run": "hive_smart_35035_priority.json"
+      },
+      {
+       "from": 535.3,
+       "to": 612.3,
+       "gap": 76.9,
+       "outside": 77,
+       "run": "hive_smart_35035_priority.json"
+      },
+      {
+       "from": 664.1,
+       "to": 733.7,
+       "gap": 69.6,
+       "outside": 0,
+       "run": "hive_smart_36036_priority.json"
+      },
+      {
+       "from": 685.4,
+       "to": 760.5,
+       "gap": 75.1,
+       "outside": 0,
+       "run": "hive_smart_37037_priority.json"
+      },
+      {
+       "from": 760.5,
+       "to": 825.1,
+       "gap": 64.6,
+       "outside": 0.1,
+       "run": "hive_smart_37037_priority.json"
+      },
+      {
+       "from": 480.5,
+       "to": 541.5,
+       "gap": 61,
+       "outside": 0,
+       "run": "hive_smart_38038_priority.json"
+      },
+      {
+       "from": 598.6,
+       "to": 659.2,
+       "gap": 60.6,
+       "outside": 31.4,
+       "run": "hive_smart_38038_priority.json"
+      },
+      {
+       "from": 563.8,
+       "to": 630.4,
+       "gap": 66.6,
+       "outside": 66.2,
+       "run": "hive_smart_39039_priority.json"
+      },
+      {
+       "from": 370.9,
+       "to": 439.6,
+       "gap": 68.7,
+       "outside": 68.7,
+       "run": "hive_smart_40040_priority.json"
+      },
+      {
+       "from": 446.7,
+       "to": 507,
+       "gap": 60.3,
+       "outside": 7.4,
+       "run": "hive_smart_41041_priority.json"
+      },
+      {
+       "from": 390.4,
+       "to": 450.7,
+       "gap": 60.4,
+       "outside": 59.6,
+       "run": "hive_smart_42042_priority.json"
+      },
+      {
+       "from": 450.7,
+       "to": 515.1,
+       "gap": 64.4,
+       "outside": 0,
+       "run": "hive_smart_42042_priority.json"
+      },
+      {
+       "from": 684,
+       "to": 745.2,
+       "gap": 61.2,
+       "outside": 0,
+       "run": "hive_smart_42042_priority.json"
+      },
+      {
+       "from": 197.3,
+       "to": 261.3,
+       "gap": 64,
+       "outside": 42.7,
+       "run": "hive_smart_44044_priority.json"
+      },
+      {
+       "from": 404.6,
+       "to": 468.1,
+       "gap": 63.5,
+       "outside": 45.4,
+       "run": "hive_smart_44044_priority.json"
+      },
+      {
+       "from": 519.5,
+       "to": 593.6,
+       "gap": 74.1,
+       "outside": 0,
+       "run": "hive_smart_44044_priority.json"
+      },
+      {
+       "from": 646.1,
+       "to": 716.1,
+       "gap": 69.9,
+       "outside": 0,
+       "run": "hive_smart_44044_priority.json"
+      },
+      {
+       "from": 716.1,
+       "to": 783.3,
+       "gap": 67.3,
+       "outside": 0,
+       "run": "hive_smart_44044_priority.json"
+      },
+      {
+       "from": 665.7,
+       "to": 729.8,
+       "gap": 64,
+       "outside": 0,
+       "run": "hive_smart_45045_priority.json"
+      },
+      {
+       "from": 491.6,
+       "to": 568.8,
+       "gap": 77.2,
+       "outside": 0,
+       "run": "hive_smart_48048_priority.json"
+      },
+      {
+       "from": 677.8,
+       "to": 741.1,
+       "gap": 63.3,
+       "outside": 0,
+       "run": "hive_smart_48048_priority.json"
+      },
+      {
+       "from": 741.1,
+       "to": 803.4,
+       "gap": 62.3,
+       "outside": 0,
+       "run": "hive_smart_48048_priority.json"
+      },
+      {
+       "from": 271.6,
+       "to": 333.6,
+       "gap": 62,
+       "outside": 0,
+       "run": "hive_smart_49049_priority.json"
+      },
+      {
+       "from": 275,
+       "to": 341.4,
+       "gap": 66.4,
+       "outside": 0,
+       "run": "hive_smart_50050_priority.json"
+      },
+      {
+       "from": 441.3,
+       "to": 507.7,
+       "gap": 66.4,
+       "outside": 8.7,
+       "run": "hive_smart_50050_priority.json"
+      },
+      {
+       "from": 507.7,
+       "to": 590.4,
+       "gap": 82.7,
+       "outside": 1.9,
+       "run": "hive_smart_50050_priority.json"
+      },
+      {
+       "from": 614.5,
+       "to": 680.1,
+       "gap": 65.7,
+       "outside": 15.5,
+       "run": "hive_smart_50050_priority.json"
+      },
+      {
+       "from": 680.1,
+       "to": 757.9,
+       "gap": 77.7,
+       "outside": 0,
+       "run": "hive_smart_50050_priority.json"
+      },
+      {
+       "from": 389.1,
+       "to": 455.6,
+       "gap": 66.4,
+       "outside": 60.9,
+       "run": "hive_smart_52052_priority.json"
+      },
+      {
+       "from": 564.1,
+       "to": 632.4,
+       "gap": 68.3,
+       "outside": 65.9,
+       "run": "hive_smart_52052_priority.json"
+      },
+      {
+       "from": 357,
+       "to": 419.1,
+       "gap": 62.1,
+       "outside": 62.1,
+       "run": "hive_smart_53053_priority.json"
+      },
+      {
+       "from": 419.1,
+       "to": 486.8,
+       "gap": 67.7,
+       "outside": 30.9,
+       "run": "hive_smart_53053_priority.json"
+      },
+      {
+       "from": 428.5,
+       "to": 490.9,
+       "gap": 62.4,
+       "outside": 21.5,
+       "run": "hive_smart_54054_priority.json"
+      },
+      {
+       "from": 601.3,
+       "to": 661.6,
+       "gap": 60.4,
+       "outside": 28.7,
+       "run": "hive_smart_54054_priority.json"
+      },
+      {
+       "from": 661.6,
+       "to": 726.1,
+       "gap": 64.4,
+       "outside": 0,
+       "run": "hive_smart_54054_priority.json"
+      },
+      {
+       "from": 413.8,
+       "to": 479.8,
+       "gap": 66,
+       "outside": 36.2,
+       "run": "hive_smart_55055_priority.json"
+      },
+      {
+       "from": 603.8,
+       "to": 664.5,
+       "gap": 60.7,
+       "outside": 26.2,
+       "run": "hive_smart_55055_priority.json"
+      },
+      {
+       "from": 622.8,
+       "to": 683.4,
+       "gap": 60.6,
+       "outside": 7.2,
+       "run": "hive_smart_56056_priority.json"
+      },
+      {
+       "from": 683.4,
+       "to": 753.1,
+       "gap": 69.7,
+       "outside": 0,
+       "run": "hive_smart_56056_priority.json"
+      },
+      {
+       "from": 410.3,
+       "to": 470.7,
+       "gap": 60.4,
+       "outside": 39.7,
+       "run": "hive_smart_57057_priority.json"
+      },
+      {
+       "from": 622.2,
+       "to": 707.6,
+       "gap": 85.5,
+       "outside": 7.8,
+       "run": "hive_smart_57057_priority.json"
+      },
+      {
+       "from": 479.7,
+       "to": 542.7,
+       "gap": 63,
+       "outside": 63,
+       "run": "hive_smart_58058_priority.json"
+      },
+      {
+       "from": 414.3,
+       "to": 474.9,
+       "gap": 60.7,
+       "outside": 35.7,
+       "run": "hive_smart_60060_priority.json"
+      }
+     ]
+    },
+    "depths": {
+     "L3": 9,
+     "L8": 17,
+     "L11": 22,
+     "gapRuns": 0,
+     "runs": 30,
+     "longestGap": 0,
+     "gaps": [],
+     "gapRunsWithFights": 9,
+     "gapsWithFights": [
+      {
+       "from": 684.1,
+       "to": 756.5,
+       "gap": 72.4,
+       "outside": 0,
+       "run": "depths_smart_33033_priority.json"
+      },
+      {
+       "from": 621.4,
+       "to": 681.9,
+       "gap": 60.5,
+       "outside": 8.6,
+       "run": "depths_smart_37037_priority.json"
+      },
+      {
+       "from": 681.9,
+       "to": 745.9,
+       "gap": 64,
+       "outside": 0,
+       "run": "depths_smart_37037_priority.json"
+      },
+      {
+       "from": 629.5,
+       "to": 691.2,
+       "gap": 61.8,
+       "outside": 0.5,
+       "run": "depths_smart_38038_priority.json"
+      },
+      {
+       "from": 691.2,
+       "to": 751.3,
+       "gap": 60,
+       "outside": 0.1,
+       "run": "depths_smart_38038_priority.json"
+      },
+      {
+       "from": 237.6,
+       "to": 298.9,
+       "gap": 61.3,
+       "outside": 2.4,
+       "run": "depths_smart_40040_priority.json"
+      },
+      {
+       "from": 656.6,
+       "to": 731.4,
+       "gap": 74.8,
+       "outside": 0,
+       "run": "depths_smart_42042_priority.json"
+      },
+      {
+       "from": 695,
+       "to": 766.1,
+       "gap": 71.2,
+       "outside": 0,
+       "run": "depths_smart_44044_priority.json"
+      },
+      {
+       "from": 677.5,
+       "to": 741.5,
+       "gap": 64,
+       "outside": 0,
+       "run": "depths_smart_48048_priority.json"
+      },
+      {
+       "from": 608.5,
+       "to": 678.8,
+       "gap": 70.3,
+       "outside": 21.7,
+       "run": "depths_smart_51051_priority.json"
+      },
+      {
+       "from": 639,
+       "to": 711.2,
+       "gap": 72.1,
+       "outside": 0.3,
+       "run": "depths_smart_55055_priority.json"
+      }
+     ]
+    },
+    "wastes": {
+     "L3": 10,
+     "L8": 16,
+     "L11": 21,
+     "gapRuns": 0,
+     "runs": 30,
+     "longestGap": 0,
+     "gaps": [],
+     "gapRunsWithFights": 18,
+     "gapsWithFights": [
+      {
+       "from": 665,
+       "to": 736.8,
+       "gap": 71.9,
+       "outside": 0,
+       "run": "wastes_smart_31031_priority.json"
+      },
+      {
+       "from": 736.8,
+       "to": 807.6,
+       "gap": 70.8,
+       "outside": 0,
+       "run": "wastes_smart_31031_priority.json"
+      },
+      {
+       "from": 639.8,
+       "to": 719.2,
+       "gap": 79.4,
+       "outside": 0,
+       "run": "wastes_smart_33033_priority.json"
+      },
+      {
+       "from": 719.2,
+       "to": 795.6,
+       "gap": 76.4,
+       "outside": 0,
+       "run": "wastes_smart_33033_priority.json"
+      },
+      {
+       "from": 652.5,
+       "to": 716.5,
+       "gap": 64.1,
+       "outside": 0,
+       "run": "wastes_smart_36036_priority.json"
+      },
+      {
+       "from": 678.9,
+       "to": 741.4,
+       "gap": 62.5,
+       "outside": 0,
+       "run": "wastes_smart_37037_priority.json"
+      },
+      {
+       "from": 452.1,
+       "to": 518,
+       "gap": 65.9,
+       "outside": 0,
+       "run": "wastes_smart_38038_priority.json"
+      },
+      {
+       "from": 551.9,
+       "to": 620.1,
+       "gap": 68.3,
+       "outside": 0,
+       "run": "wastes_smart_39039_priority.json"
+      },
+      {
+       "from": 620.1,
+       "to": 686.6,
+       "gap": 66.5,
+       "outside": 0,
+       "run": "wastes_smart_39039_priority.json"
+      },
+      {
+       "from": 686.6,
+       "to": 763.4,
+       "gap": 76.8,
+       "outside": 0,
+       "run": "wastes_smart_39039_priority.json"
+      },
+      {
+       "from": 425.8,
+       "to": 488.1,
+       "gap": 62.3,
+       "outside": 24.6,
+       "run": "wastes_smart_40040_priority.json"
+      },
+      {
+       "from": 663.5,
+       "to": 738.8,
+       "gap": 75.2,
+       "outside": 0,
+       "run": "wastes_smart_42042_priority.json"
+      },
+      {
+       "from": 738.8,
+       "to": 807.7,
+       "gap": 68.9,
+       "outside": 0,
+       "run": "wastes_smart_42042_priority.json"
+      },
+      {
+       "from": 654.2,
+       "to": 716.1,
+       "gap": 62,
+       "outside": 0,
+       "run": "wastes_smart_43043_priority.json"
+      },
+      {
+       "from": 497.6,
+       "to": 562.2,
+       "gap": 64.7,
+       "outside": 0.1,
+       "run": "wastes_smart_44044_priority.json"
+      },
+      {
+       "from": 663.2,
+       "to": 724.9,
+       "gap": 61.7,
+       "outside": 0,
+       "run": "wastes_smart_44044_priority.json"
+      },
+      {
+       "from": 686.7,
+       "to": 750.4,
+       "gap": 63.7,
+       "outside": 0,
+       "run": "wastes_smart_45045_priority.json"
+      },
+      {
+       "from": 673.8,
+       "to": 739.3,
+       "gap": 65.6,
+       "outside": 0,
+       "run": "wastes_smart_48048_priority.json"
+      },
+      {
+       "from": 435.5,
+       "to": 497.6,
+       "gap": 62.1,
+       "outside": 14.5,
+       "run": "wastes_smart_52052_priority.json"
+      },
+      {
+       "from": 659.3,
+       "to": 735.6,
+       "gap": 76.3,
+       "outside": 0,
+       "run": "wastes_smart_52052_priority.json"
+      },
+      {
+       "from": 735.6,
+       "to": 804.2,
+       "gap": 68.6,
+       "outside": 0,
+       "run": "wastes_smart_52052_priority.json"
+      },
+      {
+       "from": 420.2,
+       "to": 491,
+       "gap": 70.8,
+       "outside": 29.8,
+       "run": "wastes_smart_53053_priority.json"
+      },
+      {
+       "from": 672.4,
+       "to": 740.5,
+       "gap": 68,
+       "outside": 0,
+       "run": "wastes_smart_54054_priority.json"
+      },
+      {
+       "from": 505.9,
+       "to": 576.9,
+       "gap": 71,
+       "outside": 35,
+       "run": "wastes_smart_55055_priority.json"
+      },
+      {
+       "from": 661.5,
+       "to": 724.5,
+       "gap": 63.1,
+       "outside": 0.5,
+       "run": "wastes_smart_57057_priority.json"
+      },
+      {
+       "from": 503.2,
+       "to": 564.1,
+       "gap": 60.9,
+       "outside": 17.5,
+       "run": "wastes_smart_59059_priority.json"
+      }
+     ]
+    }
+   }
+  }
+ ]
+}

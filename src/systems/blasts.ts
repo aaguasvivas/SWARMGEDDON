@@ -1,4 +1,4 @@
-import { BLAST_CAP, BLAST_CRIT, BLAST_KNOCK, BLAST_KNOCK_PX, BLAST_NO_BONUS } from '../config.ts'
+import { BLAST_CAP, BLAST_CRIT, BLAST_KNOCK, BLAST_KNOCK_PX, BLAST_NO_BONUS, BLAST_NO_SCORE } from '../config.ts'
 import { spawnExplosion, spawnRing } from '../effects/fx.ts'
 import { FF_AOE, FF_CRIT, FeelKind } from '../effects/feelQueue.ts'
 import type { World } from '../game/world.ts'
@@ -73,6 +73,7 @@ function detonate(w: World, x: number, y: number, r: number, dmg: number, flags:
   w.lastHitVy = 0
   const knock = (flags & BLAST_KNOCK) !== 0
   const noBonus = (flags & BLAST_NO_BONUS) !== 0
+  const noScore = (flags & BLAST_NO_SCORE) !== 0
   const buf = w.queryBuf
   const n = w.hash.query(x, y, r, buf)
   const r2 = r * r
@@ -83,7 +84,7 @@ function detonate(w: World, x: number, y: number, r: number, dmg: number, flags:
     const dy = e.y - y
     const d2 = dx * dx + dy * dy
     if (d2 >= r2) continue
-    blastHit(w, e, dmg, noBonus)
+    blastHit(w, e, dmg, noBonus, noScore)
     if (knock && e.alive && !e.def.elite && !e.def.boss) {
       const d = Math.sqrt(d2)
       if (d > 1e-6) {

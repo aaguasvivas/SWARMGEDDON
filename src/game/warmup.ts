@@ -80,7 +80,7 @@ export function warmSystems(w: World, cfg: RunConfig, input: InputManager, draw:
         // The elites arrive, then die: shards, pods, bonuses and the affix death hooks.
         steps(w, input, draw, ELITE_STEPS, FIXED_DT)
         const es = w.enemies.active
-        for (let k = 0; k < es.length; k++) if (es[k]!.alive && es[k]!.def.elite) blastHit(w, es[k]!, es[k]!.hp + 1, false)
+        for (let k = 0; k < es.length; k++) if (es[k]!.alive && es[k]!.def.elite) blastHit(w, es[k]!, es[k]!.hp + 1, false, false)
         steps(w, input, draw, ELITE_STEPS, FIXED_DT)
       }
     }

@@ -18,7 +18,8 @@
 //            pity, at most 2 on the field; NUKE (outright kills without score,
 //            elites 30%, bosses 6%, flat under FREEZE and INFERNO, an elite or
 //            boss it finishes scores, shots removed, BROOD and VOLATILE still
-//            fire, no bonus), FIREBLAST (24 shots, x1.5, pierce +3, no bonus,
+//            fire, no bonus; a SHATTER blast from a NUKE kill scores nothing,
+//            one from a weapon kill does), FIREBLAST (24 shots, x1.5, pierce +3, no bonus,
 //            also from the burns its shots light), FREEZE,
 //            OVERDRIVE, SHIELD (and no Close Call), VACUUM
 //   pilots   NOVA takes pods at once and they home in, her salvage; EMBER's two
@@ -98,7 +99,7 @@ const HELPERS = `(async () => {
     return row
   }
   const spawnAt = (id, dx, dy) => M.spawn.spawnEnemy(w, id, pl.x + dx, pl.y + dy)
-  const kill = (e) => M.collision.blastHit(w, e, e.hp + 1e6, false)
+  const kill = (e) => M.collision.blastHit(w, e, e.hp + 1e6, false, false)
   const count = (kind) => w.pickups.active.filter((p) => p.alive && p.kind === kind).length
   const step = (n) => {
     for (let i = 0; i < n; i++) {
@@ -399,6 +400,43 @@ const BONUSES = `(async () => {
   out.nukeFinish = { ...fin, pass: fin.eliteDead && fin.bossDead && fin.killPts === fin.want && fin.chain === 2 && Math.abs(fin.burningFrac - 0.3) < 1e-4 && fin.bonuses === 0 }
   sweep()
 
+  // SHATTER after a NUKE (C40, P19 builds pass): a slowed swarmer that a
+  // weapon kills bursts, and the blast's kill scores points and chain. A
+  // slowed swarmer that the NUKE kills bursts too; the blast's kill outside
+  // the NUKE radius gives a kill and XP but no points, no chain and no bonus
+  // (pity armed: any 2+ XP kill would drop one).
+  const shatterCase = (byNuke) => {
+    fresh()
+    w.time = 60
+    w.lastBonusAt = -100
+    w.xpToNext = 1e9
+    w.choosePerk('f_shatter')
+    const R = M.config.BONUS_FX.nukeR
+    const sw = spawnAt('swarmer', R - 40, 0)
+    sw.slow = 1.2
+    const victim = spawnAt('brute', R + 20, 0)
+    victim.hp = 1
+    if (byNuke) M.bonuses.takeBonus(w, BONUS_NUKE)
+    else kill(sw)
+    const swDead = !sw.alive
+    const victimAfterKill = victim.alive
+    const p0 = w.killPts
+    const c0 = w.chain
+    const k0 = w.kills
+    const x0 = w.xpDropped
+    const b0 = count('bonus')
+    step(1)
+    return { swDead, victimAliveAfterKill: victimAfterKill, victimDead: !victim.alive, killPts: w.killPts - p0, chain: w.chain - c0, kills: w.kills - k0, xpDropped: +(w.xpDropped - x0).toFixed(1), bonuses: count('bonus') - b0 }
+  }
+  const byWeapon = shatterCase(false)
+  const byNuke = shatterCase(true)
+  out.nukeShatter = {
+    byWeapon, byNuke,
+    pass: byWeapon.swDead && byWeapon.victimAliveAfterKill && byWeapon.victimDead && byWeapon.killPts > 0 && byWeapon.chain === 1 && byWeapon.kills === 1 &&
+      byNuke.swDead && byNuke.victimAliveAfterKill && byNuke.victimDead && byNuke.killPts === 0 && byNuke.chain === 0 && byNuke.kills === 1 && byNuke.xpDropped > 0 && byNuke.bonuses === 0,
+  }
+  sweep()
+
   // FIREBLAST: 24 shots of the current weapon, x1.5, pierce +3; its kills drop no bonus.
   fresh()
   w.time = 60
@@ -464,7 +502,7 @@ const BONUSES = `(async () => {
   const moved = sw.x !== x0[0] || sp.x !== x0[1]
   const bit = pl.hp < hp0
   const enemyShots = w.enemyProjectiles.size - eps0
-  M.collision.blastHit(w, sw, 10, false)
+  M.collision.blastHit(w, sw, 10, false, false)
   const took = 100 - sw.hp
   const tLeft = w.freezeT
   step(3 * 60 + 5)

@@ -312,12 +312,20 @@ function startAttack(w: World, e: Enemy, kit: BossKit): void {
     }
     case ATK_FLAK_TURRETS: {
       const T = FLAK_TURRETS
-      const a0 = w.rngs.boss.angle()
+      let a0 = w.rngs.boss.angle()
+      // No turret rises within shipClear of the ship: the ring turns so the
+      // ship's bearing from the boss falls midway between two spots.
       for (let k = 0; k < T.count; k++) {
-        const a = a0 + (k * TAU) / T.count
-        spot.x = e.x + Math.cos(a) * T.ringR
-        spot.y = e.y + Math.sin(a) * T.ringR
-        clampSpot(w, TURRET.radius, EDGE_INSET)
+        turretSpot(w, e, a0 + (k * TAU) / T.count)
+        const dx = spot.x - pl.x
+        const dy = spot.y - pl.y
+        if (dx * dx + dy * dy < T.shipClear * T.shipClear) {
+          a0 = Math.atan2(pl.y - e.y, pl.x - e.x) + Math.PI / T.count
+          break
+        }
+      }
+      for (let k = 0; k < T.count; k++) {
+        turretSpot(w, e, a0 + (k * TAU) / T.count)
         const h = bossHazard(w, HZ_CIRCLE, spot.x, spot.y, T.decal, tele, 0, 0)
         if (!h) break
         h.onEnd = HZ_END_SPAWN
@@ -714,6 +722,13 @@ function lanceVolley(w: World, e: Enemy, aim: number): void {
 
 const spot = { x: 0, y: 0 }
 doubleFields(spot)
+
+/** `spot` = the flak turret ring's spot at angle a around the boss, clamped. */
+function turretSpot(w: World, e: Enemy, a: number): void {
+  spot.x = e.x + Math.cos(a) * FLAK_TURRETS.ringR
+  spot.y = e.y + Math.sin(a) * FLAK_TURRETS.ringR
+  clampSpot(w, TURRET.radius, EDGE_INSET)
+}
 
 /** Clamp `spot` inside the cage (by `cagePad`) and inside the arena walls (by
  *  `wallPad`). Returns whether it moved. */
