@@ -391,7 +391,7 @@ function hatch(world: World, e: Enemy): void {
 }
 
 /** Aura source: refresh a short buff on all enemies within its radius, stamping
- *  its OWN speed multiplier (per-def: hivemind 1.35, deep caller 1.55). When
+ *  its OWN speed multiplier (per-def: hivemind 1.35, deep caller 1.5). When
  *  auras overlap within a frame, the stronger multiplier wins. */
 function applyAura(world: World, src: Enemy, buf: Enemy[]): void {
   const radius = src.def.aura!.radius

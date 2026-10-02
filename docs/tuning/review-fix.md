@@ -115,7 +115,7 @@ The four Wastes runs alive at 20:00 with healMul 0.25 die between 20:07 and 20:4
 
 ## 4. Final matrix
 
-`final.md` holds the table, with the baseline (`baseline.json`, `15c16b9`) and the Change column. The section 11 "P19 review fix note" in docs/NEXT-LEVEL.md summarizes it.
+The table below is the review fix's matrix (in git at `a5fbf82`); `final.md` now holds the closeout's (section 7), with the baseline (`baseline.json`, `15c16b9`) and the Change column. The section 11 "P19 review fix note" in docs/NEXT-LEVEL.md summarizes it.
 
 Command: `node scripts/playtest/matrix.mjs --seeds=30 --threat-seeds=60 --ot-sets=1,2 --daily=2026-10-02 --baseline=docs/tuning/baseline.json --label=final --runs=/tmp/swg-rf/final`. The T0 runs were copied from the arm that ran the committed T0 values (the decided content; the medkit drop multiplier only acts from OVERTIME cycle 2), after 7 spot reruns on the committed build matched it run for run (end time, kills, score, XP); the matrix ran every OVERTIME set, the A14 det steps (31 lines), the opening probe and the timing steps itself. A15 was run a second time alone (`--only=A15`) with the same result.
 
@@ -141,6 +141,8 @@ Command: `node scripts/playtest/matrix.mjs --seeds=30 --threat-seeds=60 --ot-set
 | A18 | PASS, re-scored | Hive and Wastes on the mean ratio (2 and 4 dash deaths in 60): dash mean survival 13:54 and 13:35; Depths 5.62x per death; Wastes roam XP 0.893 to 0.921 |
 
 ## 5. Owner decisions left open
+
+The main session decided each item on 2026-10-02; section 7 applies the decisions and measures them.
 
 1. **A6 PRIME against A7** (section 3.4). Keep the committed values (default PRIME median 167 and 162 s in Hive and Wastes, focus PRIME 56 and 68 s), or shorten the PRIME for the default bot (Hive primeHpMul 0.78 gave 115 s and a focus PRIME of 43.5 s) and accept about 38 of 60 smart+P wins, or change a rule (a 150 s PRIME stalemate; the 14:00 run end, `UNCLEARED_MAX_MS` and the clear score depend on it). A player aims, as the focus bot does, so the phone check (A17) can settle how long the PRIME feels.
 2. **A7 Hive smart+P 29/60 (48%).** Two runs over the band on 60 seeds; the halves read 40% and 57%. The A17 rule (rows 5 to 10 maxAlive and hpBase x1.1 after 3 wins in 3) is the designed response.
@@ -174,3 +176,83 @@ node scripts/playtest/otreport.mjs /tmp/swg-rf/final --md=docs/tuning/final-ot.m
 ```
 
 Raw runs are in /tmp and are deleted after this report; the tables above are the record.
+
+## 7. P19 closeout
+
+The main session's decisions on section 5 (kept in the workflow's carry-over list), applied in the commit `v2 P19: closeout`:
+
+| # | Decision | Applied |
+|---|---|---|
+| 1 | A6 PRIME: keep the values; the default-bot PRIME median is reported, and the owner judges the PRIME on the phone (A17) | matrix.mjs reports the default PRIME median and p75 and no longer scores them; section 11 A6 row |
+| 2 | A7 Hive smart+P 48%: accept as noise (halves 40% and 57%); the A17 rule is the response | section 11 A7 row |
+| 3 | A13: score from the OVERTIME start (90% dead within 6:00 of it, none past 24:00), labelled re-scored, the old measure printed beside it | analyze.mjs, matrix.mjs, report.mjs, otreport.mjs; section 11 A13 row. Measured in 7.2: FAIL |
+| 4 | Wastes OVERTIME cycle 1: accept | no change |
+| 5 | A8 crude: the 2:30 target covers the first-run worlds, Hive and Depths; Wastes is reported | matrix.mjs; section 11 A8 row |
+| 6 | A8 Wastes busiest death minute 38% (9 of 24): accept as noise | section 11 A8 row |
+| 7 | A10 Depths: lower the deepCaller aura toward x1.35 until the Depths smart+P median reaches 3.0 s, A7 Depths in band | x1.5 (7.1); appendix A7.2 |
+| 8 | OVERTIME heal cut: from cycle 2 the cycle banner names the cut | built (7.3) |
+| 9 | OVERTIME bonus rate: accept | no change |
+| 10 | A3, A9, A15, A16: accept for P19; A15 and A16 re-measured on an idle machine in P20 | no change |
+
+### 7.1 deepCaller aura (decision 7)
+
+Depths, `smart+human:SEED:14:nova:priority` (smart+P) and `smart+human:SEED:14` (smart), SEED = 1001 x 1..60; the holdout is smart+P on 1001 x 61..120. Damage inside the A10 windows (last step at 50% HP or more to death) is summed over the smart+P deaths. The rule stops at the first 0.05 step whose 60-seed median reaches 3.0 s.
+
+| Aura | smart+P wins (halves) | smart wins (halves) | A10 smart+P median (deaths), min | Holdout: smart+P wins, A10 median (deaths) | smart+P median survival | Busiest smart+P death minute (holdout) | Window damage by kind, summed (per death) |
+|---|---|---|---|---|---|---|---|
+| x1.55 (before) | 24/60 (9, 15) | 13/60 (7, 6) | 2.72 s (35), 1.22 s | 24/60, 3.02 s (34) | 9:55 | 6:00 to 7:00, 0.31 (0.41) | shot 1,627.4, bite 2,577.6, hazard 114.0 (46.5, 73.6, 3.3) |
+| x1.5 (chosen) | 25/60 (11, 14) | 10/60 (7, 3) | 3.97 s (33), 0.83 s | 20/60, 4.05 s (39) | 9:27 | 6:00 to 7:00, 0.42 (0.44) | shot 1,767.6, bite 2,133.9 (53.6, 64.7) |
+| x1.45 | 24/60 (8, 16) | 14/60 (9, 5) | 4.05 s (33), 0.82 s | - | 10:11 | 6:00 to 7:00, 0.33 | shot 1,817.9, bite 1,939.6 (55.1, 58.8) |
+
+At x1.5 the median window rises by about a second on both seed sets, and the bites inside the windows fall from 2,578 to 2,134 HP on seeds 1 to 60 (on the holdout the per-death bite damage rose, 61.8 to 68.3 HP, while the window still lengthened). A7 stays in band (smart+P 42%, smart 17%). The busiest-minute share moves inside its seed spread: x1.55 already reads 0.41 on the holdout.
+
+### 7.2 A13 from the OVERTIME start (decision 3)
+
+The closeout matrix's OVERTIME runs (sets 1 and 2; Depths and Wastes T0 of the same sets), as the share of runs that won dead within W of their own OVERTIME start:
+
+| Group | Runs | Within 5:00 | Within 6:00 (scored) | Within 7:00 | Within 8:00 | Dead by 20:00 (old measure) | Past 24:00 | OVERTIME start | Time in OVERTIME of the runs over 6:00 |
+|---|---|---|---|---|---|---|---|---|---|
+| Hive set 1 | 19 | 14 (74%) | 16 (84%) | 18 (95%) | 19 (100%) | 18 (95%) | 0 | 11:06 to 13:59 | 6:43, 6:36, 7:09 |
+| Hive set 2 | 25 | 20 (80%) | 22 (88%) | 25 (100%) | 25 (100%) | 23 (92%) | 0 | 10:42 to 13:55 | 6:49, 6:23, 6:46 |
+| Depths sets 1+2 | 25 | 21 (84%) | 22 (88%) | 24 (96%) | 25 (100%) | 25 (100%) | 0 | 10:47 to 13:53 | 6:37, 7:46, 6:09 |
+| Wastes sets 1+2 | 25 | 19 (76%) | 20 (80%) | 23 (92%) | 25 (100%) | 21 (84%) | 0 | 10:48 to 14:01 | 6:17, 7:08, 6:44, 6:15, 7:04 |
+
+**A13 fails under the decided window in every set.** Cycle 3 starts 6:00 into OVERTIME, and every run that lives past the window dies early in it (6:09 to 7:46). The four Wastes late winners that failed the 20:00 clock (OVERTIME from 13:16 to 14:01) die 6:15 to 7:08 into OVERTIME, so they fail the new window too, and earlier winners that died before 20:00 but more than 6:00 into OVERTIME (17:38 to 19:27) now fail as well: 14 runs miss the window against 7 that missed the clock. A 7:00 window passes every set (92% or more); 8:00 gives 100%. Owner decision: the window, or a faster end of cycle 2 (`speedMul`, the phone check of finding 8).
+
+### 7.3 OVERTIME cycle banner (decision 8)
+
+No cycle banner existed (OVERTIME advanced `otCycle` silently), so the closeout adds one to the callout lane, the one banner system (C17): `FeelDirector.update` watches `world.director.otCycle` and, once play resumes, shows `OVERTIME` over `CYCLE n` (priority 3, 3.0 s, `accentDanger`); from cycle 2 the sub takes a second line with the healing cut, `1 - OVERTIME.healMul^(c-1)`: `HEALING -75%` in cycle 2, `HEALING -94%` in cycle 3. Regen, kill healing and draft heals take that cut, and the kill medkit drop chance falls by the same factor (`medkitMul` equals `healMul`), so the line holds for the healing the player gets; a medkit that drops still heals in full. The title and sub use the lane's fonts and INK stroke.
+
+`node scripts/probe-ot-banner.mjs --prefix=p19-ot-banner- --out=docs/v2-shots` plays a Hive run into OVERTIME (the ship held alive), screenshots the cycle 1 and cycle 2 banners at 375x667, 667x375 and 390x844 (safe-area insets 47 top, 34 bottom), and checks the text, the safe width, the HUD stack (the boss plate in cycle 2), 12 px text and the rendered contrast. Result: no fails at any size; the title fill #ff5a6e reads 6.66:1 and the sub #f8949e 9.32:1 on the INK stroke. The six screenshots (`docs/v2-shots/p19-ot-banner-c1-375x667.png` and the rest) show no overlap or clipping; in cycle 2 the banner sits under the boss plate.
+
+### 7.4 Matrix on the final values
+
+`final.md` (`final.json`, `final-ot.md`): every bot set and the A14 det steps on the final values, with `--skip-perf`; A15, A16, BENCH and S3.2 are carried from the review fix's matrix (section 4), since the timing steps measure Hive and Wastes and are not run while a workflow uses the machine. Against the review fix's matrix (section 4):
+
+| ID | Result | Change |
+|---|---|---|
+| A6 | PASS, re-scored | the PRIME median is reported (Hive 166.7, Depths 116.7, Wastes 162.2 s); Depths focus 21.6 / 22.6 / 54.3 s (kills 89 / 55 / 30; was 24.1 and 44.6 s for mid2 and PRIME) |
+| A7 | FAIL (Hive only, decision 2) | Depths smart+P 24/60 to 25/60, smart 13/60 to 10/60; Hive and Wastes unchanged |
+| A8 | FAIL, re-scored | Wastes crude no longer scored; Depths smart 7:06 to 8:19, smart+P 9:55 to 9:27; Depths busiest minute 0.31 to 0.42 (7.1); Hive crude 3:12 under Depths 3:17 (unchanged) |
+| A10 | FAIL (minimum only) | pooled 4.1 to 4.7 s; Depths smart+P 2.72 to 3.97 s; minimum 0.42 s (Hive smart seed 8008) |
+| A13 | FAIL, re-scored | 7.2 |
+| A14 | PASS | 31/31 lines; det-long Depths ba6215aa to ac3ded04, every other hash kept |
+| A18 | PASS | Depths dash 5.62x to 2.7x per death; XP min 0.933 to 0.912 |
+| A1 to A5, A9, A11, A12 | unchanged results | A5 398 arrivals (was 400); Depths A9 L9 / L17 / L22 (was L21.5 at 11:00) |
+
+### 7.5 Commands
+
+```
+# 7.1 (deepCaller aura set in src/content/enemies.ts; SEED = 1001 x 1..60, holdout 61..120)
+node scripts/playtest/playtest.mjs depths smart+human:SEED:14:nova:priority smart+human:SEED:14 --out=/tmp/swg-co/a<value>
+# 7.4
+node scripts/playtest/matrix.mjs --seeds=30 --threat-seeds=60 --ot-sets=1,2 --daily=2026-10-02 --skip-perf --baseline=docs/tuning/baseline.json --label=final --runs=/tmp/swg-co/final --out=<dir>
+#   then A15, A16, BENCH and S3.2 copied from the review fix's final.json, and
+node scripts/playtest/matrix.mjs --report-from=docs/tuning/final.json --baseline=docs/tuning/baseline.json --out=docs/tuning
+node scripts/playtest/otreport.mjs /tmp/swg-co/final --md=docs/tuning/final-ot.md
+# 7.2: the A13 cells per window come from the same runs (dead with endTime - otStart <= W)
+# 7.3
+node scripts/probe-ot-banner.mjs --prefix=p19-ot-banner- --out=docs/v2-shots
+```
+
+Raw runs are deleted after this report; the tables above are the record.

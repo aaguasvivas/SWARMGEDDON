@@ -1,6 +1,6 @@
 import { Container, type Sprite } from 'pixi.js'
 import type { AudioEngine, SfxName } from '../audio/audio.ts'
-import { CORES, TIER_COLOR } from '../config.ts'
+import { CORES, OVERTIME, TIER_COLOR } from '../config.ts'
 import { BONUSES, BONUS_NUKE } from '../content/bonuses.ts'
 import { type EnemyDef } from '../content/enemies.ts'
 import { FUSIONS, PERKS, type PerkDef } from '../content/perks.ts'
@@ -154,6 +154,8 @@ export class FeelDirector {
   private flawlessAt = 0
   /** The PRIME fight took no hit (the WIN panel's FLAWLESS tag). */
   primeFlawless = false
+  /** The last OVERTIME cycle whose banner showed (0 = none this run). */
+  private otCycleShown = 0
 
   constructor(
     private readonly world: World,
@@ -197,6 +199,7 @@ export class FeelDirector {
     this.bossPtsAt = 0
     this.flawlessAt = 0
     this.primeFlawless = false
+    this.otCycleShown = 0
     this.audio.resetMix()
   }
 
@@ -472,6 +475,13 @@ export class FeelDirector {
       this.newBestShown = true
       this.callouts.show(CALLOUT.newBest, 'NEW BEST', group(w.score), T.accentGold)
     }
+    // Each OVERTIME cycle opens with a banner once play resumes (cycle 1 after
+    // the PRIME core reveal); from cycle 2 it names the healing cut (4.1, A15).
+    const otCycle = w.director.otCycle
+    if (playing && !w.paused && otCycle > this.otCycleShown) {
+      this.otCycleShown = otCycle
+      this.callouts.show(CALLOUT.overtime, 'OVERTIME', overtimeSub(otCycle), T.accentDanger)
+    }
     this.shipFx.update(w, fd)
   }
 
@@ -659,6 +669,15 @@ export class FeelDirector {
     const d = hypot(dx, dy) || 1
     this.shake.kick((dx / d) * px, (dy / d) * px)
   }
+}
+
+/** The OVERTIME banner's sub: the cycle, and from cycle 2 a second line with
+ *  the cut to every heal but a medkit's, 1 - healMul^(c-1). The kill medkit
+ *  drop chance falls by the same factor (medkitMul equals healMul), so the
+ *  line holds for the healing the player gets. Called once per cycle. */
+function overtimeSub(c: number): string {
+  if (c < 2) return 'CYCLE ' + c
+  return 'CYCLE ' + c + '\nHEALING -' + Math.round(100 * (1 - Math.pow(OVERTIME.healMul, c - 1))) + '%'
 }
 
 function onScreen(x: number, y: number, v: ViewRect): boolean {

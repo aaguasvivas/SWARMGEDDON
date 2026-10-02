@@ -514,17 +514,17 @@ if (has('A6')) {
     const midOver = mids.filter((x) => x.len > 150)
     const finalOver = d ? d.fights.filter((x) => x.stage === 'final' && x.how !== 'stalemate' && x.len > 150).length : 0
     const finals = d ? d.fights.filter((x) => x.stage === 'final') : []
-    // Reported (P19 review): the default bot's PRIME fight, every ending (a
-    // stalemate counts its 210 s), against a provisional median of 120 s that
-    // the owner judges on the phone (A17).
+    // Reported (P19 review; P19 closeout decision 1): the default bot's PRIME
+    // fight, every ending (a stalemate counts its 210 s), median and p75. It is
+    // not scored: a player aims at the boss like the focus bot, and the owner
+    // judges the PRIME length on the phone (A17).
     const primeLens = finals.map((x) => x.len)
     const prime = { n: finals.length, median: q(primeLens, 0.5), p75: q(primeLens, 0.75), over150: primeLens.filter((x) => x > 150).length, stalemates: finals.filter((x) => x.how === 'stalemate').length }
     const defDeaths = d ? d.fights.filter((x) => x.how === 'death').length : 0
     for (const x of [f, d]) if (x && x.gaps.min !== null) gapMin = Math.min(gapMin, x.gaps.min)
     // A focus stage median counts only on A6_MIN_KILLS kills or more (P19 review).
     const inR = (st, lo, hi) => st && st.enough && st.median !== null && st.median >= lo && st.median <= hi
-    // Decided after the P19 review: the default bot's PRIME median (every ending) at most 120 s.
-    const ok = !!focus && inR(focus.mid1, 20, 40) && inR(focus.mid2, 20, 40) && inR(focus.final, 40, 75) && midOver.length <= 0.05 * mids.length && prime.median !== null && prime.median <= 120
+    const ok = !!focus && inR(focus.mid1, 20, 40) && inR(focus.mid2, 20, 40) && inR(focus.final, 40, 75) && midOver.length <= 0.05 * mids.length
     if (!ok) pass = false
     per[w] = {
       focus, defaultLongest: defLongest, defaultMidOver150: `${midOver.length}/${mids.length}`, defaultFinalOver150: `${finalOver}/${finals.length}`, defaultOver150: defOver, defaultFightsEndedByDeath: defDeaths, defaultFights: d ? d.fights.length : 0,
@@ -545,7 +545,7 @@ if (has('A6')) {
     'A6',
     `Fights (focus bot medians mid1/mid2/final on ${FOCUS_SEEDS} seeds, * = under ${A6_MIN_KILLS} kills; default bot = smart+P on ${RATE_SEEDS} seeds)`,
     v.join('; ') + `; kill-to-next-arrival min ${gapMin === Infinity ? '-' : fmt(gapMin, 1)} s`,
-    `focus mid1/mid2 median 20 to 40 s, final 40 to 75 s, each on ${A6_MIN_KILLS} kills or more; default bot at most 5% of mid1 and mid2 fights over 150 s, and its PRIME fight (every ending, a stalemate at 210 s) median <= 120 s; gap >= 20 s`,
+    `focus mid1/mid2 median 20 to 40 s, final 40 to 75 s, each on ${A6_MIN_KILLS} kills or more; default bot at most 5% of mid1 and mid2 fights over 150 s (its PRIME median and p75 over every ending reported; the owner judges the PRIME on the phone, A17); gap >= 20 s`,
     pass,
     per,
   )
@@ -568,6 +568,9 @@ if (has('A7')) {
   add('A7', `Win rate (${RATE_SEEDS} seeds per world)`, WORLDS.map((w) => `${w} smart+P ${per[w].smartP}, smart ${per[w].smart} (halves: smart+P ${per[w].smartPHalves}, smart ${per[w].smartHalves})`).join('; '), 'smart+P 25 to 45%; smart 5 to 25%', pass, per)
 }
 
+/** A8 (P19 closeout decision 5): the crude bot's 2:30 is the new-player target,
+ *  scored in the first-run worlds; an unlocked world's crude median is reported. */
+const FIRST_RUN_WORLDS = ['hive', 'depths']
 if (has('A8')) {
   const per = {}
   let pass = true
@@ -576,6 +579,7 @@ if (has('A8')) {
     for (const [id, key, min] of [['smartR', 'smart', 330], ['smartPR', 'smartP', 480], ['crudeR', 'crude', 150]]) {
       const m = median(of([id], w).map(survival))
       per[w][key] = m
+      if (key === 'crude' && !FIRST_RUN_WORLDS.includes(w)) continue
       if (m === null || m < min) pass = false
     }
   }
@@ -602,7 +606,7 @@ if (has('A8')) {
     'A8',
     `Median survival (${RATE_SEEDS} seeds per world; a win or a stalemate counts as the whole 14:00)`,
     WORLDS.map((w) => `${w} smart ${mmss(per[w].smart)}, smart+P ${mmss(per[w].smartP)}, crude ${mmss(per[w].crude)}`).join('; ') + `. Busiest death minute (smart+P): ${WORLDS.map((w) => `${w} ${deathMinutes[w].smartP.busiest}:00 to ${deathMinutes[w].smartP.busiest + 1}:00 ${fmt(deathMinutes[w].smartP.busiestShare)} of ${deathMinutes[w].smartP.deaths}`).join(', ')}`,
-    'smart >= 5:30; smart+P >= 8:00; crude >= 2:30; Hive crude >= Depths and Wastes; no single minute holds more than 35% of the smart+P deaths',
+    'smart >= 5:30; smart+P >= 8:00; crude >= 2:30 in the first-run worlds (Hive, Depths; Wastes reported); Hive crude >= Depths and Wastes; no single minute holds more than 35% of the smart+P deaths',
     pass,
     { ...per, hiveCrudeAtLeastOthers: crudeOrder, deathMinutes },
   )
@@ -725,16 +729,20 @@ if (has('A13')) {
   const sets = st ? Object.entries(st.bySet) : []
   const others = {}
   for (const w of OT_WORLDS) others[w] = a13Stats(of(['otWorlds'], w))
-  const okOf = (e) => e.n > 0 && e.by20 / e.n >= 0.9 && e.past24 === 0
+  // P19 closeout (re-scored): dead within 6:00 of the run's own OVERTIME start.
+  // A late winner starts OVERTIME later, so the fixed 20:00 clock measured the
+  // win time as much as OVERTIME; the old measure is printed beside the new one.
+  const okOf = (e) => e.n > 0 && e.within6 / e.n >= 0.9 && e.past24 === 0
+  const cell = (e) => `${e.within6}/${e.n} (${pct(e.within6, e.n)}%) dead within 6:00 of the OVERTIME start, ${e.past24} past 24:00 [old measure: ${e.by20}/${e.n} (${pct(e.by20, e.n)}%) dead by 20:00]`
   const value =
-    (st ? `hive ${sets.map(([k, e]) => `set ${k} ${e.by20}/${e.n} (${pct(e.by20, e.n)}%), ${e.past24} past 24:00`).join('; ')}; all ${st.by20}/${st.n} (${pct(st.by20, st.n)}%)` : 'hive: no run reached OVERTIME') +
-    OT_WORLDS.map((w) => (others[w] ? `; ${w} T0 sets ${OT_SETS.join(' and ')} ${others[w].by20}/${others[w].n} (${pct(others[w].by20, others[w].n)}%), ${others[w].past24} past 24:00` : `; ${w}: no run reached OVERTIME`)).join('')
+    (st ? `hive ${sets.map(([k, e]) => `set ${k} ${cell(e)}`).join('; ')}; all ${st.within6}/${st.n} (${pct(st.within6, st.n)}%) [old measure: ${st.by20}/${st.n} (${pct(st.by20, st.n)}%) dead by 20:00]` : 'hive: no run reached OVERTIME') +
+    OT_WORLDS.map((w) => (others[w] ? `; ${w} T0 sets ${OT_SETS.join(' and ')} ${cell(others[w])}` : `; ${w}: no run reached OVERTIME`)).join('')
   const pass = !!st && sets.every(([, e]) => okOf(e)) && OT_WORLDS.every((w) => others[w] && okOf(others[w]))
   add(
     'A13',
-    `Overtime (runs that won: Hive OVERTIME sets ${OT_SETS.join(' and ')}${OT_WORLDS.length ? `; ${OT_WORLDS.join(' and ')} T0 of the same sets` : ''})`,
+    `Overtime, re-scored from the OVERTIME start (P19 closeout; runs that won: Hive OVERTIME sets ${OT_SETS.join(' and ')}${OT_WORLDS.length ? `; ${OT_WORLDS.join(' and ')} T0 of the same sets` : ''})`,
     value,
-    `>= 90% dead by 20:00 and none past 24:00, in each Hive set${OT_WORLDS.length ? ` and in ${OT_WORLDS.join(' and ')} (sets pooled)` : ''}`,
+    `>= 90% dead within 6:00 of their OVERTIME start and none past 24:00, in each Hive set${OT_WORLDS.length ? ` and in ${OT_WORLDS.join(' and ')} (sets pooled)` : ''}`,
     pass,
     { hive: st, ...others },
   )

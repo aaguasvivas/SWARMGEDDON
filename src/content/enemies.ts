@@ -81,7 +81,7 @@ const SPECS: Record<string, EnemySpec> = {
   // HIVE signature: splitter-line capstone: one kill cascades 2 splitters -> 6 swarmers.
   broodmother: { id: 'broodmother', displayName: 'BROODMOTHER', sprite: 'broodmother', hp: 44, speed: 46, radius: 22, damage: 26, xp: 8, tint: 0xff8ad0, scale: 1.7, behavior: 'splitter', gibColor: 0xff9ae0, gibCount: 11, splitInto: 'splitter', splitCount: 2, hpRamp: 1 / 10 },
   // DEPTHS signature: shoal-scale speed aura (needs per-def speedMul, honored in ai.ts).
-  deepCaller: { id: 'deepCaller', displayName: 'DEEP CALLER', sprite: 'deepCaller', hp: 40, speed: 36, radius: 20, damage: 16, xp: 8, tint: 0xd28fff, scale: 1.4, behavior: 'aura', gibColor: 0xdbaeff, gibCount: 8, aura: { radius: 230, speedMul: 1.55 }, hpRamp: 1 / 10 },
+  deepCaller: { id: 'deepCaller', displayName: 'DEEP CALLER', sprite: 'deepCaller', hp: 40, speed: 36, radius: 20, damage: 16, xp: 8, tint: 0xd28fff, scale: 1.4, behavior: 'aura', gibColor: 0xdbaeff, gibCount: 8, aura: { radius: 230, speedMul: 1.5 }, hpRamp: 1 / 10 },
   // DEPTHS verb: slow drifting gravity well that drags the player toward it.
   abyssalMaw: { id: 'abyssalMaw', displayName: 'ABYSSAL MAW', sprite: 'maw', hp: 36, speed: 30, radius: 20, damage: 20, xp: 7, tint: 0xff6aba, scale: 1.5, behavior: 'chaser', gibColor: 0xff8ac3, gibCount: 8, wellPull: { radius: 260, strength: 120 }, hpRamp: 1 / 12 },
   // WASTES verb: telegraphed line-dash: heading locks at windup, sidestep beats it.

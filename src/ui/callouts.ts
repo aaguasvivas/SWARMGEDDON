@@ -16,6 +16,7 @@ export const CALLOUT = {
   flawless: { prio: 3, hold: 1.2 },
   win: { prio: 3, hold: 2.0 },
   stalemate: { prio: 3, hold: 2.0 },
+  overtime: { prio: 3, hold: 3.0 },
   newBest: { prio: 2, hold: 1.4 },
   multUp: { prio: 2, hold: 1.1 },
   closeCall: { prio: 2, hold: 0.9 },
