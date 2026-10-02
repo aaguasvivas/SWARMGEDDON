@@ -33,6 +33,10 @@ const PILL_H = 36
 const DROP_FLASH_S = 0.9
 const DROP_COLOR = 0xff6a6a
 const OVERSHIELD = 0x57e0ff
+/** The HP number's pill: 2 px inside the 18 px bar, 6 px past the digits. */
+const HP_PILL_H = 14
+const HP_PILL_R = 5
+const HP_PILL_PAD = 6
 /** The callout lane sits this far below the lowest HUD row in portrait (A15). */
 const LANE_GAP = 48
 /** Screen px from a callout's center to its title's top edge (stroke included). */
@@ -104,14 +108,17 @@ export class Hud {
 
   private readonly lvChip = new Plate(50, 20, T.levelChip, 1, RADIUS.chip)
   private readonly lvText: Text
-  private readonly lvNum = new DigitStrip(3, 12, INK, 0)
+  private readonly lvNum = new DigitStrip(3, 12, INK, 0, true)
 
   private readonly hpBack = new Plate(10, 18, 0x10231d, 1, 5)
   private readonly hpGhost = new Plate(10, 18, 0xffd2d2, 0.55, 5)
   private readonly hpFill = new Plate(10, 18, T.hpGreen, 1, 5)
   private readonly hpShield = new Plate(10, 5, OVERSHIELD, 1, 2)
-  private readonly hpNum = new DigitStrip(5, 13, T.textHi, 0)
-  private readonly shieldNum = new DigitStrip(5, 13, OVERSHIELD, 0)
+  /** The HP number sits on its own dark pill: the bar under it is bright
+   *  green, yellow or red, or the dark track, and often both (P19 polish). */
+  private readonly hpPill = new Plate(10, HP_PILL_H, T.plate, T.plateAlpha, HP_PILL_R)
+  private readonly hpNum = new DigitStrip(5, 13, T.textHi, 0, true)
+  private readonly shieldNum = new DigitStrip(5, 13, OVERSHIELD, 0, true)
   private hpX = 0
   private hpW = 100
   private hpDisplay = 1
@@ -137,7 +144,7 @@ export class Hud {
   private readonly chip = new Container()
   private readonly chipBg = new Plate(10, CHIP_H, T.accentGold, 1, RADIUS.chip)
   private readonly chipText: Text
-  private readonly chipNum = new DigitStrip(3, 12, INK, 0)
+  private readonly chipNum = new DigitStrip(3, 12, INK, 0, true)
   private shownPending = -1
 
   private readonly badge = new Container()
@@ -234,7 +241,7 @@ export class Hud {
 
     this.view.addChild(
       this.plate.view, this.pause, this.lvChip.view, this.lvText, this.lvNum.view,
-      this.hpBack.view, this.hpGhost.view, this.hpFill.view, this.hpShield.view, this.hpNum.view, this.shieldNum.view,
+      this.hpBack.view, this.hpGhost.view, this.hpFill.view, this.hpShield.view, this.hpPill.view, this.hpNum.view, this.shieldNum.view,
       this.xpBack.view, this.xpFill.view, this.surge, this.timeline, this.nowTick.view,
       this.time.view, this.score.view, this.daily, this.chip, this.badge, this.boss, this.pill,
     )
@@ -301,6 +308,7 @@ export class Hud {
     this.hpGhost.view.position.set(this.hpX, hpY)
     this.hpFill.view.position.set(this.hpX, hpY)
     this.hpShield.view.position.set(this.hpX, hpY + 13)
+    this.hpPill.view.y = hpY + (18 - HP_PILL_H) / 2
     this.hpNum.view.y = hpY + 9
     this.shieldNum.view.y = hpY + 9
 
@@ -412,6 +420,9 @@ export class Hud {
     const numW = this.hpNum.width + (sh > 0 ? this.shieldNum.width + 2 : 0)
     this.hpNum.view.x = this.hpX + (this.hpW - numW) / 2
     this.shieldNum.view.x = this.hpNum.view.x + this.hpNum.width + 2
+    const pillW = Math.ceil(numW) + 2 * HP_PILL_PAD
+    if (this.hpPill.view.width !== pillW) this.hpPill.resize(pillW, HP_PILL_H)
+    this.hpPill.view.x = this.hpNum.view.x - HP_PILL_PAD
 
     const xpFrac = clamp01(world.xp / world.xpToNext)
     if (xpFrac < this.xpDisplay - 0.05) this.xpDisplay = xpFrac

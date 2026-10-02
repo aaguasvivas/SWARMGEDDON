@@ -28,11 +28,11 @@ Xcode Archive and Android via a signed .aab from Android Studio or Gradle.
   Play. Stage them from the simulator: one per world mid-combat (hive, depths,
   wastes), one boss fight with the boss bar, one perk draft, the menu with a
   per-world record showing. Landscape reads best.
-- Privacy answers (v1 ships WITH the leaderboard): "Data Not Linked to You"
-  with Name (nickname) + User Content (gameplay scores) on the App Store; Play
-  Data Safety = App activity + Name, not linked, not shared, not sold. The
-  privacy page must be updated to describe the leaderboard BEFORE the store
-  build is uploaded (see the Leaderboard section).
+- Privacy answers: docs/store-listing.md, "Privacy answers (v2)". Everything
+  is "Data Not Linked to You" on the App Store and "not shared, not sold" on
+  Play, never "Data Not Collected": the leaderboard has a server. The privacy
+  page must describe the v2 leaderboard BEFORE the store build is uploaded
+  (see the Leaderboard section).
 - Age rating: answer for stylized, frequent fantasy violence against aliens;
   expect 12+ / E10+. Category: Games > Arcade. Devices: iPhone only.
 - Encryption: `ITSAppUsesNonExemptEncryption` false already in Info.plist.
@@ -53,8 +53,9 @@ Xcode Archive and Android via a signed .aab from Android Studio or Gradle.
   `.env.example`.
 - Posting is opt-in (section 8.1): a fresh install sends nothing.
 - Before the v2 store build: publish the section 8.6 store and privacy copy
-  (the privacy page must describe the v2 fields and REMOVE MY SCORES), and keep
-  the store privacy labels on the Not-Linked-to-You set in docs/store-listing.md.
+  (written in P19: docs/store-listing.md and public/privacy.html, which
+  describe the v2 fields and REMOVE MY SCORES) when the v2 worker goes live,
+  and re-check the privacy answers listed in docs/store-listing.md.
 
 ## iOS
 ```bash
@@ -74,11 +75,12 @@ Then in App Store Connect (appstoreconnect.apple.com):
 2. Paste name, subtitle, keywords, promotional text, and description from
    docs/store-listing.md. Add the Spanish (es-MX) localization with the ES copy.
 3. Upload the 6.7 inch screenshots.
-4. App Privacy: "Data Not Collected". Paste the privacy URL.
+4. App Privacy: the answers in docs/store-listing.md, "Privacy answers (v2)"
+   (Not Linked to You, no tracking). Paste the privacy URL.
 5. Age rating questionnaire (expect 12+/E10+), category Games > Arcade,
    availability iPhone only.
-6. App Review notes: paste the review note from docs/store-listing.md (offline
-   single player, no account, no credentials, date-seeded daily, no data).
+6. App Review notes: paste the review note from docs/store-listing.md (single
+   player, no account, no credentials, date-seeded daily, opt-in leaderboard).
 7. Install the build from TestFlight on a real phone. Play all three worlds
    once each: title card shows, HUD safe areas clear the notch, touch sticks
    respond, records save across launches, audio works with the mute switch.
@@ -100,7 +102,9 @@ In Play Console (play.google.com/console):
    first upload to be manual).
 3. Add the 12+ testers, publish the closed test, keep it live 14 consecutive
    days.
-4. Data safety: no data collected, nothing shared. Paste the privacy URL.
+4. Data safety: the Play answers in docs/store-listing.md, "Privacy answers
+   (v2)" (collected, optional, not shared, deletable in the app). Paste the
+   privacy URL.
    Content rating: fantasy violence questionnaire, no gambling, no user
    interaction.
 5. Add listing copy (EN + ES) and screenshots (plus the 1024x500 feature

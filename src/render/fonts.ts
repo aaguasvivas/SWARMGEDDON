@@ -5,8 +5,12 @@ import mono500 from '../assets/fonts/jetbrains-mono-500.woff2?url'
 import mono800 from '../assets/fonts/jetbrains-mono-800.woff2?url'
 import { FONT, INK } from '../ui/tokens.ts'
 
-/** Bitmap atlas for damage numbers and DigitStrips (A18). */
+/** Bitmap atlas for damage numbers and DigitStrips (A18): white glyphs with an
+ *  INK outline, for numbers over the live scene or dark grounds. */
 export const NUM_FONT = 'numMono'
+/** The same glyphs without the outline, for DigitStrips on a solid fill: a
+ *  tinted outline thickens dark ink into a smear on a light chip (P19 polish). */
+export const NUM_FONT_FLAT = 'numMonoFlat'
 export const NUM_CHARS = '0123456789,:+-!x%#/K'
 
 const FACES: readonly [string, string, string][] = [
@@ -18,6 +22,7 @@ const FACES: readonly [string, string, string][] = [
 const LOAD_TIMEOUT_MS = 2500
 
 let numFont: BitmapFont | null = null
+let numFontFlat: BitmapFont | null = null
 
 /**
  * Loads the bundled faces, then rasterizes the number atlas. Runs once at boot
@@ -53,10 +58,18 @@ export async function loadFonts(): Promise<boolean> {
     resolution: 2,
     padding: 6,
   })
+  numFontFlat = BitmapFontManager.install({
+    name: NUM_FONT_FLAT,
+    style: { fontFamily: FONT.mono, fontWeight: '800', fontSize: 40, fill: 0xffffff },
+    chars: NUM_CHARS,
+    resolution: 2,
+    padding: 2,
+  })
   return ok
 }
 
-export function getNumFont(): BitmapFont {
-  if (!numFont) throw new Error('loadFonts() has not run')
-  return numFont
+export function getNumFont(flat = false): BitmapFont {
+  const f = flat ? numFontFlat : numFont
+  if (!f) throw new Error('loadFonts() has not run')
+  return f
 }

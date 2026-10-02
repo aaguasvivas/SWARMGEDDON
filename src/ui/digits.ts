@@ -16,11 +16,13 @@ export interface NumGlyphs {
   em: number
 }
 
-let glyphs: NumGlyphs | null = null
+const glyphs: [NumGlyphs | null, NumGlyphs | null] = [null, null]
 
-export function numGlyphs(): NumGlyphs {
-  if (glyphs) return glyphs
-  const font = getNumFont()
+/** The outlined atlas, or with `flat` the one without an outline. */
+export function numGlyphs(flat = false): NumGlyphs {
+  const cached = glyphs[flat ? 1 : 0]
+  if (cached) return cached
+  const font = getNumFont(flat)
   const tex = new Array<Texture | null>(128).fill(null)
   const adv = new Float32Array(128)
   const xOff = new Float32Array(128)
@@ -32,8 +34,9 @@ export function numGlyphs(): NumGlyphs {
     adv[code] = c.xAdvance
     xOff[code] = c.xOffset
   }
-  glyphs = { tex, adv, xOff, em: font.baseMeasurementFontSize }
-  return glyphs
+  const g: NumGlyphs = { tex, adv, xOff, em: font.baseMeasurementFontSize }
+  glyphs[flat ? 1 : 0] = g
+  return g
 }
 
 /** Writes `v` (a non-negative integer) as char codes into `out` from `at`.
@@ -58,10 +61,9 @@ export function writeInt(out: Uint8Array, at: number, v: number, group: boolean)
   return at + len
 }
 
-/** Lays glyph sprites out for `codes[0..n)`, anchored by `align` (0 left,
- *  0.5 center, 1 right). Returns the width in font px. */
-export function layoutGlyphs(sprites: Sprite[], codes: Uint8Array, n: number, align: number): number {
-  const g = numGlyphs()
+/** Lays glyph sprites out for `codes[0..n)` from atlas `g`, anchored by
+ *  `align` (0 left, 0.5 center, 1 right). Returns the width in font px. */
+export function layoutGlyphs(sprites: Sprite[], codes: Uint8Array, n: number, align: number, g: NumGlyphs): number {
   let pen = 0
   for (let i = 0; i < n; i++) pen += g.adv[codes[i]!]!
   let x = -pen * align
@@ -83,7 +85,9 @@ export function layoutGlyphs(sprites: Sprite[], codes: Uint8Array, n: number, al
 
 /**
  * A number drawn from pooled glyph sprites: no Text, no string per update, and
- * the glyphs change only when the shown value changes.
+ * the glyphs change only when the shown value changes. `flat` picks the atlas
+ * without an outline, for a strip on a solid fill (dark ink on a light chip,
+ * light ink on a dark pill); the outlined one reads over the live scene.
  */
 export class DigitStrip {
   readonly view = new Container()
@@ -91,12 +95,14 @@ export class DigitStrip {
   width = 0
   private readonly sprites: Sprite[] = []
   private readonly codes: Uint8Array
+  private readonly g: NumGlyphs
   private lastV = -1
   private lastKey = -1
   private scale = 1
 
-  constructor(max: number, sizePx: number, tint = 0xffffff, private readonly align = 0) {
-    const g = numGlyphs()
+  constructor(max: number, sizePx: number, tint = 0xffffff, private readonly align = 0, flat = false) {
+    const g = numGlyphs(flat)
+    this.g = g
     this.codes = new Uint8Array(max)
     for (let i = 0; i < max; i++) {
       const s = new Sprite(g.tex[48]!)
@@ -110,7 +116,7 @@ export class DigitStrip {
   }
 
   setSize(px: number): void {
-    this.scale = px / numGlyphs().em
+    this.scale = px / this.g.em
     this.view.scale.set(this.scale)
   }
 
@@ -130,7 +136,7 @@ export class DigitStrip {
     if (prefix && i < c.length) c[i++] = prefix
     i = writeInt(c, i, n, group)
     if (suffix && i < c.length) c[i++] = suffix
-    this.width = layoutGlyphs(this.sprites, c, i, this.align) * this.scale
+    this.width = layoutGlyphs(this.sprites, c, i, this.align, this.g) * this.scale
   }
 
   /** Whole seconds as `m:ss`. */
@@ -147,6 +153,6 @@ export class DigitStrip {
       c[i++] = 48 + Math.floor(r / 10)
       c[i++] = 48 + (r % 10)
     }
-    this.width = layoutGlyphs(this.sprites, c, i, this.align) * this.scale
+    this.width = layoutGlyphs(this.sprites, c, i, this.align, this.g) * this.scale
   }
 }

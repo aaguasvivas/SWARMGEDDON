@@ -1103,6 +1103,12 @@ ES (es-MX):
 
 App Store privacy answers to re-check: Name, Gameplay Content, User ID. All are "not linked to you" and used for App Functionality.
 
+**Written in P19** (`docs/store-listing.md`, `public/privacy.html`, last updated 2026-10-02; the owner publishes both when the v2 worker goes live). Adjusted to the v2 client and worker:
+- The privacy page lists every field the client posts (adds XP collected, kill points, bosses, hits, the clear, THREAT, seed, game version and platform), says close calls are checked and not stored, names Cloudflare as the host that derives the country, and describes the board's visible fields, the board request (it carries the install id only for an opted-in player), what POST SCORES off does, REMOVE MY SCORES, the email fallback after an uninstall, and retention (Daily 45 days; Standard older than last week unless in a world's all-time top 2000).
+- The App Review note says which runs post (the ranked Daily once, a Standard run that beats the week's posted score) and that the server checks nicknames against a blocklist.
+- The store pilot lines follow the v2 pilot rules (section 4.10), the feats line says `perks` in ES as the line above it does, and the ES block has its accents back.
+- The re-check list in `docs/store-listing.md` adds Coarse Location and Device ID (App Store) and Approximate location and Device or other IDs (Play) for the owner to decide, and states that a v2 production build cannot declare "Data Not Collected".
+
 ---
 
 ## 9. UI system and screens
@@ -1136,8 +1142,8 @@ Portrait 375x667 (L/T/R/B = safe insets):
 |---|---|---|---|---|
 | Plate | L+8 | T+8 | (W-16-L-R) x 66 | plate token, r12 |
 | Pause | L+12 | T+12 | 44 x 44 | pause icon, hit 48 |
-| Level chip | L+64 | T+13 | 50 x 20 | `LV 7`, 12 px, ink #05070d on accent.xp |
-| HP bar | L+120 | T+14 | (W-198) x 18 | fill by state; 13 px DigitStrip inside |
+| Level chip | L+64 | T+13 | 50 x 20 | `LV 7`, 12 px, ink #05070d on accent.xp (flat digits, A18) |
+| HP bar | L+120 | T+14 | (W-198) x 18 | fill by state; 13 px flat DigitStrip text.hi on a 14 px plate-token pill, 6 px past the digits (A18) |
 | XP bar | L+64 | T+40 | (W-170) x 6 | accent.xp; SURGE shows a gold edge |
 | Timeline | L+64 | T+54 | (W-170) x 4 | 0 to 12:00 from `script.markers`: boss diamonds 8 px #ff3a8a, event ticks, PRIME flag gold, now tick |
 | Time | right edge W-R-16 | T+12 | 22 high | DigitStrip 18 px `12:34` |
@@ -2024,6 +2030,8 @@ node scripts/measure.mjs 390 844 perf ; node scripts/measure.mjs 390 844 perf-fi
 - **A6 PRIME and A7 do not hold together** with the boss-HP and density knobs: three arms per world (PRIME HP factor 0.72 to 0.8 with denser rows 5 to 10) reached a default PRIME median of 115 to 138 s only with smart+P wins of 27 to 41 of 60, and no Wastes arm got the default bot under 120 s with the focus bot at 40 s or more (the flak turrets hold the default bot's fire). The committed values keep the PRIME HP; the owner chooses (review-fix.md, section 5).
 - **Result.** PASS: A1, A2, A4, A5, A11, A12, A14, A18. FAIL: A3 (Hive roam saturation 0.274), A6 (default PRIME median 166.7 and 162.2 s in Hive and Wastes; Depths 106.7 s; focus medians and the mid-fight clause pass), A7 (Hive smart+P 29/60, two runs over 45%), A8 (Wastes crude 2:10, Hive crude 2 s under Depths, Wastes busiest death minute 0.38), A9 (unchanged), A10 (Depths smart+P 2.72 s; minimum 0.42 s), A13 (Wastes 21/25: four late winners die between 20:07 and 20:45), A15 (perf-final p95 16.8 ms under Spotlight load, twice), A16 (owner). Determinism: 31 of 31 lines agree; det keeps its three hashes; det-long Wastes, det-death Depths and Wastes, and the Daily det-death change with the Depths and Wastes values.
 - **Process rule (P19 review).** A content change re-rolls every later spawn of its world, so a change to a world's rows, elites or bosses re-runs the matrix on 60 seeds for every metric an earlier pass owns before it is committed, and reads a regression only when it exceeds the spread between two seed halves.
+
+**P19 copy and polish note.** Presentation and copy only; det 642fbc46, 1365ccb6, d3c8cef6 and det-death 4e549672, 6409cc9d, 7515552a are unchanged at 375x667 and 667x375 with their reruns. Store and privacy copy: section 8.6, "Written in P19". HUD digits: the level digit, the LEVEL UP `x2` and the HP number take the flat atlas, and the HP number sits on a dark pill (A18, section 9.2). Rendered-pixel contrast (`node scripts/probe-hud-digits.mjs p375,l667`, table `docs/tuning/hud-digits.md`): the HP number on the green fill rose from 1.51 to 14.33 (overshield 1.03 to 9.87), the minimum where it straddles the fill end from 1.57 to 14.61, and every HUD digit is 4.5:1 or more in all four HP states at both views; `hud-shots.mjs p375,l667,p320` has no fails.
 
 ---
 
@@ -2975,6 +2983,8 @@ Damage number tiers (glyph tint, size):
 | heal | #4dffa0 `+14` | 15 px |
 
 Glyph atlas: `BitmapFont.install({ name: 'numMono', style: { fontFamily: 'JetBrains Mono', fontWeight: '800', fontSize: 40, fill: 0xffffff, stroke: { color: 0x05070d, width: 6, join: 'round' } }, chars: '0123456789,:+-!x%#/K', resolution: 2, padding: 6 })`.
+
+Flat glyph atlas (P19 polish): `numMonoFlat`, the same style without the stroke (`padding: 2`). A DigitStrip on a solid fill takes it (`new DigitStrip(max, px, tint, align, true)`): the level digit and the `x2` of the LEVEL UP chip (INK on the light chips) and the HP number (text.hi, and the overshield in #57e0ff, on a dark pill). A tinted stroke thickened INK digits into a smear on the light chips. Numbers over the live scene or a translucent plate (damage numbers, time, score, boss %, ammo, bonus rings, tier drop) keep the stroked atlas. Contrast from rendered pixels (`node scripts/probe-hud-digits.mjs`, docs/tuning/hud-digits.md): every HUD digit is at least 4.5:1 against the fill under it in all four HP states.
 
 Damage number timing (real clock): life 600 ms (crit 700 ms), fading over the last 180 ms; each number starts 14 px above the hit. Values over 99,999 show as thousands with `K`. Merging is keyed on the enemy uid the Hit event carries in `b`.
 

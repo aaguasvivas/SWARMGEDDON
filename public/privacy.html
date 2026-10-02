@@ -10,47 +10,79 @@
   h1 { color: #3df0c0; font-size: 26px; letter-spacing: 2px; }
   h2 { color: #9fb0ab; font-size: 17px; margin-top: 2em; }
   a { color: #57c8ff; }
-  .dim { color: #5f6f6a; font-size: 13px; }
+  ul { padding-left: 1.2em; }
+  li { margin: 0.3em 0; }
+  .dim { color: #8a9a95; font-size: 13px; }
 </style>
 </head>
 <body>
 <h1>SWARMGEDDON</h1>
-<p class="dim">Privacy Policy. Last updated: August 14, 2026</p>
+<p class="dim">Privacy Policy. Last updated: October 2, 2026</p>
 
 <h2>The short version</h2>
-<p>SWARMGEDDON has no accounts, no analytics, no ads, no tracking, and no
-third-party SDKs. The only data that can ever leave your device is an optional
-leaderboard entry: a nickname you choose and your run's results, sent only
-when you submit a score.</p>
+<p>SWARMGEDDON has no accounts, no ads, no analytics and no tracking. The only
+data that can ever leave your device is an optional leaderboard entry, sent
+only after you opt in.</p>
 
 <h2>What stays on your device</h2>
-<p>Your scores, per-world records, settings, and unlocks are saved in local
-storage on your own device. Deleting the app (or clearing site data in your
+<p>The game saves your runs, records, feats, unlocks, lifetime stats and
+settings on your own device. Deleting the app (or clearing site data in your
 browser) deletes them.</p>
 
 <h2>The optional global leaderboard</h2>
-<p>If you finish a run while online, the game can submit your result to the
-global leaderboard: the nickname you typed, your survival time, kills, level,
-and score, plus the run's world and pilot. Your country (derived from your
-connection by our hosting provider, not stored as an address) may be shown as
-a flag next to your entry. Nothing here is linked to your identity; there is
-no account. If you never set a nickname or stay offline, nothing is sent.
-To have an entry removed, email the address below with the nickname.</p>
+<p>The leaderboard is off until you turn it on in the game: from the card after
+a run, from the leaderboard screen, or with POST SCORES in Settings &gt;
+ACCOUNT. Turning it on asks you to choose a nickname.</p>
+<p>When you opt in and finish a run, the game sends:</p>
+<ul>
+  <li>the nickname you chose</li>
+  <li>a random id created on your device when you opted in (it identifies the
+  device's entries, not you)</li>
+  <li>your score and run stats: time, kills, level, XP collected, kill points,
+  bosses defeated, multiplier chain, hits taken, close calls, and whether and
+  when you cleared the world</li>
+  <li>the pilot, the world, your ship paint, the THREAT level, the run's seed
+  and the day</li>
+  <li>the game version and your platform (web, iOS or Android)</li>
+</ul>
+<p>The game sends your ranked Daily run once, and a Standard run only when it
+beats the score you posted that week in that world. It never sends practice
+runs or runs shorter than 10 seconds. The server uses the close calls to check
+the run and does not store them.</p>
+<p>Our host, Cloudflare, derives your country from the connection; we store
+only the country code. We do not store your IP address. We keep a salted hash
+of it, which changes every day, to limit how often one connection can post.</p>
+<p>The public board shows your nickname, country, pilot, ship paint, THREAT
+level, score, time, kills, level and whether the run cleared the world. It
+never shows the random id or the hash.</p>
+<p>Opening the leaderboard screen downloads the public board. If you opted in,
+that request includes your random id so the board can show your rank. The
+server stores nothing from these requests.</p>
+
+<h2>Removing your entries</h2>
+<p>REMOVE MY SCORES in Settings &gt; ACCOUNT deletes every entry your device
+posted and turns posting off. Turning POST SCORES off stops new entries and
+leaves the existing ones on the board. If you deleted the app before removing
+your scores, email the address below with your nickname and we will remove
+them.</p>
+<p>The server clears out old entries as players post: Daily entries older than
+45 days, and Standard entries older than last week unless they rank in that
+world's all-time top 2000.</p>
 
 <h2>Network use</h2>
 <p>The game is fully playable offline. The web version downloads the game
-files from our server when you first load it, and your browser may cache them;
-that is standard web hosting, and no personal information is collected in the
+files from our server when you first load it, and your browser may cache them.
+That is standard web hosting, and we collect no personal information in the
 process.</p>
 
 <h2>Children</h2>
-<p>The game has no chat, no user content beyond the self-chosen nickname, and
-collects nothing linked to anyone's identity, including children's.</p>
+<p>The game has no chat. The only text other players can see is the leaderboard
+nickname, which the server checks against a blocklist. Nothing the game sends
+is linked to anyone's identity, including children's.</p>
 
 <h2>Changes</h2>
-<p>If a future update adds any other online feature, this policy will be
-updated first, and any data involved will be described here plainly before
-that feature ships.</p>
+<p>If a future update adds any other online feature, we will update this policy
+first and describe any data involved here before that feature ships.</p>
 
 <h2>Contact</h2>
 <p>Questions: <a href="mailto:adelsonaguasvivas@gmail.com">adelsonaguasvivas@gmail.com</a></p>
