@@ -55,7 +55,7 @@ function keyNumbers(id, v) {
     }
     case 'A6':
       perWorld((w, seg) => {
-        const f = /focus ([\d.-]+\/[\d.-]+\/[\d.-]+) s/.exec(seg)
+        const f = /focus ([\d.*-]+\/[\d.*-]+\/[\d.*-]+) s/.exec(seg)
         if (f) k.push([`${w} focus`, `${f[1]} s`])
         const l = /longest ([\d.]+) s/.exec(seg)
         if (l) k.push([`${w} default longest`, `${l[1]} s`])
@@ -131,7 +131,10 @@ function keyNumbers(id, v) {
 }
 const change = (m, b) => {
   if (!b) return 'new'
-  const res = m.result === b.result ? `${m.result}, same` : `${b.result} to ${m.result}`
+  // P19 review: when the measure or the target changed since the baseline, the
+  // result moved by a re-score as much as by the numbers, so say so.
+  const rescored = b.nameThen || b.targetChanged ? 're-scored, ' : ''
+  const res = rescored + (m.result === b.result ? `${m.result}, same` : `${b.result} to ${m.result}`)
   const now = new Map(keyNumbers(m.id, m.value))
   const moved = keyNumbers(m.id, b.value)
     .filter(([label]) => now.has(label))
@@ -161,13 +164,13 @@ export function writeReport({ meta, metrics, baseline, baselineFile, out }) {
   md.push(`# P19 ${LABEL} matrix`, '')
   md.push(`- Commit: \`${meta.commit}\`${meta.srcDirty ? ' (src has uncommitted changes)' : ' (src clean)'}${meta.scriptsDirty ? '; the harness in scripts/ is the working tree, committed with this report' : ''}, ${meta.date}`)
   md.push(`- Command: \`${meta.command}\` (dev server at ${process.env.SWG_URL || 'http://localhost:5176'})`)
-  md.push(`- Seeds: ${meta.seeds}; A12 Hive ${meta.threatSeeds}; A13 OVERTIME sets ${OT_SETS.join(', ')} (set n: T0 1001 x 30(n-1)+1..30n, T1 to T3 1001 x 10(n-1)+1..10n${OT_SEEDS ? `; quick check: the first ${OT_SEEDS} T0 and ${Math.min(OT_SEEDS, 10)} T1 to T3 seeds of each set` : ''})`)
+  md.push(`- Seeds: ${meta.seeds}${meta.focusSeeds ? `; A6 focus set ${meta.focusSeeds}` : ''}${meta.rateSeeds ? `; A7 and A8 ${meta.rateSeeds}` : ''}; A12 Hive ${meta.threatSeeds}; A13 OVERTIME sets ${OT_SETS.join(', ')} (set n: T0 1001 x 30(n-1)+1..30n, T1 to T3 1001 x 10(n-1)+1..10n${OT_SEEDS ? `; quick check: the first ${OT_SEEDS} T0 and ${Math.min(OT_SEEDS, 10)} T1 to T3 seeds of each set` : ''})${meta.otWorlds?.length ? `; ${meta.otWorlds.join(' and ')}: the T0 part of the same sets` : ''}`)
   md.push(`- Machine at the end: load ${meta.machineAtEnd.load.join(' ')}, swap ${meta.machineAtEnd.swap}`)
   if (meta.renderedFrom) md.push(`- Re-rendered from ${meta.renderedFrom}: same runs and steps, report text only`)
   md.push('')
   if (baseline) {
     const bm = meta.baseline
-    md.push(`- Baseline: \`${bm.file}\` (label ${bm.label}, commit \`${bm.commit}\`, ${bm.seeds}, ${bm.date}). The Baseline column gives its value and result; where a P19 decision changed the measure or the target since, the cell ends with what the baseline was scored on. Change gives the result, baseline to now, and the main numbers, baseline to now (percentages where the seed counts differ).`)
+    md.push(`- Baseline: \`${bm.file}\` (label ${bm.label}, commit \`${bm.commit}\`, ${bm.seeds}, ${bm.date}). The Baseline column gives its value and result; where a P19 decision changed the measure or the target since, the cell ends with what the baseline was scored on. Change gives the result, baseline to now, and the main numbers, baseline to now (percentages where the seed counts differ); it starts with 're-scored' where the measure or the target changed since, so a result change there is partly a change of rule.`)
     md.push('')
     md.push('| ID | Metric | Value | Target | Result | Baseline | Change |', '|---|---|---|---|---|---|---|')
     for (const m of metrics) {
@@ -190,18 +193,30 @@ export function writeReport({ meta, metrics, baseline, baselineFile, out }) {
     md.push('')
   }
   if (det('A6')) {
-    md.push('### A6 fights per world', '', '| World | Focus mid1 | Focus mid2 | Focus final | Default mid fights over 150 s | Default PRIME fights over 150 s (no stalemate) | Default longest | Default fights over 150 s | Default fights ended by death |', '|---|---|---|---|---|---|---|---|---|')
-    const c = (s) => (s ? `${fmt(s.median, 1)} s (${s.kills} kills, ${fmt(s.min, 1)} to ${fmt(s.max, 1)}; ${s.deaths} deaths)` : '-')
+    md.push('### A6 fights per world', '', `Focus cells: median (kills, range; fights that ended in the bot's death); * marks a median on fewer than 20 kills, which is not scored. Boss attacks are the hazard and lunge damage the bot took while the boss lived.`, '', '| World | Focus mid1 | Focus mid2 | Focus final | Default mid fights over 150 s | Default PRIME, every ending: median, p75 (fights; over 150 s; stalemates) | Default longest | Boss-attack HP per fight: default mean, max (fights hit); focus | Fights ended by death: default, focus | Default fights over 150 s |', '|---|---|---|---|---|---|---|---|---|---|')
+    const c = (s) => (s ? `${fmt(s.median, 1)} s${s.enough === false ? '*' : ''} (${s.kills} kills, ${fmt(s.min, 1)} to ${fmt(s.max, 1)}; ${s.deaths} deaths)` : '-')
     for (const w of WORLDS) {
       const x = det('A6')[w]
-      md.push(`| ${w} | ${c(x.focus?.mid1)} | ${c(x.focus?.mid2)} | ${c(x.focus?.final)} | ${x.defaultMidOver150} | ${x.defaultFinalOver150} | ${fmt(x.defaultLongest, 1)} s | ${x.defaultOver150.length ? esc(x.defaultOver150.join('; ')) : 'none'} | ${x.defaultFightsEndedByDeath}/${x.defaultFights} |`)
+      const p = x.defaultPrime
+      const a = x.bossAttacks
+      md.push(`| ${w} | ${c(x.focus?.mid1)} | ${c(x.focus?.mid2)} | ${c(x.focus?.final)} | ${x.defaultMidOver150} | ${p ? `${fmt(p.median, 1)} s, ${fmt(p.p75, 1)} s (${p.n}; ${p.over150}; ${p.stalemates})` : '-'} | ${fmt(x.defaultLongest, 1)} s | ${a ? `${fmt(a.default.mean, 1)}, ${fmt(a.default.max, 1)} (${a.default.hit}/${a.default.fights}); ${fmt(a.focus.mean, 1)}, ${fmt(a.focus.max, 1)} (${a.focus.hit}/${a.focus.fights})` : '-'} | ${a ? `${a.default.deaths}, ${a.focus.deaths}` : `${x.defaultFightsEndedByDeath}/${x.defaultFights}`} | ${x.defaultOver150.length ? esc(x.defaultOver150.join('; ')) : 'none'} |`)
+    }
+    md.push('')
+  }
+  if (det('A8')?.deathMinutes) {
+    const dm = det('A8').deathMinutes
+    md.push('### A8 deaths per minute of the run', '', "Deaths whose time falls in each minute (column 5 is 5:00 to 6:00); the busiest minute's share is reported against a provisional 35% (x: over it).", '', `| World and set | Deaths | ${Array.from({ length: 15 }, (_, i) => `${i}`).join(' | ')} | Busiest share |`, `|---|---|${'---|'.repeat(15)}---|`)
+    for (const w of WORLDS) for (const [k, label] of [['smartP', 'smart+P'], ['smartAndP', 'smart and smart+P']]) {
+      const h = dm[w][k]
+      md.push(`| ${w} ${label} | ${h.deaths} | ${h.perMinute.join(' | ')} | ${h.busiestShare === null ? '-' : `${h.busiestShare}${h.busiestShare > 0.35 ? ' x' : ''}`} |`)
     }
     md.push('')
   }
   if (det('A10')) {
     md.push('### A10 deaths by set and world', '', '| Group | Deaths | Median s | Min s |', '|---|---|---|---|')
     for (const [k, v] of Object.entries(det('A10').bySet)) md.push(`| ${esc(k)} | ${v.deaths} | ${fmt(v.median)} | ${fmt(v.min)} |`)
-    for (const [k, v] of Object.entries(det('A10').byWorld)) md.push(`| ${k} (smart family) | ${v.deaths} | ${fmt(v.median)} | ${fmt(v.min)} |`)
+    for (const [k, v] of Object.entries(det('A10').byWorld)) md.push(`| ${k} (smart family) | ${v.deaths} | ${fmt(v.median)}${v.median < 3 ? ' x' : ''} | ${fmt(v.min)} |`)
+    for (const [k, v] of Object.entries(det('A10').bySetWorldSmartP ?? {})) if (v) md.push(`| ${k} (smart+P) | ${v.deaths} | ${fmt(v.median)} | ${fmt(v.min)} |`)
     const a10 = det('A10')
     md.push('', `Smart-family deaths under 1.2 s: ${a10.under['1.2']}; under 3.0 s: ${a10.under['3.0']}. Damage by kind inside the windows (last step at 50%+ HP to death), summed: ${esc(JSON.stringify(a10.windowDmg))}`)
     md.push('', 'Fastest smart-family deaths (HP at the window start / max HP, damage by kind inside the window; older runs: the last 3 s):', '')

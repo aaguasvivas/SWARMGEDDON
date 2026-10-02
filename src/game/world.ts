@@ -291,6 +291,8 @@ export class World {
   aliveMul = 1
   speedMul = 1
   healMul = 1
+  /** OVERTIME: the kill medkit drop chance x medkitMul (a medkit itself heals in full). */
+  medkitMul = 1
 
   // PB: render-side zero allocation
   /** The quads the pools draw with, one ParticleContainer each (section 3.2).

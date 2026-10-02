@@ -84,7 +84,12 @@ export function summarize(r, f) {
     const endT = end && (!next || end.t <= next.t) ? end.t : next ? next.t : r.endTime
     let how = end && (!next || end.t <= next.t) ? (end.type === 'bossKill' ? 'kill' : 'stalemate') : next ? 'ascend' : r.dead ? 'death' : 'open'
     if (how === 'open' && sp.stage === 'final' && endT - sp.t >= STALEMATE_AFTER - RUN_END_STALE) how = 'stalemate'
-    return { stage: sp.stage, spawnT: sp.t, endT, len: +(endT - sp.t).toFixed(2), how, dist: sp.dist, cage: sp.cage, inCage: sp.inCage, inArena: sp.inArena, hp: sp.hp }
+    // HP lost while this boss lived (runs from before the P19 review carry none):
+    // boss attacks are the hazard and lunge kinds.
+    const fd = r.fightDmg?.[i] ?? null
+    const bossAtk = fd ? +((fd.hazard || 0) + (fd.lunge || 0)).toFixed(1) : null
+    const dmg = fd ? +Object.values(fd).reduce((a, b) => a + b, 0).toFixed(1) : null
+    return { stage: sp.stage, spawnT: sp.t, endT, len: +(endT - sp.t).toFixed(2), how, dist: sp.dist, cage: sp.cage, inCage: sp.inCage, inArena: sp.inArena, hp: sp.hp, bossAtk, dmg }
   })
   // A PRIME that ascends from a living mid boss spawns in that boss's place
   // (section 4.1), not at the arrival distance; A5 leaves its distance out.
@@ -100,7 +105,7 @@ export function summarize(r, f) {
   return {
     file: f,
     arena: r.cfg.arena,
-    mode: r.cfg.mode + (r.cfg.dash ? '+dash' : '') + (r.cfg.focus ? '+focus' : '') + ({ priority: '+P', random: '+R', evolve: '+E' }[r.cfg.perkPolicy] ?? ''),
+    mode: r.cfg.mode + (r.cfg.dash ? '+dash' : '') + (r.cfg.focus ? '+focus' : '') + (r.cfg.human ? '+human' : '') + ({ priority: '+P', random: '+R', evolve: '+E' }[r.cfg.perkPolicy] ?? ''),
     seed: r.cfg.seed,
     minutes: r.cfg.minutes ?? null,
     invincible: !!r.cfg.invincible,
@@ -287,8 +292,10 @@ function beatFidelity(r) {
     // may have come in the tick before the beat was due: the beat then fires on
     // time with the cage down, which the replay's order (beat before kill)
     // cannot tell apart (P19 density: Wastes roam seed 10010, mid2 killed at
-    // 550.00, the 9:10 elite fired at 550.017).
-    if (!ok && (b.kind === 'elite' || b.kind === 'event') && fired !== null && fired >= 0 && Math.abs(fired - b.at) <= TICK && kills.some((k) => Math.abs(k - b.at) <= 0.01)) ok = true
+    // 550.00, the 9:10 elite fired at 550.017). The same holds for a lull
+    // (P19 review: Wastes roam seed 5005, mid2 killed at 580.00, the 9:40 lull
+    // fired at 580.017).
+    if (!ok && (b.kind === 'elite' || b.kind === 'event' || b.kind === 'lull') && fired !== null && fired >= 0 && Math.abs(fired - b.at) <= TICK && kills.some((k) => Math.abs(k - b.at) <= 0.01)) ok = true
     res.push({ i: b.i, label: b.kind === 'boss' || b.kind === 'event' ? b.id : b.kind, at: b.at, fired, want: w === null ? null : +w.toFixed(2), ok })
   }
   return res

@@ -206,7 +206,7 @@ export class Director {
 
 /** THREAT and OVERTIME multipliers for the run's current state: HP, damage
  *  and alive counts take the level's and OVERTIME's cycle c (0 before it);
- *  spawn speed and healing change from cycle 2. */
+ *  spawn speed, healing and the kill medkit drop chance change from cycle 2. */
 export function applyRunMuls(world: World): void {
   const T = world.threatDef
   const d = world.director
@@ -216,6 +216,7 @@ export function applyRunMuls(world: World): void {
   world.aliveMul = T.aliveMul * Math.pow(OVERTIME.aliveMul, c)
   world.speedMul = Math.pow(OVERTIME.speedMul, Math.max(0, c - 1))
   world.healMul = Math.pow(OVERTIME.healMul, Math.max(0, c - 1))
+  world.medkitMul = Math.pow(OVERTIME.medkitMul, Math.max(0, c - 1))
   d.otXpMul = Math.pow(OVERTIME.xpMul, c)
   d.otBonusMul = Math.pow(OVERTIME.bonusMul, c)
 }

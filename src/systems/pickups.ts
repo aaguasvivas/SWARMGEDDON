@@ -478,7 +478,8 @@ function collect(world: World, p: Pickup): void {
     world.addXp(p.xp * world.mods.xpMul * surge)
     world.feel.emit(FeelKind.GemCollect, 0, p.x, p.y, p.xp)
   } else if (p.kind === 'health') {
-    const gained = healPlayer(world, p.heal)
+    // A medkit is exempt from OVERTIME's heal cut (P19 review decision).
+    const gained = healPlayer(world, p.heal, false)
     if (world.mods.berserker > 0) world.berserkT = BERSERK_MEDKIT.sec
     world.feel.emit(FeelKind.HealCollect, 0, pl.x, pl.y, gained)
   } else if (p.kind === 'shard') {

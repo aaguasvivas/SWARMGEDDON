@@ -5,7 +5,8 @@
 //         crude (normal HP, flee centroid) | smart (normal HP, kite+dodge+collect)
 //         append +dash (e.g. smart+dash) for the dash policy, +focus to shoot
 //         the boss during a fight instead of the nearest enemy, +nostream to
-//         switch off the stream dodge (an A/B of the dodge on one seed)
+//         switch off the stream dodge (an A/B of the dodge on one seed), +human
+//         for the human hazard model (0.27 s reaction, 10% of hazards missed)
 import puppeteer from '/Users/Adelson/Desktop/personal/SWARMGEDDON/node_modules/puppeteer-core/lib/esm/puppeteer/puppeteer-core.js'
 import { acquireChromeLock } from '../lib/chromeLock.mjs'
 import { parseConfig, runFile } from './configs.mjs'
@@ -65,9 +66,9 @@ await acquireChromeLock('playtest')
 const { browser, page } = await launch()
 await page.evaluate(readFileSync(HARNESS, 'utf8'))
 for (const cfg of configs) {
-  const { mode, dash, focus, noStreamDodge, seed, minutes, char, perkPolicy, threat, ot } = cfg
+  const { mode, dash, focus, noStreamDodge, human, seed, minutes, char, perkPolicy, threat, ot } = cfg
   const invincible = mode === 'turret' || mode === 'roam'
-  const init = await page.evaluate((c) => window.__PT_init(c), { arena, mode, dash, focus, noStreamDodge, seed, minutes, char, invincible, perkPolicy, threat, ot })
+  const init = await page.evaluate((c) => window.__PT_init(c), { arena, mode, dash, focus, noStreamDodge, human, seed, minutes, char, invincible, perkPolicy, threat, ot })
   const t0 = Date.now()
   const end = minutes * 60
   for (let t = 30; t <= end + 1e-6; t += 30) {

@@ -341,6 +341,21 @@
   const HZ_LANE_DMG = 25
   /** A lane with no live window (the psi lance): its bolts' flight past the ship. */
   const HZ_LANE_FLIGHT = 0.4
+  /** Human hazard model (cfg +human; P19 review): the bot sees a hazard only
+   *  HZ_REACT s after it appears (its telegraph start), and ignores a share
+   *  HZ_MISS of the hazards entirely (a seeded draw per hazard, keyed on the
+   *  sim's hazard sequence number, so it never touches the sim's RNG). */
+  const HZ_REACT = 0.27
+  const HZ_MISS = 0.1
+  /** Seconds since the hazard appeared: its telegraph, then its live window. */
+  const hzAge = (h) => (h.tele > 0 ? h.teleMax - h.tele : h.teleMax + (h.liveMax - h.live))
+  /** A uniform draw in [0, 1) from the run seed and the hazard's sequence number. */
+  function hzDraw(seed, seq) {
+    let t = (Math.imul(seed ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(seq, 0xc2b2ae35)) >>> 0
+    t = Math.imul(t ^ (t >>> 16), 0x7feb352d) >>> 0
+    t = Math.imul(t ^ (t >>> 15), 0x846ca68b) >>> 0
+    return ((t ^ (t >>> 16)) >>> 0) / 4294967296
+  }
   const hzList = []
   const hzOut = [0, 0]
   let hzDmg = 0
@@ -403,11 +418,16 @@
    *  the planned move (mx, my) at magnitude ml clears every hazard. */
   function hazardEscape(w, pl, st, mx, my, ml) {
     const hz = w.hazards.active
+    const react = st.cfg.human ? HZ_REACT : 0
+    const miss = st.cfg.human ? HZ_MISS : 0
     hzList.length = 0
     for (let i = 0; i < hz.length; i++) {
       const h = hz[i]
       if (!h.alive || h.hit || h.tele > HZ_HORIZON) continue
-      if (h.damage > 0 || h.shape === HZ_LANE) hzList.push(h)
+      if (!(h.damage > 0 || h.shape === HZ_LANE)) continue
+      if (react > 0 && hzAge(h) < react - 1e-9) continue
+      if (miss > 0 && hzDraw(st.cfg.seed, h.seq) < miss) continue
+      hzList.push(h)
     }
     if (hzList.length === 0) {
       st.hzDir = null
@@ -589,6 +609,9 @@
       hzDmg: 0,
       /** HP lost per hurt kind over the run (bite, shot, ram, lunge, acid, hazard, other). */
       dmgByKind: {},
+      /** Per boss fight (one entry per bossSpawn, in order): HP lost while that
+       *  boss lives, by kind; boss attacks are the hazard and lunge kinds. */
+      fightDmg: [],
       /** Steps the stream dodge steered the bot. */
       dodgeSteps: 0,
       /** Steps the hazard escape overrode the planned move, and its last heading. */
@@ -763,6 +786,10 @@
         const lunge = (f & FF_RAM) !== 0 && w.bossAlive && w.boss && w.bossFight.attack === ATK_ROYAL_LUNGE && Math.fround(w.boss.x) === q.x[i] && Math.fround(w.boss.y) === q.y[i]
         const kind = hzHit ? 'hazard' : lunge ? 'lunge' : f & FF_ACID ? 'acid' : f & FF_CONTACT ? 'bite' : f & FF_RAM ? 'ram' : f & FF_DISCRETE ? 'shot' : 'other'
         st.dmgByKind[kind] = (st.dmgByKind[kind] || 0) + q.a[i]
+        if (w.bossAlive && st.fightDmg.length) {
+          const fd = st.fightDmg[st.fightDmg.length - 1]
+          fd[kind] = +((fd[kind] || 0) + q.a[i]).toFixed(1)
+        }
         st.hurts.push([w.time, kind, q.a[i]])
         st.halfDmg[kind] = (st.halfDmg[kind] || 0) + q.a[i]
         st.halfDirty = true
@@ -980,6 +1007,7 @@
         if (st.firstSeen[id] === undefined) st.firstSeen[id] = +w.time.toFixed(2)
         if (e.def.elite) st.events.push({ t: +w.time.toFixed(2), type: 'elite', id, hp: Math.round(e.maxHp) })
         if (e.def.boss) {
+          st.fightDmg.push({})
           const c = w.director.cage
           const b = w.arena.bounds
           st.events.push({
@@ -1205,6 +1233,7 @@
       streamDmg: +st.streamDmg.toFixed(1),
       hzDmg: +st.hzDmg.toFixed(1),
       dmgByKind: Object.fromEntries(Object.entries(st.dmgByKind).map(([k, v]) => [k, +v.toFixed(1)])),
+      fightDmg: st.fightDmg,
       dodgeSteps: st.dodgeSteps,
       hzSteps: st.hzSteps,
       a3Base: st.a3Base,

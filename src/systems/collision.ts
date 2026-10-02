@@ -608,8 +608,9 @@ function killEnemy(world: World, e: Enemy): void {
   } else if (!scarce) {
     const hpFrac = world.player.hp / world.player.maxHp
     if (hpFrac < 0.985) {
-      // ~1x base at full HP up to ~4x near death.
-      const chance = HEALTH_DROP_CHANCE * (1 + (1 - hpFrac) * 3)
+      // ~1x base at full HP up to ~4x near death; OVERTIME thins the drops
+      // from cycle 2 (world.medkitMul), since a medkit always heals in full.
+      const chance = HEALTH_DROP_CHANCE * world.medkitMul * (1 + (1 - hpFrac) * 3)
       if (roll < chance && rules.medkits) dropHealth(world, e.x, e.y, HEALTH_HEAL)
     }
   }

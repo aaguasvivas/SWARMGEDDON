@@ -144,6 +144,10 @@ export interface WorldScript {
   /** Boss HP factors (A7.2, A10.2): worldMul scales every boss of the world
    *  (OVERTIME's too); primeHpMul scales only the PRIME (the final stage). */
   boss: { midId: string; primeId: string; worldMul: number; primeHpMul: number }
+  /** The world's factor on the 1:30 teaching elite's HP, on top of the THREAT
+   *  level's teachHpMul (A7.1, A11; P19 review decision: Wastes eases its
+   *  LEVIATHAN for unskilled play). */
+  teachHpMul: number
   text: { mid1: AlertText; mid2: AlertText; final: AlertText; slain: string; win: string; stalemate: string }
 }
 
@@ -273,6 +277,7 @@ export const WORLD_SCRIPTS: Readonly<Record<string, WorldScript>> = {
       parts: [STAMPEDE, { ...STAMPEDE, delay: 2.5, turn: QUARTER_TURN }, { ...BROOD_RING, delay: 6, turn: HALF_TURN }],
     },
     boss: { midId: 'queen', primeId: 'queenPrime', worldMul: 1.0, primeHpMul: 1.0 },
+    teachHpMul: 1,
     text: {
       mid1: { title: 'THE QUEEN', sub: 'AWAKENS' },
       mid2: { title: 'THE QUEEN', sub: 'RETURNS' },
@@ -307,6 +312,7 @@ export const WORLD_SCRIPTS: Readonly<Record<string, WorldScript>> = {
       parts: [{ ...RIPTIDE, slots: 36, count: 32, turn: HALF_TURN }, { ...SHOAL_RUN, delay: 3 }, { ...BLINK_STORM, delay: 8 }],
     },
     boss: { midId: 'voidMatron', primeId: 'voidMatronPrime', worldMul: 1.0, primeHpMul: 1.0 },
+    teachHpMul: 1,
     text: {
       mid1: { title: 'THE VOID MATRON', sub: 'STIRS' },
       mid2: { title: 'THE VOID MATRON', sub: 'RETURNS' },
@@ -340,7 +346,8 @@ export const WORLD_SCRIPTS: Readonly<Record<string, WorldScript>> = {
       title: 'FINAL SWARM', dir: 'none', sub: 'HOLD ON', fit: CINDER_WALL.dist,
       parts: [{ ...CINDER_WALL, ttl: 12 }, { ...CINDER_WALL, ttl: 12, turn: HALF_TURN }, { ...CHARGER_VOLLEY, delay: 6 }],
     },
-    boss: { midId: 'emberTyrant', primeId: 'emberTyrantPrime', worldMul: 0.9, primeHpMul: 0.95 },
+    boss: { midId: 'emberTyrant', primeId: 'emberTyrantPrime', worldMul: 1.0, primeHpMul: 0.95 },
+    teachHpMul: 0.5,
     text: {
       mid1: { title: 'THE EMBER TYRANT', sub: 'RISES' },
       mid2: { title: 'THE EMBER TYRANT', sub: 'RETURNS' },
@@ -407,7 +414,7 @@ function threatBeats(s: WorldScript, threat: number): Beat[] {
     if (b.kind === 'elite') {
       out.push(
         b.at === TEACH_AT
-          ? { ...b, affixes: T.teachAffixes, hpMul: T.teachHpMul }
+          ? { ...b, affixes: T.teachAffixes, hpMul: T.teachHpMul * s.teachHpMul }
           : { ...b, affixes: T.eliteAffixes, count: b.count + (b.at >= ELITE_PACK_FROM ? T.elitePlus : 0) },
       )
     } else {

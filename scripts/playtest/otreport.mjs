@@ -10,7 +10,8 @@
 //   summary and the per-run table as Markdown.
 // Set 1: T0 seeds 1001 x 1..30, T1 to T3 1001 x 1..10. Set 2: T0 1001 x 31..60,
 // T1 to T3 1001 x 11..20; set n in general T0 30(n-1)+1..30n, T1 to T3
-// 10(n-1)+1..10n (matrix.mjs, the section 11 A12/A13 note).
+// 10(n-1)+1..10n (matrix.mjs, the section 11 A12/A13 note). Sets and death
+// cycles are counted per world (P19 review: A13 in Depths and Wastes too).
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -75,6 +76,7 @@ for (const f of readdirSync(dir)) {
   const otBossKills = r.events.filter((e) => e.type === 'bossKill' && e.stage === 'overtime').length
   runs.push({
     file: f,
+    world: r.cfg.arena,
     threat: r.cfg.threat,
     seed: r.cfg.seed,
     k,
@@ -98,18 +100,23 @@ for (const f of readdirSync(dir)) {
     maxHp: r.chunks.at(-1)?.maxHp ?? null,
   })
 }
-runs.sort((a, b) => a.set - b.set || a.threat - b.threat || a.k - b.k)
+const WORLD_ORDER = ['hive', 'depths', 'wastes']
+const wi = (w) => (WORLD_ORDER.indexOf(w) + 4) % 4
+runs.sort((a, b) => wi(a.world) - wi(b.world) || a.set - b.set || a.threat - b.threat || a.k - b.k)
 
+// Keyed '<world> <set>' (a world's sets in order).
 const sets = {}
-for (const s of [...new Set(runs.map((r) => r.set))].sort((a, b) => a - b)) {
-  const rs = runs.filter((r) => r.set === s)
-  if (!rs.length) continue
-  sets[s] = { n: rs.length, by20: rs.filter((r) => r.by20).length, past24: rs.filter((r) => r.past24).length }
+for (const r of runs) {
+  const key = `${r.world} ${r.set}`
+  const e = (sets[key] ??= { n: 0, by20: 0, past24: 0 })
+  e.n++
+  if (r.by20) e.by20++
+  if (r.past24) e.past24++
 }
 const both = runs
 const deathCycles = {}
 for (const r of both) {
-  const key = r.dead ? `c${r.deathCycle}` : 'alive'
+  const key = `${r.world} ${r.dead ? `c${r.deathCycle}` : 'alive'}`
   deathCycles[key] = (deathCycles[key] ?? 0) + 1
 }
 const late = both.filter((r) => r.dead && r.end > 1200)
@@ -161,7 +168,7 @@ if (perRun) {
 
 if (mdOut) {
   const md = [`# OVERTIME report: ${dir}`, '', `Command: \`node scripts/playtest/otreport.mjs ${args.join(' ')}\``, '']
-  md.push('| Set | Dead by 20:00 | Alive past 24:00 |', '|---|---|---|')
+  md.push('| World and set | Dead by 20:00 | Alive past 24:00 |', '|---|---|---|')
   for (const [s, e] of Object.entries(sets)) md.push(`| ${s} | ${e.by20}/${e.n} (${pct(e.by20, e.n)}%) | ${e.past24} |`)
   md.push('', `- Death cycle: ${JSON.stringify(deathCycles)}; median time in OVERTIME ${out.medianOtSec} s; median caged share ${out.medianCaged}.`)
   md.push(`- Bonus drops in OVERTIME (per run with 120 s or more of it): median ${out.bonus.medianPerMin} a minute, max ${out.bonus.maxPerMin}; busiest 120 s window ${out.bonus.max120} (median ${out.bonus.medianMax120}), busiest 180 s ${out.bonus.max180}; runs over 3 a minute: ${out.bonus.over3.length ? out.bonus.over3.join('; ') : 'none'}. The same runs from 2:00 to the win: median ${out.bonus.pre.medianPerMin} a minute, max ${out.bonus.pre.maxPerMin}; busiest 120 s window ${out.bonus.pre.max120} (median ${out.bonus.pre.medianMax120}).`)

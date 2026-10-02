@@ -15,6 +15,15 @@
 //                     set 3 is a holdout: T0 1001 x 61..90, T1 to T3 x 21..30)
 //   --ot-seeds=N      a quick A13 check: each OVERTIME set runs only its first N
 //                     T0 seeds and its first min(N, 10) seeds of T1 to T3
+//   --ot-worlds=a,b   worlds with T0 OVERTIME sets besides Hive's ladder sets
+//                     (default depths,wastes; P19 review: A13 per world)
+//   --focus-seeds=N   seeds of the A6 boss-focus set, 1001 x K..K+N-1 (default
+//                     90; P19 review: a focus median needs 20 kills per stage,
+//                     and Depths' focus bot reaches about 17 PRIME kills in 60)
+//   --rate-seeds=N    seeds of the A7 and A8 sets (smart, smart+P, crude) and of
+//                     the A6 default-bot clauses, 1001 x K..K+N-1 (default 60;
+//                     P19 review: two 30-seed halves of one build differ by up
+//                     to 9 wins of 30)
 //   --label=NAME      names the outputs (default baseline)
 //   --runs=DIR        raw run JSONs and logs (default /tmp/swg-matrix/<label>);
 //                     a run already there with the same config is reused, so an
@@ -60,6 +69,13 @@ const WORLDS = (flags.worlds ?? 'hive,depths,wastes').split(',')
 const THREAT_SEEDS = parseInt(flags['threat-seeds'] ?? '60')
 const OT_SETS = (flags['ot-sets'] ?? '1,2').split(',').map(Number)
 const OT_SEEDS = flags['ot-seeds'] ? parseInt(flags['ot-seeds']) : null
+const OT_WORLDS = (flags['ot-worlds'] ?? 'depths,wastes').split(',').filter(Boolean)
+const FOCUS_SEEDS = parseInt(flags['focus-seeds'] ?? '90')
+const RATE_SEEDS = parseInt(flags['rate-seeds'] ?? '60')
+/** A6 (P19 review): a focus-bot stage median is scored only on this many kills or more. */
+const A6_MIN_KILLS = 20
+/** A18 (P19 review): minutes alive per death is scored only when the no-dash set has this many deaths. */
+const A18_MIN_DEATHS = 5
 const LABEL = flags.label ?? 'baseline'
 const RUNS = resolve(flags.runs ?? `/tmp/swg-matrix/${LABEL}`)
 const OUT = resolve(flags.out ?? join(ROOT, 'docs/tuning'))
@@ -89,34 +105,50 @@ const seedsN = (n, from = SEED_FROM) => Array.from({ length: n }, (_, i) => 1001
 
 // Bot sets: per world, a list of config strings (configs.mjs format).
 const SETS = {
-  smart: { label: 'smart', pattern: 'smart:SEED:14', configs: () => seedsN(SEEDS).map((s) => `smart:${s}:14`) },
-  smartP: { label: 'smart+P', pattern: 'smart:SEED:14:nova:priority', configs: () => seedsN(SEEDS).map((s) => `smart:${s}:14:nova:priority`) },
-  focus: { label: 'smart+focus+P', pattern: 'smart+focus:SEED:14:nova:priority', configs: () => seedsN(SEEDS).map((s) => `smart+focus:${s}:14:nova:priority`) },
+  smart: { label: 'smart', pattern: 'smart+human:SEED:14', configs: () => seedsN(SEEDS).map((s) => `smart+human:${s}:14`) },
+  smartP: { label: 'smart+P', pattern: 'smart+human:SEED:14:nova:priority', configs: () => seedsN(SEEDS).map((s) => `smart+human:${s}:14:nova:priority`) },
+  focus: { label: 'smart+focus+P', pattern: 'smart+focus+human:SEED:14:nova:priority', configs: () => seedsN(SEEDS).map((s) => `smart+focus+human:${s}:14:nova:priority`) },
+  // A6 focus medians on --focus-seeds seeds (P19 review); shares its run files
+  // with the focus set above for the seeds both hold.
+  focusA6: { label: 'smart+focus+P (A6)', pattern: 'smart+focus+human:SEED:14:nova:priority', seeds: () => FOCUS_SEEDS, configs: () => seedsN(FOCUS_SEEDS).map((s) => `smart+focus+human:${s}:14:nova:priority`) },
   crude: { label: 'crude', pattern: 'crude:SEED:14', configs: () => seedsN(SEEDS).map((s) => `crude:${s}:14`) },
+  // A7 and A8 on --rate-seeds seeds (P19 review); they share run files with
+  // the sets above for the seeds both hold.
+  smartR: { label: 'smart (A7, A8)', pattern: 'smart+human:SEED:14', seeds: () => RATE_SEEDS, configs: () => seedsN(RATE_SEEDS).map((s) => `smart+human:${s}:14`) },
+  smartPR: { label: 'smart+P (A7, A8)', pattern: 'smart+human:SEED:14:nova:priority', seeds: () => RATE_SEEDS, configs: () => seedsN(RATE_SEEDS).map((s) => `smart+human:${s}:14:nova:priority`) },
+  crudeR: { label: 'crude (A8)', pattern: 'crude:SEED:14', seeds: () => RATE_SEEDS, configs: () => seedsN(RATE_SEEDS).map((s) => `crude:${s}:14`) },
   roam: { label: 'roam', pattern: 'roam:SEED:14', configs: () => seedsN(SEEDS).map((s) => `roam:${s}:14`) },
-  dash: { label: 'smart+dash+P', pattern: 'smart+dash:SEED:14:nova:priority', configs: () => seedsN(SEEDS).map((s) => `smart+dash:${s}:14:nova:priority`) },
-  evolve: { label: 'smart+E', pattern: 'smart:SEED:14:nova:evolve', configs: () => seedsN(SEEDS).map((s) => `smart:${s}:14:nova:evolve`) },
+  dash: { label: 'smart+dash+P', pattern: 'smart+dash+human:SEED:14:nova:priority', configs: () => seedsN(SEEDS).map((s) => `smart+dash+human:${s}:14:nova:priority`) },
+  dashR: { label: 'smart+dash+P (A18)', pattern: 'smart+dash+human:SEED:14:nova:priority', seeds: () => RATE_SEEDS, configs: () => seedsN(RATE_SEEDS).map((s) => `smart+dash+human:${s}:14:nova:priority`) },
+  evolve: { label: 'smart+E', pattern: 'smart+human:SEED:14:nova:evolve', configs: () => seedsN(SEEDS).map((s) => `smart+human:${s}:14:nova:evolve`) },
   // A12 ladder: Hive only, T0 to T4 on --threat-seeds seeds. T0 shares its
   // run files with the smart+P set (same config), so a run is never repeated.
   threat: {
     label: 'smart+P T0 to T4 (Hive)',
-    pattern: 'smart:SEED:14:nova:priority:T (T 0 to 4)',
+    pattern: 'smart+human:SEED:14:nova:priority:T (T 0 to 4)',
     hiveOnly: true,
     seeds: () => THREAT_SEEDS,
-    configs: () => [0, 1, 2, 3, 4].flatMap((t) => seedsN(THREAT_SEEDS).map((s) => `smart:${s}:14:nova:priority${t ? `:${t}` : ''}`)),
+    configs: () => [0, 1, 2, 3, 4].flatMap((t) => seedsN(THREAT_SEEDS).map((s) => `smart+human:${s}:14:nova:priority${t ? `:${t}` : ''}`)),
   },
   // A13: the OVERTIME sets of the section 11 A12/A13 note (Hive). Set n: T0
   // 1001 x 30(n-1)+1..30n, T1 to T3 1001 x 10(n-1)+1..10n (set 1: 1..30 and
   // 1..10; set 2: 31..60 and 11..20; set 3, a holdout: 61..90 and 21..30).
   ot: {
     label: 'smart+P OVERTIME (Hive)',
-    pattern: 'smart:SEED:25:nova:priority:T:ot',
+    pattern: 'smart+human:SEED:25:nova:priority:T:ot',
     hiveOnly: true,
     configs: () =>
       OT_SETS.flatMap((set) => [
-        ...seedsN(OT_SEEDS ?? 30, 30 * (set - 1) + 1).map((s) => `smart:${s}:25:nova:priority:0:ot`),
-        ...[1, 2, 3].flatMap((t) => seedsN(Math.min(OT_SEEDS ?? 10, 10), 10 * (set - 1) + 1).map((s) => `smart:${s}:25:nova:priority:${t}:ot`)),
+        ...seedsN(OT_SEEDS ?? 30, 30 * (set - 1) + 1).map((s) => `smart+human:${s}:25:nova:priority:0:ot`),
+        ...[1, 2, 3].flatMap((t) => seedsN(Math.min(OT_SEEDS ?? 10, 10), 10 * (set - 1) + 1).map((s) => `smart+human:${s}:25:nova:priority:${t}:ot`)),
       ]),
+  },
+  // A13 in the other worlds (P19 review): the T0 part of each OVERTIME set.
+  otWorlds: {
+    label: 'smart+P OVERTIME T0 (Depths, Wastes)',
+    pattern: 'smart+human:SEED:25:nova:priority:0:ot',
+    worlds: () => OT_WORLDS,
+    configs: () => OT_SETS.flatMap((set) => seedsN(OT_SEEDS ?? 30, 30 * (set - 1) + 1).map((s) => `smart+human:${s}:25:nova:priority:0:ot`)),
   },
 }
 
@@ -127,19 +159,19 @@ const NEEDS = {
   A3: { sets: ['roam', 'smart', 'smartP', 'focus', 'dash', 'evolve'] },
   A4: { sets: ['smartP'] },
   A5: { sets: ['smartP', 'focus'] },
-  A6: { sets: ['focus', 'smartP'] },
-  A7: { sets: ['smart', 'smartP'] },
-  A8: { sets: ['smart', 'smartP', 'crude'] },
+  A6: { sets: ['focusA6', 'smartPR'] },
+  A7: { sets: ['smartR', 'smartPR'] },
+  A8: { sets: ['smartR', 'smartPR', 'crudeR'] },
   A9: { sets: ['smartP'] },
-  A10: { sets: ['smart', 'smartP', 'focus', 'dash', 'evolve', 'crude'] },
+  A10: { sets: ['smart', 'smartP', 'focus', 'dash', 'evolve', 'crude', 'smartPR'] },
   A11: { sets: ['smart', 'smartP', 'focus', 'crude', 'roam', 'dash', 'evolve'] },
   A12: { sets: ['threat'] },
-  A13: { sets: ['ot'] },
+  A13: { sets: ['ot', 'otWorlds'] },
   A14: { steps: ['det'] },
   A15: { steps: ['perf'] },
   A16: { steps: ['gc'] },
   A17: {},
-  A18: { sets: ['smartP', 'dash', 'evolve', 'roam', 'focus'] },
+  A18: { sets: ['smartP', 'dash', 'evolve', 'roam', 'focus', 'smartPR', 'dashR'] },
   BENCH: { steps: ['bench'] },
   'S3.2': { steps: ['alloc'] },
 }
@@ -201,7 +233,7 @@ function compact(cfgs) {
 const runIndex = [] // { set, world, cfg, file }
 for (const id of wantSets) {
   const set = SETS[id]
-  const worlds = set.hiveOnly ? ['hive'] : WORLDS
+  const worlds = set.hiveOnly ? ['hive'] : set.worlds ? set.worlds() : WORLDS
   for (const world of worlds) {
     const cfgs = set.configs()
     const todo = []
@@ -235,7 +267,7 @@ for (const ri of runIndex) {
   runs.push({ ...ri, s: summarize(raw, runFile(ri.world, parseConfig(ri.cfg))), death: raw.death })
 }
 const of = (setIds, world) => runs.filter((r) => setIds.includes(r.set) && (!world || r.world === world)).map((r) => r.s)
-const worldsOf = (setId) => (SETS[setId].hiveOnly ? ['hive'] : WORLDS)
+const worldsOf = (setId) => (SETS[setId].hiveOnly ? ['hive'] : SETS[setId].worlds ? SETS[setId].worlds() : WORLDS)
 
 // ---- headless steps -----------------------------------------------------------
 const steps = {}
@@ -455,10 +487,23 @@ if (has('A6')) {
   const per = {}
   let pass = true
   let gapMin = Infinity
+  const q = (a, p) => {
+    if (!a.length) return null
+    const v = [...a].sort((x, y) => x - y)
+    const i = (v.length - 1) * p
+    const lo = Math.floor(i)
+    return +(v[lo] + (v[Math.ceil(i)] - v[lo]) * (i - lo)).toFixed(1)
+  }
+  // Boss attacks (the hazard and lunge kinds) per fight, and the fights that
+  // ended in the bot's death (P19 review: a player can be hit and killed in a fight).
+  const atk = (fights) => {
+    const v = fights.filter((x) => x.bossAtk !== null && x.bossAtk !== undefined).map((x) => x.bossAtk)
+    return v.length ? { fights: v.length, hit: v.filter((x) => x > 0).length, mean: +(v.reduce((a, b) => a + b, 0) / v.length).toFixed(1), max: Math.max(...v), deaths: fights.filter((x) => x.how === 'death').length } : { fights: 0, hit: 0, mean: null, max: null, deaths: fights.filter((x) => x.how === 'death').length }
+  }
   for (const w of WORLDS) {
-    const f = fightStats(of(['focus'], w))
-    const d = fightStats(of(['smartP'], w))
-    const fm = (st) => (st ? { kills: st.kills, median: st.median, min: st.min, max: st.max, unfinished: st.unfinished.length, deaths: st.unfinished.filter((u) => u.how === 'death').length } : null)
+    const f = fightStats(of(['focusA6'], w))
+    const d = fightStats(of(['smartPR'], w))
+    const fm = (st) => (st ? { kills: st.kills, median: st.median, min: st.min, max: st.max, unfinished: st.unfinished.length, deaths: st.unfinished.filter((u) => u.how === 'death').length, enough: st.kills >= A6_MIN_KILLS } : null)
     const focus = f ? { mid1: fm(f.stages.mid1), mid2: fm(f.stages.mid2), final: fm(f.stages.final) } : null
     const defLongest = d ? Math.max(0, ...d.fights.filter((x) => x.how !== 'stalemate').map((x) => x.len)) : null
     const defOver = d ? d.fights.filter((x) => x.how !== 'stalemate' && x.len > 150).map((x) => `${x.stage} ${x.len} s (${x.how}, ${x.run})`) : []
@@ -468,34 +513,59 @@ if (has('A6')) {
     const mids = d ? d.fights.filter((x) => (x.stage === 'mid1' || x.stage === 'mid2') && x.how !== 'stalemate') : []
     const midOver = mids.filter((x) => x.len > 150)
     const finalOver = d ? d.fights.filter((x) => x.stage === 'final' && x.how !== 'stalemate' && x.len > 150).length : 0
-    const finals = d ? d.fights.filter((x) => x.stage === 'final').length : 0
+    const finals = d ? d.fights.filter((x) => x.stage === 'final') : []
+    // Reported (P19 review): the default bot's PRIME fight, every ending (a
+    // stalemate counts its 210 s), against a provisional median of 120 s that
+    // the owner judges on the phone (A17).
+    const primeLens = finals.map((x) => x.len)
+    const prime = { n: finals.length, median: q(primeLens, 0.5), p75: q(primeLens, 0.75), over150: primeLens.filter((x) => x > 150).length, stalemates: finals.filter((x) => x.how === 'stalemate').length }
     const defDeaths = d ? d.fights.filter((x) => x.how === 'death').length : 0
     for (const x of [f, d]) if (x && x.gaps.min !== null) gapMin = Math.min(gapMin, x.gaps.min)
-    const inR = (st, lo, hi) => st && st.median !== null && st.median >= lo && st.median <= hi
-    const ok = !!focus && inR(focus.mid1, 20, 40) && inR(focus.mid2, 20, 40) && inR(focus.final, 40, 75) && midOver.length <= 0.05 * mids.length
+    // A focus stage median counts only on A6_MIN_KILLS kills or more (P19 review).
+    const inR = (st, lo, hi) => st && st.enough && st.median !== null && st.median >= lo && st.median <= hi
+    // Decided after the P19 review: the default bot's PRIME median (every ending) at most 120 s.
+    const ok = !!focus && inR(focus.mid1, 20, 40) && inR(focus.mid2, 20, 40) && inR(focus.final, 40, 75) && midOver.length <= 0.05 * mids.length && prime.median !== null && prime.median <= 120
     if (!ok) pass = false
-    per[w] = { focus, defaultLongest: defLongest, defaultMidOver150: `${midOver.length}/${mids.length}`, defaultFinalOver150: `${finalOver}/${finals}`, defaultOver150: defOver, defaultFightsEndedByDeath: defDeaths, defaultFights: d ? d.fights.length : 0 }
+    per[w] = {
+      focus, defaultLongest: defLongest, defaultMidOver150: `${midOver.length}/${mids.length}`, defaultFinalOver150: `${finalOver}/${finals.length}`, defaultOver150: defOver, defaultFightsEndedByDeath: defDeaths, defaultFights: d ? d.fights.length : 0,
+      defaultPrime: prime,
+      bossAttacks: { default: atk(d ? d.fights : []), focus: atk(f ? f.fights : []) },
+      unresolved: focus ? ['mid1', 'mid2', 'final'].filter((k) => focus[k] && !focus[k].enough) : [],
+    }
   }
   if (gapMin < 20) pass = false
+  const st = (x) => `${fmt(x?.median, 1)}${x && !x.enough ? '*' : ''}`
   const v = WORLDS.map((w) => {
     const f = per[w].focus
-    return `${w} focus ${fmt(f?.mid1?.median, 1)}/${fmt(f?.mid2?.median, 1)}/${fmt(f?.final?.median, 1)} s (kills ${f?.mid1?.kills ?? 0}/${f?.mid2?.kills ?? 0}/${f?.final?.kills ?? 0}), default mid fights over 150 s ${per[w].defaultMidOver150} (PRIME ${per[w].defaultFinalOver150}, longest ${fmt(per[w].defaultLongest, 1)} s)`
+    const p = per[w].defaultPrime
+    const a = per[w].bossAttacks.default
+    return `${w} focus ${st(f?.mid1)}/${st(f?.mid2)}/${st(f?.final)} s (kills ${f?.mid1?.kills ?? 0}/${f?.mid2?.kills ?? 0}/${f?.final?.kills ?? 0}), default mid fights over 150 s ${per[w].defaultMidOver150} (PRIME ${per[w].defaultFinalOver150}, longest ${fmt(per[w].defaultLongest, 1)} s), default PRIME median ${fmt(p.median, 1)} s, p75 ${fmt(p.p75, 1)} s (${p.n} fights), boss-attack HP per default fight ${fmt(a.mean, 1)} (hit in ${a.hit}/${a.fights}), fights ended by death ${a.deaths}`
   })
-  add('A6', 'Fights (focus bot medians mid1/mid2/final; default bot = smart+P)', v.join('; ') + `; kill-to-next-arrival min ${gapMin === Infinity ? '-' : fmt(gapMin, 1)} s`, 'focus mid1/mid2 median 20 to 40 s, final 40 to 75 s; default bot at most 5% of mid1 and mid2 fights over 150 s, a PRIME fight may run to the 210 s stalemate (P19 decision); gap >= 20 s', pass, per)
+  add(
+    'A6',
+    `Fights (focus bot medians mid1/mid2/final on ${FOCUS_SEEDS} seeds, * = under ${A6_MIN_KILLS} kills; default bot = smart+P on ${RATE_SEEDS} seeds)`,
+    v.join('; ') + `; kill-to-next-arrival min ${gapMin === Infinity ? '-' : fmt(gapMin, 1)} s`,
+    `focus mid1/mid2 median 20 to 40 s, final 40 to 75 s, each on ${A6_MIN_KILLS} kills or more; default bot at most 5% of mid1 and mid2 fights over 150 s, and its PRIME fight (every ending, a stalemate at 210 s) median <= 120 s; gap >= 20 s`,
+    pass,
+    per,
+  )
 }
 
 if (has('A7')) {
   const per = {}
   let pass = true
   for (const w of WORLDS) {
-    const p = of(['smartP'], w)
-    const s = of(['smart'], w)
+    const p = of(['smartPR'], w)
+    const s = of(['smartR'], w)
     const pw = p.filter((x) => x.won).length
     const sw = s.filter((x) => x.won).length
-    per[w] = { smartP: `${pw}/${p.length}`, smart: `${sw}/${s.length}` }
+    // The two seed halves, reported (P19 review: the halves of one build differ by more than a knob step).
+    const half = (a, lo, hi) => a.filter((x) => x.seed / 1001 >= lo && x.seed / 1001 <= hi && x.won).length
+    const h = Math.floor(RATE_SEEDS / 2)
+    per[w] = { smartP: `${pw}/${p.length}`, smart: `${sw}/${s.length}`, smartPHalves: `${half(p, SEED_FROM, SEED_FROM + h - 1)}/${h} and ${half(p, SEED_FROM + h, SEED_FROM + RATE_SEEDS - 1)}/${RATE_SEEDS - h}`, smartHalves: `${half(s, SEED_FROM, SEED_FROM + h - 1)}/${h} and ${half(s, SEED_FROM + h, SEED_FROM + RATE_SEEDS - 1)}/${RATE_SEEDS - h}` }
     if (!(pct(pw, p.length) >= 25 && pct(pw, p.length) <= 45 && pct(sw, s.length) >= 5 && pct(sw, s.length) <= 25)) pass = false
   }
-  add('A7', `Win rate (${SEEDS} seeds per world)`, WORLDS.map((w) => `${w} smart+P ${per[w].smartP}, smart ${per[w].smart}`).join('; '), 'smart+P 25 to 45%; smart 5 to 25%', pass, per)
+  add('A7', `Win rate (${RATE_SEEDS} seeds per world)`, WORLDS.map((w) => `${w} smart+P ${per[w].smartP}, smart ${per[w].smart} (halves: smart+P ${per[w].smartPHalves}, smart ${per[w].smartHalves})`).join('; '), 'smart+P 25 to 45%; smart 5 to 25%', pass, per)
 }
 
 if (has('A8')) {
@@ -503,16 +573,39 @@ if (has('A8')) {
   let pass = true
   for (const w of WORLDS) {
     per[w] = {}
-    for (const [id, min] of [['smart', 330], ['smartP', 480], ['crude', 150]]) {
+    for (const [id, key, min] of [['smartR', 'smart', 330], ['smartPR', 'smartP', 480], ['crudeR', 'crude', 150]]) {
       const m = median(of([id], w).map(survival))
-      per[w][id] = m
+      per[w][key] = m
       if (m === null || m < min) pass = false
     }
   }
   const hiveCrude = per.hive?.crude
   const crudeOrder = hiveCrude == null || WORLDS.every((w) => per[w].crude == null || hiveCrude >= per[w].crude)
   if (!crudeOrder) pass = false
-  add('A8', 'Median survival (a win or a stalemate counts as the whole 14:00)', WORLDS.map((w) => `${w} smart ${mmss(per[w].smart)}, smart+P ${mmss(per[w].smartP)}, crude ${mmss(per[w].crude)}`).join('; '), 'smart >= 5:30; smart+P >= 8:00; crude >= 2:30; Hive crude >= Depths and Wastes', pass, { ...per, hiveCrudeAtLeastOthers: crudeOrder })
+  // Reported (P19 review): deaths per minute of the run, per world, for
+  // smart+P and for smart and smart+P together; the share of the busiest
+  // minute against a provisional 35% (a death wall after mid1 shows here).
+  const deathMinutes = {}
+  for (const w of WORLDS) {
+    const hist = (ids) => {
+      const dead = of(ids, w).filter((s) => s.dead)
+      const h = Array(15).fill(0)
+      for (const s of dead) h[Math.min(14, Math.floor(s.endTime / 60))]++
+      const top = Math.max(0, ...h)
+      return { deaths: dead.length, perMinute: h, busiest: h.indexOf(top), busiestShare: dead.length ? +(top / dead.length).toFixed(2) : null }
+    }
+    deathMinutes[w] = { smartP: hist(['smartPR']), smartAndP: hist(['smartR', 'smartPR']) }
+    // Decided after the P19 review: no single minute holds more than 35% of the smart+P deaths.
+    if (deathMinutes[w].smartP.busiestShare !== null && deathMinutes[w].smartP.busiestShare > 0.35) pass = false
+  }
+  add(
+    'A8',
+    `Median survival (${RATE_SEEDS} seeds per world; a win or a stalemate counts as the whole 14:00)`,
+    WORLDS.map((w) => `${w} smart ${mmss(per[w].smart)}, smart+P ${mmss(per[w].smartP)}, crude ${mmss(per[w].crude)}`).join('; ') + `. Busiest death minute (smart+P): ${WORLDS.map((w) => `${w} ${deathMinutes[w].smartP.busiest}:00 to ${deathMinutes[w].smartP.busiest + 1}:00 ${fmt(deathMinutes[w].smartP.busiestShare)} of ${deathMinutes[w].smartP.deaths}`).join(', ')}`,
+    'smart >= 5:30; smart+P >= 8:00; crude >= 2:30; Hive crude >= Depths and Wastes; no single minute holds more than 35% of the smart+P deaths',
+    pass,
+    { ...per, hiveCrudeAtLeastOthers: crudeOrder, deathMinutes },
+  )
 }
 
 if (has('A9')) {
@@ -568,7 +661,22 @@ if (has('A10')) {
     .sort((a, b) => a.s.fromHalfHp - b.s.fromHalfHp)
     .slice(0, 8)
     .map((r) => ({ run: r.s.file, fromHalfHp: r.s.fromHalfHp, t: r.death.t, hpAtHalf: r.death.hpAtHalf ?? null, maxHp: r.death.maxHp, dmgFromHalfByKind: r.death.dmgFromHalfByKind ?? null, dmgLast3sByKind: r.death.dmgLast3sByKind, lastHitBy: r.death.lastHitBy }))
-  add('A10', 'Readable deaths (smart-family deaths; crude in the details)', st ? `${st.deaths} deaths, median ${fmt(st.median)} s, min ${fmt(st.min)} s` : 'no deaths', 'median >= 3.0 s; minimum >= 1.2 s', st ? st.median >= 3 && st.min >= 1.2 : false, { bySet, byWorld, under, windowDmg, fastest })
+  // Decided after the P19 review: scored pooled (the smart family, 30 seeds)
+  // and per world on the smart+P set (the default player, RATE_SEEDS seeds).
+  const bySetWorld = {}
+  for (const w of WORLDS) {
+    const x = a10Stats(of(['smartPR'], w))
+    bySetWorld[w] = x ? { deaths: x.deaths, median: x.median, min: x.min } : null
+  }
+  const worldsOk = WORLDS.every((w) => !bySetWorld[w] || bySetWorld[w].median >= 3)
+  add(
+    'A10',
+    'Readable deaths (smart-family deaths pooled, smart+P deaths per world; crude in the details)',
+    st ? `${st.deaths} deaths, median ${fmt(st.median)} s, min ${fmt(st.min)} s; smart+P per world (${RATE_SEEDS} seeds) ${WORLDS.map((w) => `${w} ${fmt(bySetWorld[w]?.median)} s (${bySetWorld[w]?.deaths ?? 0})`).join(', ')}; smart family per world ${WORLDS.map((w) => `${w} ${fmt(byWorld[w]?.median)} s (${byWorld[w]?.deaths ?? 0})`).join(', ')}` : 'no deaths',
+    `median >= 3.0 s over the smart-family deaths pooled and over the smart+P deaths of each world (${RATE_SEEDS} seeds); minimum >= 1.2 s`,
+    st ? st.median >= 3 && worldsOk && st.min >= 1.2 : false,
+    { bySet, byWorld, bySetWorldSmartP: bySetWorld, under, windowDmg, fastest },
+  )
 }
 
 if (has('A11')) {
@@ -585,23 +693,51 @@ if (has('A12')) {
   // Decided (P19 ladder pass): 60 Hive seeds; T1 wins at least 5 points less
   // often than T0. T2 and T3 are reported; each level should win no more than
   // the one below it.
-  const lad = ladderStats(of(['threat'], 'hive')).find((l) => l.key === 'hive smart+P')
+  const lad = ladderStats(of(['threat'], 'hive')).find((l) => l.key === 'hive smart+P' || l.key === 'hive smart+human+P')
   const get = (t) => lad?.byThreat.find((e) => e.threat === t)
   const rate = (e) => (e ? e.wins / e.runs : null)
   const lv = [0, 1, 2, 3, 4].map(get)
   const [t0, t1, , , t4] = lv
   const ok = !!(t0 && t1 && t4) && rate(t4) <= 0.15 && rate(t0) - rate(t1) >= 0.05 - 1e-9
   const steps = lv.slice(1).map((e, i) => (e && lv[i] && rate(e) > rate(lv[i]) ? `T${i + 1} over T${i}` : null)).filter(Boolean)
-  const value = lv.map((e, t) => (e ? `T${t} ${e.wins}/${e.runs} (${pct(e.wins, e.runs)}%)` : `T${t} -`)).join(', ') + `; ladder ${steps.length ? steps.join(', ') : 'falls at every step'}`
-  add('A12', 'Ladder (Hive smart+P, T0 to T4)', value, 'T4 win rate <= 15%; T1 at least 5 points under T0', ok, { ...lad, steps })
+  // P19 review: a step smaller than two standard errors of the difference of
+  // two win rates (pooled rate p over n runs each: sqrt(2 p (1 - p) / n)) is
+  // inside the noise, so those two levels measure as equal.
+  const equal = lv
+    .slice(1)
+    .map((e, i) => {
+      const a = lv[i]
+      if (!e || !a) return null
+      const p = (a.wins + e.wins) / (a.runs + e.runs)
+      const se = Math.sqrt((p * (1 - p) * (1 / a.runs + 1 / e.runs)))
+      return Math.abs(rate(a) - rate(e)) < 2 * se ? `T${i} and T${i + 1}` : null
+    })
+    .filter(Boolean)
+  const value = lv.map((e, t) => (e ? `T${t} ${e.wins}/${e.runs} (${pct(e.wins, e.runs)}%)` : `T${t} -`)).join(', ') + `; ladder ${steps.length ? steps.join(', ') : 'falls at every step'}; within noise (under 2 standard errors): ${equal.length ? equal.join(', ') : 'none'}`
+  add('A12', 'Ladder (Hive smart+P, T0 to T4)', value, 'T4 win rate <= 15%; T1 at least 5 points under T0', ok, { ...lad, steps, withinNoise: equal })
 }
 
 if (has('A13')) {
-  // Each OVERTIME set must pass on its own (P19 ladder pass).
-  const st = a13Stats(of(['ot']))
+  // Each Hive OVERTIME set must pass on its own (P19 ladder pass). Depths and
+  // Wastes (P19 review) run the T0 part of the same sets; with fewer winners
+  // per set, they are scored on their sets pooled.
+  const st = a13Stats(of(['ot'], 'hive'))
   const sets = st ? Object.entries(st.bySet) : []
-  const value = st ? `${sets.map(([k, e]) => `set ${k} ${e.by20}/${e.n} (${pct(e.by20, e.n)}%), ${e.past24} past 24:00`).join('; ')}; all ${st.by20}/${st.n} (${pct(st.by20, st.n)}%)` : 'no run reached OVERTIME'
-  add('A13', `Overtime (Hive OVERTIME sets ${OT_SETS.join(' and ')}, runs that won)`, value, '>= 90% dead by 20:00 and none past 24:00, in each set', st ? sets.every(([, e]) => e.by20 / e.n >= 0.9 && e.past24 === 0) : false, st)
+  const others = {}
+  for (const w of OT_WORLDS) others[w] = a13Stats(of(['otWorlds'], w))
+  const okOf = (e) => e.n > 0 && e.by20 / e.n >= 0.9 && e.past24 === 0
+  const value =
+    (st ? `hive ${sets.map(([k, e]) => `set ${k} ${e.by20}/${e.n} (${pct(e.by20, e.n)}%), ${e.past24} past 24:00`).join('; ')}; all ${st.by20}/${st.n} (${pct(st.by20, st.n)}%)` : 'hive: no run reached OVERTIME') +
+    OT_WORLDS.map((w) => (others[w] ? `; ${w} T0 sets ${OT_SETS.join(' and ')} ${others[w].by20}/${others[w].n} (${pct(others[w].by20, others[w].n)}%), ${others[w].past24} past 24:00` : `; ${w}: no run reached OVERTIME`)).join('')
+  const pass = !!st && sets.every(([, e]) => okOf(e)) && OT_WORLDS.every((w) => others[w] && okOf(others[w]))
+  add(
+    'A13',
+    `Overtime (runs that won: Hive OVERTIME sets ${OT_SETS.join(' and ')}${OT_WORLDS.length ? `; ${OT_WORLDS.join(' and ')} T0 of the same sets` : ''})`,
+    value,
+    `>= 90% dead by 20:00 and none past 24:00, in each Hive set${OT_WORLDS.length ? ` and in ${OT_WORLDS.join(' and ')} (sets pooled)` : ''}`,
+    pass,
+    { hive: st, ...others },
+  )
 }
 
 if (has('A14')) {
@@ -646,18 +782,25 @@ if (has('A18')) {
   let pass = true
   const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null)
   for (const w of WORLDS) {
-    const dash = of(['dash'], w)
-    const base = of(['smartP'], w)
+    // The dash clause on RATE_SEEDS seeds (more deaths per set).
+    const dash = of(['dashR'], w)
+    const base = of(['smartPR'], w)
     const ratio = mean(dash.map(survival)) / mean(base.map(survival))
     // The 14:00 end censors survival, so the mean ratio cannot exceed
     // 14:00 / (no-dash mean). Minutes alive per death (all minutes played over
     // the deaths, the exponential estimate of the mean lifetime) is not capped
     // (P19 builds pass, section 11 A18 note).
-    const lifePerDeath = (a) => {
-      const deaths = a.filter((s) => s.dead).length
-      return deaths ? a.reduce((n, s) => n + survival(s), 0) / 60 / deaths : Infinity
-    }
-    const lifeRatio = lifePerDeath(dash) / lifePerDeath(base)
+    // Decided after the P19 review: minutes alive per death only when each set
+    // has A18_MIN_DEATHS deaths or more; otherwise the mean-survival ratio is
+    // reported and scored. The 14:00 end caps that ratio (ceiling below), so it
+    // passes at 1.25x, or when the dash bot's mean survival is 13:00 or more
+    // (it loses under a minute a run, so the cap, not the dash, sets the ratio).
+    const lifePerDeath = (a) => a.reduce((n, s) => n + survival(s), 0) / 60 / Math.max(1, a.filter((s) => s.dead).length)
+    const baseDeathsN = base.filter((s) => s.dead).length
+    const dashDeathsN = dash.filter((s) => s.dead).length
+    const perDeath = baseDeathsN >= A18_MIN_DEATHS && dashDeathsN >= A18_MIN_DEATHS
+    const lifeRatio = perDeath ? lifePerDeath(dash) / lifePerDeath(base) : null
+    const dashOk = perDeath ? lifeRatio >= 1.25 : ratio >= 1.25 || mean(dash.map(survival)) >= 780
     const ceiling = Math.max(...base.map((s) => (s.minutes ?? 14) * 60)) / mean(base.map(survival))
     const ccMin = dash.reduce((n, s) => n + s.closeCalls, 0) / (dash.reduce((n, s) => n + s.endTime, 0) / 60)
     const prio = of(['smartP', 'focus', 'dash'], w).filter((s) => s.endTime >= 240)
@@ -677,6 +820,8 @@ if (has('A18')) {
       baseMeanSurvival: mean(base.map(survival)),
       dashMeanRatioCeiling: ceiling,
       dashLifeRatio: lifeRatio,
+      dashScoredOn: perDeath ? 'minutes per death' : 'mean survival',
+      dashOk,
       dashMinPerDeath: lifePerDeath(dash),
       baseMinPerDeath: lifePerDeath(base),
       dashDeaths: `${dash.filter((s) => s.dead).length}/${dash.length}`,
@@ -691,13 +836,13 @@ if (has('A18')) {
     }
     // Scored on minutes alive per death (P19 decision); the mean ratio and its
     // ceiling are information.
-    if (!(lifeRatio >= 1.25 && ccMin >= 1 && ccMin <= 4 && prio.length && fused / prio.length >= 0.5 && evo.length && evolved / evo.length >= 0.4 && xpMin >= 0.9)) pass = false
+    if (!(dashOk && ccMin >= 1 && ccMin <= 4 && prio.length && fused / prio.length >= 0.5 && evo.length && evolved / evo.length >= 0.4 && xpMin >= 0.9)) pass = false
   }
   add(
     'A18',
     'Build systems (dash = smart+dash+P vs smart+P minutes alive per death; fusion over priority runs that reach 4:00; evolve runs that reach mid2; XP = roam, up to the PRIME kill)',
-    WORLDS.map((w) => `${w} dash ${fmt(per[w].dashLifeRatio)}x per death (deaths ${per[w].dashDeaths} vs ${per[w].baseDeaths}; mean ${fmt(per[w].dashSurvivalRatio)}x, ceiling ${fmt(per[w].dashMeanRatioCeiling)}x), cc ${fmt(per[w].closeCallsPerMin)}/min, fusion by 4:00 ${per[w].fusionBy4}, evolve ${per[w].evolveAtBoss2}, XP min ${fmt(per[w].roamXpMin, 3)} (whole run ${fmt(per[w].roamXpWholeRunMin, 3)})`).join('; '),
-    'dash >= 1.25x minutes alive per death; 1 to 4 close calls/min; >= 50% fusion by 4:00; >= 40% evolve; XP >= 90%',
+    WORLDS.map((w) => `${w} dash ${per[w].dashLifeRatio === null ? `mean ${fmt(per[w].dashSurvivalRatio)}x (under ${A18_MIN_DEATHS} deaths in a set; dash mean ${mmss(per[w].dashMeanSurvival)})` : `${fmt(per[w].dashLifeRatio)}x per death`} (deaths ${per[w].dashDeaths} vs ${per[w].baseDeaths}; mean ${fmt(per[w].dashSurvivalRatio)}x, ceiling ${fmt(per[w].dashMeanRatioCeiling)}x), cc ${fmt(per[w].closeCallsPerMin)}/min, fusion by 4:00 ${per[w].fusionBy4}, evolve ${per[w].evolveAtBoss2}, XP min ${fmt(per[w].roamXpMin, 3)} (whole run ${fmt(per[w].roamXpWholeRunMin, 3)})`).join('; '),
+    `dash >= 1.25x minutes alive per death (${RATE_SEEDS} seeds; with under ${A18_MIN_DEATHS} deaths in either set, the mean-survival ratio >= 1.25x or a dash mean survival of 13:00 or more); 1 to 4 close calls/min; >= 50% fusion by 4:00; >= 40% evolve; XP >= 90%`,
     pass,
     per,
   )
@@ -741,6 +886,9 @@ const meta = {
   threatSeeds: `1001 x ${SEED_FROM}..${SEED_FROM + THREAT_SEEDS - 1}`,
   otSets: OT_SETS,
   otSeeds: OT_SEEDS,
+  otWorlds: OT_WORLDS,
+  focusSeeds: `1001 x ${SEED_FROM}..${SEED_FROM + FOCUS_SEEDS - 1}`,
+  rateSeeds: `1001 x ${SEED_FROM}..${SEED_FROM + RATE_SEEDS - 1}`,
   only: ONLY,
   runsDir: RUNS,
   machineAtEnd: machine(),
