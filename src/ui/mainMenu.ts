@@ -149,6 +149,10 @@ export class MainMenu {
     this.tagline.anchor.set(0.5, 0)
     this.tapToPlay = new Text({ text: '', style: { fontFamily: FONT.display, fontWeight: '700', fontSize: 20, lineHeight: 28, letterSpacing: 2, fill: T.textHi, align: 'center' } })
     this.tapToPlay.anchor.set(0.5)
+    // Pixi stops the hit test at a passive node that holds the point, so text
+    // drawn over the full-screen catcher must not take part in hit testing,
+    // or a tap on the words TAP TO PLAY does nothing.
+    this.title.eventMode = this.tagline.eventMode = this.tapToPlay.eventMode = 'none'
     this.tapCatcher.eventMode = 'static'
     this.tapCatcher.cursor = 'pointer'
     this.tapCatcher.on('pointertap', () => this.onPlay())
