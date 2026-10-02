@@ -1,0 +1,189 @@
+{
+ "meta": {
+  "label": "ladder-a14",
+  "date": "2026-10-02T01:29:49.356Z",
+  "commit": "af12f12",
+  "srcDirty": true,
+  "scriptsDirty": true,
+  "command": "node scripts/playtest/matrix.mjs --only=A14 --label=ladder-a14 --runs=/tmp/swg-ladder/a14",
+  "seeds": "1001 x 1..10 per world",
+  "worlds": [
+   "hive",
+   "depths",
+   "wastes"
+  ],
+  "threatSeeds": "1001 x 1..60",
+  "otSets": [
+   1,
+   2
+  ],
+  "only": [
+   "A14"
+  ],
+  "runsDir": "/tmp/swg-ladder/a14",
+  "machineAtEnd": {
+   "load": [
+    8.27,
+    6.94,
+    6.36
+   ],
+   "swap": "total = 5632.00M  used = 5162.88M  free = 469.12M  (encrypted)"
+  },
+  "sets": {},
+  "commands": [
+   "node scripts/measure.mjs 375 667 det",
+   "node scripts/measure.mjs 667 375 det",
+   "node scripts/measure.mjs 375 667 det-long",
+   "node scripts/measure.mjs 667 375 det-long",
+   "node scripts/measure.mjs 375 667 det-death",
+   "node scripts/measure.mjs 667 375 det-death",
+   "node scripts/measure.mjs 375 667 det '--settings={\"shake\":0,\"reduceMotion\":true,\"damageNumbers\":\"off\",\"flashes\":false,\"glow\":0}'"
+  ]
+ },
+ "metrics": [
+  {
+   "id": "A14",
+   "name": "Determinism (det, det-long, det-death at 375x667 and 667x375, det with the settings injection; each with its rerun)",
+   "value": "9 groups, 0 split; reruns match; 21/21 lines",
+   "target": "one hash per mode and world across views, settings, reruns",
+   "result": "PASS",
+   "details": {
+    "det hive": [
+     {
+      "view": "375x667",
+      "hash": "642fbc46",
+      "rerunMatch": true
+     },
+     {
+      "view": "667x375",
+      "hash": "642fbc46",
+      "rerunMatch": true
+     },
+     {
+      "view": "375x667 settings",
+      "hash": "642fbc46",
+      "rerunMatch": true
+     }
+    ],
+    "det depths": [
+     {
+      "view": "375x667",
+      "hash": "1365ccb6",
+      "rerunMatch": true
+     },
+     {
+      "view": "667x375",
+      "hash": "1365ccb6",
+      "rerunMatch": true
+     },
+     {
+      "view": "375x667 settings",
+      "hash": "1365ccb6",
+      "rerunMatch": true
+     }
+    ],
+    "det wastes": [
+     {
+      "view": "375x667",
+      "hash": "d3c8cef6",
+      "rerunMatch": true
+     },
+     {
+      "view": "667x375",
+      "hash": "d3c8cef6",
+      "rerunMatch": true
+     },
+     {
+      "view": "375x667 settings",
+      "hash": "d3c8cef6",
+      "rerunMatch": true
+     }
+    ],
+    "det-long hive": [
+     {
+      "view": "375x667",
+      "hash": "4b54dab1",
+      "rerunMatch": true
+     },
+     {
+      "view": "667x375",
+      "hash": "4b54dab1",
+      "rerunMatch": true
+     }
+    ],
+    "det-long depths": [
+     {
+      "view": "375x667",
+      "hash": "be186edf",
+      "rerunMatch": true
+     },
+     {
+      "view": "667x375",
+      "hash": "be186edf",
+      "rerunMatch": true
+     }
+    ],
+    "det-long wastes": [
+     {
+      "view": "375x667",
+      "hash": "7a87fa18",
+      "rerunMatch": true
+     },
+     {
+      "view": "667x375",
+      "hash": "7a87fa18",
+      "rerunMatch": true
+     }
+    ],
+    "det-death hive": [
+     {
+      "view": "375x667",
+      "hash": "7408614a",
+      "rerunMatch": true,
+      "end": "death",
+      "time": 159
+     },
+     {
+      "view": "667x375",
+      "hash": "7408614a",
+      "rerunMatch": true,
+      "end": "death",
+      "time": 159
+     }
+    ],
+    "det-death depths": [
+     {
+      "view": "375x667",
+      "hash": "5739e8a2",
+      "rerunMatch": true,
+      "end": "death",
+      "time": 141.87
+     },
+     {
+      "view": "667x375",
+      "hash": "5739e8a2",
+      "rerunMatch": true,
+      "end": "death",
+      "time": 141.87
+     }
+    ],
+    "det-death wastes": [
+     {
+      "view": "375x667",
+      "hash": "224be1c",
+      "rerunMatch": true,
+      "end": "death",
+      "time": 168.1
+     },
+     {
+      "view": "667x375",
+      "hash": "224be1c",
+      "rerunMatch": true,
+      "end": "death",
+      "time": 168.1
+     }
+    ]
+   }
+  }
+ ]
+}

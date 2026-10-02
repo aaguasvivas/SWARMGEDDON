@@ -325,7 +325,8 @@ export const BONUS_FX = {
  *  opens a `lull` s lull at `lullMinMul` of the row's minAlive. Per cycle:
  *  enemy HP x hpMul^c, damage x dmgMul^c, min and max alive x aliveMul^c,
  *  gem XP x xpMul^c, the bonus drop chance x bonusMul^c, non-boss spawn
- *  speed and the speed ceiling x speedMul^(c - 1). Beats at cycle offsets:
+ *  speed and the speed ceiling x speedMul^(c - 1), every heal x
+ *  healMul^(c - 1). Beats at cycle offsets:
  *  EVENT 1 at `event1` (a mirror copy MIRROR_DELAY later from cycle
  *  `mirrorFrom` on), `eliteBase + c` elites with `eliteAffixes` affixes at
  *  `elites` (at most `eliteMax`), EVENT 3 at `event3`, the OT boss (mid2
@@ -333,7 +334,7 @@ export const BONUS_FX = {
  *  An OT boss still alive `bossStay` s after it arrives retreats. */
 export const OVERTIME = {
   cycle: 180, row0: 8, lull: 10, lullMinMul: 0.5,
-  hpMul: 1.5, dmgMul: 1.2, aliveMul: 1.1, xpMul: 0.8, bonusMul: 0.6, bossHpMul: 1.35, speedMul: 1.3, bossStay: 90,
+  hpMul: 1.5, dmgMul: 1.2, aliveMul: 1.1, xpMul: 0.8, bonusMul: 0.4, bossHpMul: 1.35, speedMul: 1.4, healMul: 0.25, bossStay: 80,
   event1: 20, elites: 70, event3: 105, boss: 160,
   mirrorFrom: 2, eliteBase: 2, eliteMax: 8, eliteAffixes: 2,
 } as const

@@ -283,12 +283,14 @@ export class World {
   threatDef: ThreatLevel = THREAT_LEVELS[0]!
   /** Enemy HP, the threat x OVERTIME damage multiplier (authored boss and
    *  hazard damage takes only this; dmgMul adds the time ramp), the min and
-   *  max alive multiplier, and the OVERTIME multiplier of non-boss spawn
-   *  speed and the speed ceiling. The director sets them per OVERTIME cycle. */
+   *  max alive multiplier, the OVERTIME multiplier of non-boss spawn
+   *  speed and the speed ceiling, and the OVERTIME multiplier of every heal.
+   *  The director sets them per OVERTIME cycle. */
   hpMul = 1
   runDmgMul = 1
   aliveMul = 1
   speedMul = 1
+  healMul = 1
 
   // PB: render-side zero allocation
   /** The quads the pools draw with, one ParticleContainer each (section 3.2).

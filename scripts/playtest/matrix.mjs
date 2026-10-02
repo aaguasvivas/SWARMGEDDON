@@ -9,8 +9,10 @@
 //                     set: --seeds=30 --seed-from=31 runs 1001 x 31..60)
 //   --worlds=a,b      worlds for the bot sets (default hive,depths,wastes)
 //   --only=A6,A10     run and report only these metrics (default: all)
-//   --threat-seeds=N  Hive seeds for the A12 sweep (default --seeds)
-//   --ot-sets=1,2     OVERTIME sets for A13 (default 1,2; section 11 A12/A13 note)
+//   --threat-seeds=N  Hive seeds for the A12 ladder, T0 to T4 (default 60, the
+//                     decided A12 sample; section 11)
+//   --ot-sets=1,2     OVERTIME sets for A13 (default 1,2; section 11 A12/A13 note;
+//                     set 3 is a holdout: T0 1001 x 61..90, T1 to T3 x 21..30)
 //   --label=NAME      names the outputs (default baseline)
 //   --runs=DIR        raw run JSONs and logs (default /tmp/swg-matrix/<label>);
 //                     a run already there with the same config is reused, so an
@@ -43,7 +45,7 @@ for (const a of process.argv.slice(2)) {
 const SEEDS = parseInt(flags.seeds ?? '10')
 const SEED_FROM = parseInt(flags['seed-from'] ?? '1')
 const WORLDS = (flags.worlds ?? 'hive,depths,wastes').split(',')
-const THREAT_SEEDS = parseInt(flags['threat-seeds'] ?? String(SEEDS))
+const THREAT_SEEDS = parseInt(flags['threat-seeds'] ?? '60')
 const OT_SETS = (flags['ot-sets'] ?? '1,2').split(',').map(Number)
 const LABEL = flags.label ?? 'baseline'
 const RUNS = resolve(flags.runs ?? `/tmp/swg-matrix/${LABEL}`)
@@ -67,24 +69,26 @@ const SETS = {
   roam: { label: 'roam', pattern: 'roam:SEED:14', configs: () => seedsN(SEEDS).map((s) => `roam:${s}:14`) },
   dash: { label: 'smart+dash+P', pattern: 'smart+dash:SEED:14:nova:priority', configs: () => seedsN(SEEDS).map((s) => `smart+dash:${s}:14:nova:priority`) },
   evolve: { label: 'smart+E', pattern: 'smart:SEED:14:nova:evolve', configs: () => seedsN(SEEDS).map((s) => `smart:${s}:14:nova:evolve`) },
-  // A12 sweep: Hive only; T0 is the smart+P set.
+  // A12 ladder: Hive only, T0 to T4 on --threat-seeds seeds. T0 shares its
+  // run files with the smart+P set (same config), so a run is never repeated.
   threat: {
-    label: 'smart+P T1, T4 (Hive)',
-    pattern: 'smart:SEED:14:nova:priority:T (T 1 and 4)',
+    label: 'smart+P T0 to T4 (Hive)',
+    pattern: 'smart:SEED:14:nova:priority:T (T 0 to 4)',
     hiveOnly: true,
     seeds: () => THREAT_SEEDS,
-    configs: () => [1, 4].flatMap((t) => seedsN(THREAT_SEEDS).map((s) => `smart:${s}:14:nova:priority:${t}`)),
+    configs: () => [0, 1, 2, 3, 4].flatMap((t) => seedsN(THREAT_SEEDS).map((s) => `smart:${s}:14:nova:priority${t ? `:${t}` : ''}`)),
   },
-  // A13: the OVERTIME sets of the section 11 A12/A13 note (Hive). Set 1: T0
-  // 1001 x 1..30, T1 to T3 1001 x 1..10. Set 2: T0 1001 x 31..60, T1 to T3 1001 x 11..20.
+  // A13: the OVERTIME sets of the section 11 A12/A13 note (Hive). Set n: T0
+  // 1001 x 30(n-1)+1..30n, T1 to T3 1001 x 10(n-1)+1..10n (set 1: 1..30 and
+  // 1..10; set 2: 31..60 and 11..20; set 3, a holdout: 61..90 and 21..30).
   ot: {
     label: 'smart+P OVERTIME (Hive)',
     pattern: 'smart:SEED:25:nova:priority:T:ot',
     hiveOnly: true,
     configs: () =>
       OT_SETS.flatMap((set) => [
-        ...seedsN(30, set === 1 ? 1 : 31).map((s) => `smart:${s}:25:nova:priority:0:ot`),
-        ...[1, 2, 3].flatMap((t) => seedsN(10, set === 1 ? 1 : 11).map((s) => `smart:${s}:25:nova:priority:${t}:ot`)),
+        ...seedsN(30, 30 * (set - 1) + 1).map((s) => `smart:${s}:25:nova:priority:0:ot`),
+        ...[1, 2, 3].flatMap((t) => seedsN(10, 10 * (set - 1) + 1).map((s) => `smart:${s}:25:nova:priority:${t}:ot`)),
       ]),
   },
 }
@@ -102,7 +106,7 @@ const NEEDS = {
   A9: { sets: ['smartP'] },
   A10: { sets: ['smart', 'smartP', 'focus', 'dash', 'evolve', 'crude'] },
   A11: { sets: ['smart', 'smartP', 'focus', 'crude', 'roam', 'dash', 'evolve'] },
-  A12: { sets: ['smartP', 'threat'] },
+  A12: { sets: ['threat'] },
   A13: { sets: ['ot'] },
   A14: { steps: ['det'] },
   A15: { steps: ['perf'] },
@@ -505,20 +509,26 @@ if (has('A11')) {
 }
 
 if (has('A12')) {
-  const hive = of(['smartP', 'threat'], 'hive')
-  const lad = ladderStats(hive).find((l) => l.key === 'hive smart+P')
+  // Decided (P19 ladder pass): 60 Hive seeds; T1 wins at least 5 points less
+  // often than T0. T2 and T3 are reported; each level should win no more than
+  // the one below it.
+  const lad = ladderStats(of(['threat'], 'hive')).find((l) => l.key === 'hive smart+P')
   const get = (t) => lad?.byThreat.find((e) => e.threat === t)
-  const t0 = get(0)
-  const t1 = get(1)
-  const t4 = get(4)
   const rate = (e) => (e ? e.wins / e.runs : null)
-  const ok = !!(t0 && t1 && t4) && rate(t4) <= 0.15 && rate(t1) <= rate(t0)
-  add('A12', 'Ladder (Hive smart+P)', [t0, t1, t4].map((e, i) => (e ? `T${[0, 1, 4][i]} ${e.wins}/${e.runs} (${pct(e.wins, e.runs)}%)` : `T${[0, 1, 4][i]} -`)).join(', '), 'T4 win rate <= 15%; T1 <= T0', ok, lad)
+  const lv = [0, 1, 2, 3, 4].map(get)
+  const [t0, t1, , , t4] = lv
+  const ok = !!(t0 && t1 && t4) && rate(t4) <= 0.15 && rate(t0) - rate(t1) >= 0.05 - 1e-9
+  const steps = lv.slice(1).map((e, i) => (e && lv[i] && rate(e) > rate(lv[i]) ? `T${i + 1} over T${i}` : null)).filter(Boolean)
+  const value = lv.map((e, t) => (e ? `T${t} ${e.wins}/${e.runs} (${pct(e.wins, e.runs)}%)` : `T${t} -`)).join(', ') + `; ladder ${steps.length ? steps.join(', ') : 'falls at every step'}`
+  add('A12', 'Ladder (Hive smart+P, T0 to T4)', value, 'T4 win rate <= 15%; T1 at least 5 points under T0', ok, { ...lad, steps })
 }
 
 if (has('A13')) {
+  // Each OVERTIME set must pass on its own (P19 ladder pass).
   const st = a13Stats(of(['ot']))
-  add('A13', `Overtime (Hive OVERTIME sets ${OT_SETS.join(' and ')}, runs that won)`, st ? `${st.by20}/${st.n} (${pct(st.by20, st.n)}%) dead by 20:00; ${st.past24} alive past 24:00` : 'no run reached OVERTIME', '>= 90% dead by 20:00; none past 24:00', st ? st.by20 / st.n >= 0.9 && st.past24 === 0 : false, st)
+  const sets = st ? Object.entries(st.bySet) : []
+  const value = st ? `${sets.map(([k, e]) => `set ${k} ${e.by20}/${e.n} (${pct(e.by20, e.n)}%), ${e.past24} past 24:00`).join('; ')}; all ${st.by20}/${st.n} (${pct(st.by20, st.n)}%)` : 'no run reached OVERTIME'
+  add('A13', `Overtime (Hive OVERTIME sets ${OT_SETS.join(' and ')}, runs that won)`, value, '>= 90% dead by 20:00 and none past 24:00, in each set', st ? sets.every(([, e]) => e.by20 / e.n >= 0.9 && e.past24 === 0) : false, st)
 }
 
 if (has('A14')) {
@@ -628,7 +638,7 @@ const md = []
 md.push(`# P19 ${LABEL} matrix`, '')
 md.push(`- Commit: \`${meta.commit}\`${meta.srcDirty ? ' (src has uncommitted changes)' : ' (src clean)'}${meta.scriptsDirty ? '; the harness in scripts/ is the working tree, committed with this report' : ''}, ${meta.date}`)
 md.push(`- Command: \`${meta.command}\` (dev server at ${process.env.SWG_URL || 'http://localhost:5176'})`)
-md.push(`- Seeds: ${meta.seeds}; A12 Hive ${meta.threatSeeds}; A13 OVERTIME sets ${OT_SETS.join(', ')} (set 1: T0 1001 x 1..30, T1 to T3 1001 x 1..10; set 2: T0 1001 x 31..60, T1 to T3 1001 x 11..20)`)
+md.push(`- Seeds: ${meta.seeds}; A12 Hive ${meta.threatSeeds}; A13 OVERTIME sets ${OT_SETS.join(', ')} (set n: T0 1001 x 30(n-1)+1..30n, T1 to T3 1001 x 10(n-1)+1..10n)`)
 md.push(`- Machine at the end: load ${meta.machineAtEnd.load.join(' ')}, swap ${meta.machineAtEnd.swap}`)
 md.push('')
 md.push('| ID | Metric | Value | Target | Result |', '|---|---|---|---|---|')

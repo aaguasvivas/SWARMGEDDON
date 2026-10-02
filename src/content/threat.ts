@@ -40,7 +40,7 @@ export const THREAT_LEVELS: readonly ThreatLevel[] = [
   },
   {
     level: 2, name: 'BROOD TIDE', rule: 'Every swarm event strikes twice.',
-    hpMul: 1.2, dmgMul: 1.05, aliveMul: 1.1,
+    hpMul: 1.3, dmgMul: 1.05, aliveMul: 1.1,
     teachAffixes: 1, teachHpMul: 1.0, eliteAffixes: 1, elitePlus: 1, mirror: true, bossCadence: 1, scarcity: false,
   },
   {

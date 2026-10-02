@@ -375,15 +375,19 @@ export function ladderStats(out) {
   }))
 }
 
-/** A13 OVERTIME end over the runs that won and went on (cfg.ot): dead by 20:00 (1200 s), alive past 24:00 (1440 s). */
+/** A13 OVERTIME end over the runs that won and went on (cfg.ot): dead by 20:00 (1200 s), alive past 24:00 (1440 s).
+ *  Per OVERTIME set too: set n holds T0 seeds 1001 x 30(n-1)+1..30n and T1 to T3 seeds 1001 x 10(n-1)+1..10n. */
 export function a13Stats(out) {
   const runs = out.filter((s) => s.ot && s.won)
   if (!runs.length) return null
+  const count = (rs) => ({ n: rs.length, by20: rs.filter((s) => s.dead && s.endTime <= 1200).length, past24: rs.filter((s) => !s.dead || s.endTime > 1440).length })
+  const setOf = (s) => Math.ceil(s.seed / 1001 / (s.threat ? 10 : 30))
+  const bySet = {}
+  for (const k of [...new Set(runs.map(setOf))].sort((a, b) => a - b)) bySet[k] = count(runs.filter((s) => setOf(s) === k))
   return {
-    runs: runs.map((s) => ({ file: s.file, otStart: s.otStart, otCycle: s.otCycle, dead: s.dead, endTime: s.endTime, level: s.finalLevel })),
-    n: runs.length,
-    by20: runs.filter((s) => s.dead && s.endTime <= 1200).length,
-    past24: runs.filter((s) => !s.dead || s.endTime > 1440).length,
+    runs: runs.map((s) => ({ file: s.file, set: setOf(s), otStart: s.otStart, otCycle: s.otCycle, dead: s.dead, endTime: s.endTime, level: s.finalLevel })),
+    ...count(runs),
+    bySet,
   }
 }
 

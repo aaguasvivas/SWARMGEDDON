@@ -45,6 +45,8 @@
   const ATK_ROYAL_LUNGE = 1
   const BS_ACTIVE = 3
   const BS_RECOVER = 4
+  /** OVERTIME.cycle (src/config.ts): an OVERTIME cycle's length in seconds. */
+  const OT_CYCLE = 180
 
   function xpTotal(w) {
     let s = w.xp
@@ -597,6 +599,12 @@
       shardDrops: 0,
       coreDrops: 0,
       coresTaken: 0,
+      /** OVERTIME beats: firedAt as last seen, and the due time of each beat's cycle. */
+      otFired: [],
+      otDue: [],
+      /** OVERTIME steps inside a boss cage. */
+      otCagedSteps: 0,
+      otSteps: 0,
     }
     window.__PT = st
     // Spawn detector for bonuses, shards, cores and medkits: every pickup the
@@ -836,6 +844,32 @@
         }
       }
 
+      // OVERTIME beats (read-only): each fire or drop with the time it was due.
+      // A beat's due time is set when a new cycle resets it (firedAt NaN); a
+      // beat held into the next cycle keeps the due time of its own cycle.
+      if (w.director.runState === 'overtime') {
+        const d = w.director
+        const ob = w.script.otBeats
+        const base = w.script.beats.length
+        const c0 = d.otStart + (d.otCycle - 1) * OT_CYCLE
+        for (let k = 0; k < ob.length; k++) {
+          const f = d.firedAt[base + k]
+          const prev = st.otFired[k]
+          if (Number.isNaN(f)) {
+            if (prev === undefined || !Number.isNaN(prev)) st.otDue[k] = { due: c0 + ob[k].at, cycle: d.otCycle }
+          } else if (f !== prev && ob[k].kind !== 'boss') {
+            const b = ob[k]
+            const due = st.otDue[k] ?? { due: c0 + b.at, cycle: d.otCycle }
+            const skip = f < 0 && b.kind === 'event' && b.fromCycle !== undefined && due.cycle < b.fromCycle
+            st.events.push({
+              t: +w.time.toFixed(2), type: 'otBeat', k, kind: b.kind, id: b.id ?? null, mirror: b.mirror !== undefined, cycle: due.cycle,
+              due: +due.due.toFixed(2), firedAt: f < 0 ? -1 : +f.toFixed(2), late: f < 0 ? null : +(f - due.due).toFixed(2), result: f >= 0 ? 'fired' : skip ? 'off' : 'dropped',
+            })
+          }
+          st.otFired[k] = f
+        }
+      }
+
       if (inv) {
         w.player.maxHp = 1e9
         w.player.hp = 1e9
@@ -863,6 +897,10 @@
         continue
       }
       st.simStepsChunk++
+      if (w.director.runState === 'overtime') {
+        st.otSteps++
+        if (w.director.cage.active) st.otCagedSteps++
+      }
       if (!inv && w.time >= st.nextHpSample) {
         st.hpHist.push([Math.round(w.time), Math.round(w.player.hp), Math.round(w.player.maxHp), w.enemies.size])
         st.nextHpSample += 1
@@ -1122,6 +1160,8 @@
       threat: w.threat,
       otStart: st.otStart,
       otCycle: w.director.otCycle,
+      otSteps: st.otSteps,
+      otCagedSteps: st.otCagedSteps,
       stalemate: st.stalemate,
       death: st.death,
       level: w.level,

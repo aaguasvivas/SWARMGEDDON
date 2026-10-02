@@ -46,11 +46,13 @@ export function hurtPlayer(w: World, amount: number, kind: HurtKind, srcIdx: num
   return dmg
 }
 
-/** Every heal goes through here. With LIVING ARMOR, healing past max HP
- *  becomes overshield, up to FUSION.livingArmorFrac of max HP. Returns the HP
+/** Every heal goes through here, scaled by OVERTIME's `world.healMul` (1
+ *  before cycle 2). With LIVING ARMOR, healing past max HP becomes
+ *  overshield, up to FUSION.livingArmorFrac of max HP. Returns the HP
  *  restored (overshield not included). */
-export function healPlayer(w: World, amount: number): number {
+export function healPlayer(w: World, heal: number): number {
   const pl = w.player
+  const amount = heal * w.healMul
   if (amount <= 0 || pl.hp <= 0) return 0
   const room = pl.maxHp - pl.hp
   const add = amount < room ? amount : room

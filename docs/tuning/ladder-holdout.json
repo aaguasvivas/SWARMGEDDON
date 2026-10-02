@@ -1,0 +1,228 @@
+{
+ "meta": {
+  "label": "ladder-holdout",
+  "date": "2026-10-02T01:28:24.377Z",
+  "commit": "af12f12",
+  "srcDirty": true,
+  "scriptsDirty": true,
+  "command": "node scripts/playtest/matrix.mjs --worlds=hive --only=A13 --ot-sets=3 --label=ladder-holdout --runs=/tmp/swg-ladder/holdout",
+  "seeds": "1001 x 1..10 per world",
+  "worlds": [
+   "hive"
+  ],
+  "threatSeeds": "1001 x 1..60",
+  "otSets": [
+   3
+  ],
+  "only": [
+   "A13"
+  ],
+  "runsDir": "/tmp/swg-ladder/holdout",
+  "machineAtEnd": {
+   "load": [
+    5.46,
+    5.92,
+    5.96
+   ],
+   "swap": "total = 5632.00M  used = 5241.12M  free = 390.88M  (encrypted)"
+  },
+  "sets": {
+   "ot": {
+    "label": "smart+P OVERTIME (Hive)",
+    "pattern": "smart:SEED:25:nova:priority:T:ot",
+    "worlds": [
+     "hive"
+    ],
+    "runs": 60
+   }
+  },
+  "commands": [
+   "node scripts/playtest/playtest.mjs hive smart:61061:25:nova:priority:0:ot smart:62062:25:nova:priority:0:ot smart:63063:25:nova:priority:0:ot smart:64064:25:nova:priority:0:ot smart:65065:25:nova:priority:0:ot smart:66066:25:nova:priority:0:ot smart:67067:25:nova:priority:0:ot smart:68068:25:nova:priority:0:ot smart:69069:25:nova:priority:0:ot smart:70070:25:nova:priority:0:ot smart:71071:25:nova:priority:0:ot smart:72072:25:nova:priority:0:ot smart:73073:25:nova:priority:0:ot smart:74074:25:nova:priority:0:ot smart:75075:25:nova:priority:0:ot smart:76076:25:nova:priority:0:ot smart:77077:25:nova:priority:0:ot smart:78078:25:nova:priority:0:ot smart:79079:25:nova:priority:0:ot smart:80080:25:nova:priority:0:ot smart:81081:25:nova:priority:0:ot smart:82082:25:nova:priority:0:ot smart:83083:25:nova:priority:0:ot smart:84084:25:nova:priority:0:ot smart:85085:25:nova:priority:0:ot smart:86086:25:nova:priority:0:ot smart:87087:25:nova:priority:0:ot smart:88088:25:nova:priority:0:ot smart:89089:25:nova:priority:0:ot smart:90090:25:nova:priority:0:ot smart:21021:25:nova:priority:1:ot smart:22022:25:nova:priority:1:ot smart:23023:25:nova:priority:1:ot smart:24024:25:nova:priority:1:ot smart:25025:25:nova:priority:1:ot smart:26026:25:nova:priority:1:ot smart:27027:25:nova:priority:1:ot smart:28028:25:nova:priority:1:ot smart:29029:25:nova:priority:1:ot smart:30030:25:nova:priority:1:ot smart:21021:25:nova:priority:2:ot smart:22022:25:nova:priority:2:ot smart:23023:25:nova:priority:2:ot smart:24024:25:nova:priority:2:ot smart:25025:25:nova:priority:2:ot smart:26026:25:nova:priority:2:ot smart:27027:25:nova:priority:2:ot smart:28028:25:nova:priority:2:ot smart:29029:25:nova:priority:2:ot smart:30030:25:nova:priority:2:ot smart:21021:25:nova:priority:3:ot smart:22022:25:nova:priority:3:ot smart:23023:25:nova:priority:3:ot smart:24024:25:nova:priority:3:ot smart:25025:25:nova:priority:3:ot smart:26026:25:nova:priority:3:ot smart:27027:25:nova:priority:3:ot smart:28028:25:nova:priority:3:ot smart:29029:25:nova:priority:3:ot smart:30030:25:nova:priority:3:ot --out=/tmp/swg-ladder/holdout"
+  ]
+ },
+ "metrics": [
+  {
+   "id": "A13",
+   "name": "Overtime (Hive OVERTIME sets 3, runs that won)",
+   "value": "set 3 18/18 (100%), 0 past 24:00; all 18/18 (100%)",
+   "target": ">= 90% dead by 20:00 and none past 24:00, in each set",
+   "result": "PASS",
+   "details": {
+    "runs": [
+     {
+      "file": "hive_smart_62062_priority_ot.json",
+      "set": 3,
+      "otStart": 829.13,
+      "otCycle": 2,
+      "dead": true,
+      "endTime": 1129.27,
+      "level": 22
+     },
+     {
+      "file": "hive_smart_65065_priority_ot.json",
+      "set": 3,
+      "otStart": 771.18,
+      "otCycle": 2,
+      "dead": true,
+      "endTime": 1081.68,
+      "level": 28
+     },
+     {
+      "file": "hive_smart_66066_priority_ot.json",
+      "set": 3,
+      "otStart": 641.35,
+      "otCycle": 2,
+      "dead": true,
+      "endTime": 882.63,
+      "level": 24
+     },
+     {
+      "file": "hive_smart_67067_priority_ot.json",
+      "set": 3,
+      "otStart": 798.9,
+      "otCycle": 1,
+      "dead": true,
+      "endTime": 851.8,
+      "level": 20
+     },
+     {
+      "file": "hive_smart_68068_priority_ot.json",
+      "set": 3,
+      "otStart": 749.23,
+      "otCycle": 3,
+      "dead": true,
+      "endTime": 1179.47,
+      "level": 28
+     },
+     {
+      "file": "hive_smart_69069_priority_ot.json",
+      "set": 3,
+      "otStart": 752.32,
+      "otCycle": 3,
+      "dead": true,
+      "endTime": 1183.98,
+      "level": 19
+     },
+     {
+      "file": "hive_smart_72072_priority_ot.json",
+      "set": 3,
+      "otStart": 742.03,
+      "otCycle": 2,
+      "dead": true,
+      "endTime": 949.13,
+      "level": 23
+     },
+     {
+      "file": "hive_smart_88088_priority_ot.json",
+      "set": 3,
+      "otStart": 739.43,
+      "otCycle": 3,
+      "dead": true,
+      "endTime": 1192.97,
+      "level": 26
+     },
+     {
+      "file": "hive_smart_90090_priority_ot.json",
+      "set": 3,
+      "otStart": 801.78,
+      "otCycle": 1,
+      "dead": true,
+      "endTime": 891,
+      "level": 25
+     },
+     {
+      "file": "hive_smart_21021_priority_t1_ot.json",
+      "set": 3,
+      "otStart": 821.48,
+      "otCycle": 1,
+      "dead": true,
+      "endTime": 932.9,
+      "level": 22
+     },
+     {
+      "file": "hive_smart_26026_priority_t1_ot.json",
+      "set": 3,
+      "otStart": 795.83,
+      "otCycle": 1,
+      "dead": true,
+      "endTime": 937.1,
+      "level": 24
+     },
+     {
+      "file": "hive_smart_29029_priority_t1_ot.json",
+      "set": 3,
+      "otStart": 762.93,
+      "otCycle": 2,
+      "dead": true,
+      "endTime": 958.2,
+      "level": 26
+     },
+     {
+      "file": "hive_smart_22022_priority_t2_ot.json",
+      "set": 3,
+      "otStart": 658.57,
+      "otCycle": 3,
+      "dead": true,
+      "endTime": 1024.9,
+      "level": 28
+     },
+     {
+      "file": "hive_smart_26026_priority_t2_ot.json",
+      "set": 3,
+      "otStart": 677.87,
+      "otCycle": 2,
+      "dead": true,
+      "endTime": 949.8,
+      "level": 25
+     },
+     {
+      "file": "hive_smart_29029_priority_t2_ot.json",
+      "set": 3,
+      "otStart": 782.42,
+      "otCycle": 2,
+      "dead": true,
+      "endTime": 978,
+      "level": 29
+     },
+     {
+      "file": "hive_smart_22022_priority_t3_ot.json",
+      "set": 3,
+      "otStart": 671.97,
+      "otCycle": 3,
+      "dead": true,
+      "endTime": 1098.63,
+      "level": 29
+     },
+     {
+      "file": "hive_smart_25025_priority_t3_ot.json",
+      "set": 3,
+      "otStart": 804.4,
+      "otCycle": 2,
+      "dead": true,
+      "endTime": 1049.45,
+      "level": 22
+     },
+     {
+      "file": "hive_smart_29029_priority_t3_ot.json",
+      "set": 3,
+      "otStart": 701.53,
+      "otCycle": 1,
+      "dead": true,
+      "endTime": 718.73,
+      "level": 22
+     }
+    ],
+    "n": 18,
+    "by20": 18,
+    "past24": 0,
+    "bySet": {
+     "3": {
+      "n": 18,
+      "by20": 18,
+      "past24": 0
+     }
+    }
+   }
+  }
+ ]
+}
